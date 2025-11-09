@@ -1,0 +1,320 @@
+'use client';
+
+import { useEffect, useState, useCallback } from 'react';
+import { createClient } from '@/lib/supabase/client';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  DollarSign,
+  Calendar,
+  TrendingUp,
+  Wallet,
+  FileText,
+  RefreshCw,
+  CheckCircle,
+  Clock
+} from 'lucide-react';
+import { formatDate, formatCurrency } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+
+interface Repair {
+  id: string;
+  cost: number;
+  completed_at: string;
+  device: {
+    imei: string;
+    device_models?: {
+      model_name: string;
+    } | null;
+  } | null;
+  repair_type?: {
+    name: string;
+  } | null;
+}
+
+interface Payment {
+  id: string;
+  amount: number;
+  payment_date: string;
+  reference: string | null;
+  notes: string | null;
+}
+
+export default function LabPaymentsPage() {
+  const [completedRepairs, setCompletedRepairs] = useState<Repair[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser] = useState<any>(null);
+
+  const supabase = createClient();
+
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      // Get current user
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) return;
+
+      const { data: userData } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', authUser.id)
+        .single() as { data: any };
+
+      setUser(userData);
+
+      // Get all completed repairs
+      const { data: repairsData } = await supabase
+        .from('repairs')
+        .select(`
+          id,
+          cost,
+          completed_at,
+          device:devices!repairs_device_id_fkey(
+            imei,
+            device_models!devices_model_id_fkey(model_name)
+          ),
+          repair_type:repair_types!repairs_repair_type_id_fkey(name)
+        `)
+        .eq('lab_id', authUser.id)
+        .eq('status', 'completed')
+        .order('completed_at', { ascending: false }) as { data: any };
+
+      setCompletedRepairs(repairsData || []);
+
+      // Get all payments
+      const { data: paymentsData } = await supabase
+        .from('payments')
+        .select('*')
+        .eq('lab_id', authUser.id)
+        .order('payment_date', { ascending: false }) as { data: any };
+
+      setPayments(paymentsData || []);
+
+    } catch (error) {
+      console.error('Error loading data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [supabase]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Calculate balance
+  const totalEarned = completedRepairs.reduce((sum, repair) => sum + (repair.cost || 0), 0);
+  const totalPaid = payments.reduce((sum, payment) => sum + (payment.amount || 0), 0);
+  const balance = totalEarned - totalPaid;
+
+  // Calculate this month
+  const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+  const thisMonthEarned = completedRepairs
+    .filter(r => r.completed_at?.startsWith(currentMonth))
+    .reduce((sum, r) => sum + (r.cost || 0), 0);
+
+  const lastPaymentDate = payments[0]?.payment_date || null;
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <RefreshCw className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 p-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">תשלומים</h1>
+          <p className="text-muted-foreground">צפייה ביתרה ותשלומים</p>
+        </div>
+        <Button onClick={loadData} variant="outline">
+          <RefreshCw className="ms-2 h-4 w-4" />
+          רענן
+        </Button>
+      </div>
+
+      {/* Statistics Cards */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">סה"כ הכנסות מתיקונים</CardTitle>
+            <TrendingUp className="h-4 w-4 text-green-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">{formatCurrency(totalEarned)}</div>
+            <p className="text-xs text-muted-foreground">
+              {completedRepairs.length} תיקונים שהושלמו
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">סה"כ קיבלת</CardTitle>
+            <DollarSign className="h-4 w-4 text-blue-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-blue-600">{formatCurrency(totalPaid)}</div>
+            <p className="text-xs text-muted-foreground">
+              {payments.length} תשלומים
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">יתרה</CardTitle>
+            <Wallet className="h-4 w-4 text-orange-600" />
+          </CardHeader>
+          <CardContent>
+            <div className={`text-2xl font-bold ${balance > 0 ? 'text-orange-600' : balance < 0 ? 'text-green-600' : 'text-gray-600'}`}>
+              {formatCurrency(Math.abs(balance))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {balance > 0 ? 'המנהל חייב לך' : balance < 0 ? 'אתה בפלוס!' : 'מעודכן'}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">החודש</CardTitle>
+            <Calendar className="h-4 w-4 text-purple-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-purple-600">{formatCurrency(thisMonthEarned)}</div>
+            <p className="text-xs text-muted-foreground">
+              {lastPaymentDate ? `תשלום אחרון: ${formatDate(lastPaymentDate)}` : 'אין תשלומים'}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Tabs */}
+      <Tabs defaultValue="repairs" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="repairs">
+            <FileText className="ms-2 h-4 w-4" />
+            תיקונים ({completedRepairs.length})
+          </TabsTrigger>
+          <TabsTrigger value="payments">
+            <CheckCircle className="ms-2 h-4 w-4" />
+            תשלומים ({payments.length})
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Completed Repairs Tab */}
+        <TabsContent value="repairs">
+          <Card>
+            <CardHeader>
+              <CardTitle>תיקונים שהושלמו</CardTitle>
+              <CardDescription>
+                כל התיקונים שהושלמו ועלותם
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {completedRepairs.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <Clock className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>עדיין לא השלמת תיקונים</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>תאריך השלמה</TableHead>
+                      <TableHead>מכשיר</TableHead>
+                      <TableHead>IMEI</TableHead>
+                      <TableHead>סוג תיקון</TableHead>
+                      <TableHead className="text-left">עלות</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {completedRepairs.map((repair) => (
+                      <TableRow key={repair.id}>
+                        <TableCell>{formatDate(repair.completed_at)}</TableCell>
+                        <TableCell>
+                          {(repair.device as any)?.device_models?.model_name || 'לא ידוע'}
+                        </TableCell>
+                        <TableCell className="font-mono text-sm">
+                          {(repair.device as any)?.imei || 'N/A'}
+                        </TableCell>
+                        <TableCell>
+                          {(repair.repair_type as any)?.name || 'לא צוין'}
+                        </TableCell>
+                        <TableCell className="text-left font-bold text-green-600">
+                          {formatCurrency(repair.cost || 0)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Payments Tab */}
+        <TabsContent value="payments">
+          <Card>
+            <CardHeader>
+              <CardTitle>תשלומים שהתקבלו</CardTitle>
+              <CardDescription>
+                כל התשלומים שהמנהל העביר אליך
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {payments.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <DollarSign className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>עדיין לא קיבלת תשלומים</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>תאריך</TableHead>
+                      <TableHead>סכום</TableHead>
+                      <TableHead>אסמכתא</TableHead>
+                      <TableHead>הערות</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {payments.map((payment) => (
+                      <TableRow key={payment.id}>
+                        <TableCell>{formatDate(payment.payment_date)}</TableCell>
+                        <TableCell>
+                          <span className="font-bold text-blue-600 text-lg">
+                            {formatCurrency(payment.amount)}
+                          </span>
+                        </TableCell>
+                        <TableCell className="font-mono text-sm">
+                          {payment.reference || '-'}
+                        </TableCell>
+                        <TableCell className="max-w-xs truncate">
+                          {payment.notes || '-'}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
