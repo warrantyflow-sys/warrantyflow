@@ -1,4 +1,5 @@
 import { createServerClient } from '@supabase/ssr';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import type { Database } from './database.types';
 import { validateSupabaseEnv } from '@/lib/env-validation';
@@ -38,16 +39,16 @@ export async function createServiceClient() {
   // validateSupabaseEnv(true) throws if serviceRoleKey is missing or invalid
   const { url, serviceRoleKey } = validateSupabaseEnv(true);
 
-  return createServerClient<Database>(
+  // Use createClient from @supabase/supabase-js directly for service role
+  // This bypasses RLS policies properly
+  return createSupabaseClient<Database>(
     url,
     serviceRoleKey!,
     {
-      cookies: {
-        getAll() {
-          return [];
-        },
-        setAll() {},
-      },
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
     }
   );
 }
