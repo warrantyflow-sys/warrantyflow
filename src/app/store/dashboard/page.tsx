@@ -596,7 +596,7 @@ export default function StoreDashboard() {
 
       {/* Main Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-3" dir="rtl">
           <TabsTrigger value="search" className="flex items-center justify-center gap-2">
             <Search className="h-4 w-4" />
             חיפוש מכשיר
