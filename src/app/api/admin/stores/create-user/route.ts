@@ -21,12 +21,15 @@ export async function POST(request: Request) {
       email_confirm: true, // אישור אוטומטי של האימייל
       user_metadata: {
         full_name: data.full_name,
+        phone: data.phone,
+        role: data.role, // חשוב! הטריגר קורא את זה
       }
     });
 
     if (authError2) throw authError2;
 
     // צור רשומת משתמש בטבלה שלנו
+    // הטריגר אמור לעשות זאת, אבל נעשה זאת גם ידנית כדי להיות בטוחים
     const payload: TablesInsert<'users'> = {
       id: authData.user!.id,
       email: data.email,
@@ -37,7 +40,10 @@ export async function POST(request: Request) {
     };
 
     const { error: profileError } = await (supabaseService.from('users') as any)
-      .insert([payload]);
+      .upsert([payload], {
+        onConflict: 'id', // אם המשתמש כבר קיים (מהטריגר), עדכן
+        ignoreDuplicates: false
+      });
 
     if (profileError) {
       // אם נכשל, מחק את המשתמש מ-Auth
