@@ -88,26 +88,26 @@ export function StoreHeader() {
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuContent align="end" className="w-56" dir="rtl">
                 <DropdownMenuLabel>
-                  <div className="flex flex-col space-y-1">
+                  <div className="flex flex-col space-y-1 text-right">
                     <p className="text-sm font-medium">{user?.full_name || 'חנות'}</p>
                     <p className="text-xs text-muted-foreground">{user?.email}</p>
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem>
-                  <User className="me-2 h-4 w-4" />
                   <span>פרופיל</span>
+                  <User className="ms-2 h-4 w-4" />
                 </DropdownMenuItem>
                 <DropdownMenuItem>
-                  <Settings className="me-2 h-4 w-4" />
                   <span>הגדרות</span>
+                  <Settings className="ms-2 h-4 w-4" />
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem className="text-red-600" onClick={handleSignOut}>
-                  <LogOut className="me-2 h-4 w-4" />
                   <span>התנתק</span>
+                  <LogOut className="ms-2 h-4 w-4" />
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

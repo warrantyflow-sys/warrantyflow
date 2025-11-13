@@ -297,53 +297,53 @@ export default function StoreDevicesPage() {
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-4">
-        <Card>
+        <Card dir="rtl">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">סה"כ מכשירים</CardTitle>
             <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.total}</div>
-            <p className="text-xs text-muted-foreground">
+            <div className="text-2xl font-bold text-right">{stats.total}</div>
+            <p className="text-xs text-muted-foreground text-right">
               מכשירים עם אחריות
             </p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card dir="rtl">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">אחריות פעילה</CardTitle>
             <Shield className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.active}</div>
-            <p className="text-xs text-muted-foreground">
+            <div className="text-2xl font-bold text-right">{stats.active}</div>
+            <p className="text-xs text-muted-foreground text-right">
               בתוקף
             </p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card dir="rtl">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">פג תוקף</CardTitle>
             <XCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.expired}</div>
-            <p className="text-xs text-muted-foreground">
+            <div className="text-2xl font-bold text-right">{stats.expired}</div>
+            <p className="text-xs text-muted-foreground text-right">
               אחריות שפגה
             </p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card dir="rtl">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">בתיקון</CardTitle>
             <Wrench className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.inRepair}</div>
-            <p className="text-xs text-muted-foreground">
+            <div className="text-2xl font-bold text-right">{stats.inRepair}</div>
+            <p className="text-xs text-muted-foreground text-right">
               במעבדה כרגע
             </p>
           </CardContent>
@@ -356,19 +356,21 @@ export default function StoreDevicesPage() {
           <CardTitle>סינון וחיפוש</CardTitle>
         </CardHeader>
         <CardContent className="flex gap-4">
-          <div className="flex-1">
+          <div className="flex-1 relative">
+            <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="חיפוש לפי IMEI, דגם, שם לקוח או טלפון..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full"
+              className="w-full pr-10"
+              dir="rtl"
             />
           </div>
           <Select value={filterStatus} onValueChange={(value) => setFilterStatus(value as 'all' | 'active' | 'expired')}>
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-[180px]" dir="rtl">
               <SelectValue placeholder="סטטוס" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent dir="rtl">
               <SelectItem value="all">כל הסטטוסים</SelectItem>
               <SelectItem value="active">פעיל</SelectItem>
               <SelectItem value="expired">פג תוקף</SelectItem>

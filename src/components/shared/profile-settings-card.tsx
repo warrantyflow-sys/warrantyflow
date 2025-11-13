@@ -136,7 +136,7 @@ export function ProfileSettingsCard() {
                 <Input
                   id="full_name"
                   {...register('full_name')}
-                  className="pe-10"
+                  className="pr-10"
                 />
               </div>
               {errors.full_name && (
@@ -151,7 +151,7 @@ export function ProfileSettingsCard() {
                 <Input
                   id="phone"
                   {...register('phone')}
-                  className="pe-10"
+                  className="pr-10"
                 />
               </div>
               {errors.phone && (
@@ -163,7 +163,7 @@ export function ProfileSettingsCard() {
               <Label>אימייל</Label>
               <div className="relative">
                 <Mail className="absolute right-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Input value={userData?.email || ''} disabled className="pe-10 bg-muted" />
+                <Input value={userData?.email || ''} disabled className="pr-10 bg-muted" />
               </div>
                <p className="text-sm text-muted-foreground">
                 לא ניתן לשנות את כתובת האימייל.

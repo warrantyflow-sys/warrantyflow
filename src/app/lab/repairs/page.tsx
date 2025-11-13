@@ -889,14 +889,14 @@ export default function LabRepairsPage() {
             disabled={isLoading}
             className="flex-1 sm:flex-none"
           >
-            <RefreshCw className={cn("h-4 w-4 ms-2", isLoading && "animate-spin")} />
+            <RefreshCw className={cn("h-4 w-4 me-2", isLoading && "animate-spin")} />
             רענן
           </Button>
           <Button
             onClick={() => setIsNewRepairDialogOpen(true)}
             className="flex-1 sm:flex-none"
           >
-            <Plus className="h-4 w-4 ms-2" />
+            <Plus className="h-4 w-4 me-2" />
             תיקון חדש
           </Button>
         </div>
@@ -914,7 +914,7 @@ export default function LabRepairsPage() {
                   placeholder="IMEI, דגם או שם לקוח..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pe-10"
+                  className="pr-10"
                 />
               </div>
             </div>
@@ -1046,11 +1046,11 @@ export default function LabRepairsPage() {
       {Math.ceil(filteredRepairs.length / itemsPerPage) > 1 && (
         <Card>
           <CardContent className="py-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-row-reverse">
               <div className="text-sm text-muted-foreground">
                 מציג {((currentPage - 1) * itemsPerPage) + 1}-{Math.min(currentPage * itemsPerPage, filteredRepairs.length)} מתוך {filteredRepairs.length} תיקונים
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-row-reverse">
                 <Button
                   variant="outline"
                   size="sm"
@@ -1106,7 +1106,7 @@ export default function LabRepairsPage() {
               </p>
               {!searchQuery && filterStatus === 'all' && (
                 <Button onClick={() => setIsNewRepairDialogOpen(true)}>
-                  <Plus className="h-4 w-4 ms-2" />
+                  <Plus className="h-4 w-4 me-2" />
                   תיקון חדש
                 </Button>
               )}
@@ -1186,7 +1186,7 @@ export default function LabRepairsPage() {
 
       {/* New Repair Dialog */}
       <Dialog open={isNewRepairDialogOpen} onOpenChange={setIsNewRepairDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent dir="rtl" className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>תיקון חדש</DialogTitle>
             <DialogDescription>הזן את פרטי התיקון</DialogDescription>
@@ -1208,7 +1208,7 @@ export default function LabRepairsPage() {
                   onClick={handleSearchDevice}
                   disabled={isSearching || !searchIMEI}
                 >
-                  {isSearching ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                  {isSearching ? <RefreshCw className="h-4 w-4 animate-spin me-2" /> : <Search className="h-4 w-4 me-2" />}
                   חפש
                 </Button>
               </div>
@@ -1310,7 +1310,7 @@ export default function LabRepairsPage() {
 
       {/* Details Dialog */}
       <Dialog open={isDetailsDialogOpen} onOpenChange={setIsDetailsDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent dir="rtl" className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>פרטי תיקון</DialogTitle>
           </DialogHeader>
@@ -1377,7 +1377,7 @@ export default function LabRepairsPage() {
                     rows={3}
                   />
                   <Button onClick={handleRequestReplacement} variant="destructive" className="w-full">
-                    <AlertCircle className="h-4 w-4 ms-2" />
+                    <AlertCircle className="h-4 w-4 me-2" />
                     שלח בקשת החלפה
                   </Button>
                 </div>

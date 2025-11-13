@@ -300,19 +300,19 @@ export default function StoreReportsPage() {
         </div>
         <div className="flex gap-2">
           <Select value={dateRange} onValueChange={(value: DateRange) => setDateRange(value)}>
-            <SelectTrigger className="w-40">
-              <SelectValue />
+            <SelectTrigger className="w-40" dir="rtl">
+              <SelectValue placeholder="בחר טווח תאריכים" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent dir="rtl">
               <SelectItem value="week">שבוע אחרון</SelectItem>
               <SelectItem value="month">חודש אחרון</SelectItem>
               <SelectItem value="quarter">רבעון אחרון</SelectItem>
               <SelectItem value="year">שנה אחרונה</SelectItem>
             </SelectContent>
           </Select>
-          <Button onClick={exportReport} variant="outline">
-            <Download className="ms-2 h-4 w-4" />
+          <Button onClick={exportReport} variant="outline" dir="rtl">
             ייצוא לאקסל
+            <Download className="ms-2 h-4 w-4" />
           </Button>
         </div>
       </div>
@@ -321,43 +321,43 @@ export default function StoreReportsPage() {
         <>
           {/* Summary Cards */}
           <div className="grid gap-4 md:grid-cols-4">
-            <Card>
+            <Card dir="rtl">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">סה"כ אחריות</CardTitle>
                 <Shield className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{reportData.summary.totalWarranties}</div>
+                <div className="text-2xl font-bold text-right">{reportData.summary.totalWarranties}</div>
               </CardContent>
             </Card>
-            
-            <Card>
+
+            <Card dir="rtl">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">אחריות פעילות</CardTitle>
                 <CheckCircle className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{reportData.summary.activeWarranties}</div>
+                <div className="text-2xl font-bold text-right">{reportData.summary.activeWarranties}</div>
               </CardContent>
             </Card>
 
-            <Card>
+            <Card dir="rtl">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">אחריות שפגו</CardTitle>
                 <AlertCircle className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{reportData.summary.expiredWarranties}</div>
+                <div className="text-2xl font-bold text-right">{reportData.summary.expiredWarranties}</div>
               </CardContent>
             </Card>
-            
-            <Card>
+
+            <Card dir="rtl">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">בקשות החלפה</CardTitle>
                 <RefreshCw className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{reportData.summary.replacements}</div>
+                <div className="text-2xl font-bold text-right">{reportData.summary.replacements}</div>
               </CardContent>
             </Card>
           </div>

@@ -177,9 +177,10 @@ export default function LabDashboardPage() {
           }} 
           variant="outline"
           disabled={isLoading}
+          dir="rtl"
         >
-          <RefreshCw className={cn("h-4 w-4 ms-2", isLoading && "animate-spin")} />
           רענן
+          <RefreshCw className={cn("h-4 w-4 me-2", isLoading && "animate-spin")} />
         </Button>
       </div>
 
@@ -247,10 +248,10 @@ export default function LabDashboardPage() {
         <Card className="shadow-sm">
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-lg bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-                <Clock className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              <div className="h-8 w-8 rounded-lg bg-blue-100 dark:bg-blue-900 flex items-center justify-center text-right">
+                <Clock className="h-4 w-4 text-blue-600 dark:text-blue-400"/>
               </div>
-              <CardTitle className="text-sm font-medium">זמן תיקון ממוצע</CardTitle>
+              <CardTitle className="text-sm font-medium text-right">זמן תיקון ממוצע</CardTitle>
             </div>
           </CardHeader>
           <CardContent>

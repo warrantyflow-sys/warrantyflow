@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import type { Tables } from '@/lib/supabase/database.types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -84,6 +85,7 @@ export default function StoreDashboard() {
   const [activeTab, setActiveTab] = useState('search');
   const activationDateDisplay = formatDate(new Date());
 
+  const router = useRouter();
   const supabase = createClient();
   const { toast } = useToast();
   const {
@@ -541,7 +543,7 @@ export default function StoreDashboard() {
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-green-500 cursor-pointer" onClick={() => setActiveTab('active-warranties')}>
+        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-green-500 cursor-pointer" onClick={() => setActiveTab('active-warranties')} dir="rtl">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">אחריות פעילות</CardTitle>
             <div className="h-10 w-10 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center">
@@ -549,12 +551,12 @@ export default function StoreDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-green-600">{stats.activeWarranties}</div>
-            <p className="text-xs text-muted-foreground mt-1">מכשירים מוגנים</p>
+            <div className="text-3xl font-bold text-green-600 text-right">{stats.activeWarranties}</div>
+            <p className="text-xs text-muted-foreground mt-1 text-right">מכשירים מוגנים</p>
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-orange-500 cursor-pointer" onClick={() => setActiveTab('replacements')}>
+        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-orange-500 cursor-pointer" onClick={() => setActiveTab('replacements')} dir="rtl">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">בקשות החלפה</CardTitle>
             <div className="h-10 w-10 rounded-full bg-orange-100 dark:bg-orange-900 flex items-center justify-center">
@@ -562,12 +564,12 @@ export default function StoreDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-orange-600">{stats.pendingReplacements}</div>
-            <p className="text-xs text-muted-foreground mt-1">ממתינות לטיפול</p>
+            <div className="text-3xl font-bold text-orange-600 text-right">{stats.pendingReplacements}</div>
+            <p className="text-xs text-muted-foreground mt-1 text-right">ממתינות לטיפול</p>
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-blue-500">
+        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-blue-500 cursor-pointer" onClick={() => router.push('/store/reports')} dir="rtl">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">הפעלות החודש</CardTitle>
             <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
@@ -575,12 +577,12 @@ export default function StoreDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-blue-600">{stats.monthlyActivations}</div>
-            <p className="text-xs text-muted-foreground mt-1">אחריות חדשות</p>
+            <div className="text-3xl font-bold text-blue-600 text-right">{stats.monthlyActivations}</div>
+            <p className="text-xs text-muted-foreground mt-1 text-right">אחריות חדשות</p>
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-purple-500">
+        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-purple-500 cursor-pointer" onClick={() => router.push('/store/devices')} dir="rtl">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">סה"כ מכשירים</CardTitle>
             <div className="h-10 w-10 rounded-full bg-purple-100 dark:bg-purple-900 flex items-center justify-center">
@@ -588,8 +590,8 @@ export default function StoreDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-purple-600">{stats.totalDevices}</div>
-            <p className="text-xs text-muted-foreground mt-1">במערכת</p>
+            <div className="text-3xl font-bold text-purple-600 text-right">{stats.totalDevices}</div>
+            <p className="text-xs text-muted-foreground mt-1 text-right">במערכת</p>
           </CardContent>
         </Card>
       </div>
@@ -763,7 +765,7 @@ export default function StoreDashboard() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex gap-2">
+              <div className="flex gap-2" dir="rtl">
                 <Input
                   placeholder="הזן מספר IMEI..."
                   value={searchImei}

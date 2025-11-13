@@ -77,11 +77,11 @@ export function PasswordSettingsCard() {
             <Label htmlFor="newPassword">סיסמה חדשה</Label>
             <div className="relative">
               <Lock className="absolute right-3 top-3 h-4 w-4 text-muted-foreground" />
-              <Input 
-                id="newPassword" 
+              <Input
+                id="newPassword"
                 type="password"
                 {...register('newPassword')}
-                className="pe-10"
+                className="pr-10"
               />
             </div>
             {errors.newPassword && (
@@ -93,11 +93,11 @@ export function PasswordSettingsCard() {
             <Label htmlFor="confirmPassword">אימות סיסמה</Label>
              <div className="relative">
               <Lock className="absolute right-3 top-3 h-4 w-4 text-muted-foreground" />
-              <Input 
-                id="confirmPassword" 
+              <Input
+                id="confirmPassword"
                 type="password"
                 {...register('confirmPassword')}
-                className="pe-10"
+                className="pr-10"
               />
             </div>
             {errors.confirmPassword && (

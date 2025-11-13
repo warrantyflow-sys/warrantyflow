@@ -23,11 +23,12 @@ const SelectTrigger = React.forwardRef<
 >(({ className, children, error, success, ...props }, ref) => (
   <SelectPrimitive.Trigger
     ref={ref}
+    dir="rtl"
     className={cn(
       "flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm text-right ring-offset-background",
       "focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
       "disabled:cursor-not-allowed disabled:opacity-50",
-      "placeholder:text-muted-foreground [&>span]:line-clamp-1",
+      "placeholder:text-muted-foreground [&>span]:line-clamp-1 [&>span]:text-right",
       "transition-colors",
       error && "border-error focus:ring-error",
       success && "border-success focus:ring-success",
@@ -84,6 +85,7 @@ const SelectContent = React.forwardRef<
   <SelectPrimitive.Portal>
     <SelectPrimitive.Content
       ref={ref}
+      dir="rtl"
       className={cn(
         "relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md",
         "data-[state=open]:animate-in data-[state=closed]:animate-out",
