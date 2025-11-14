@@ -62,22 +62,40 @@ export async function middleware(request: NextRequest) {
     // זה חוסך קריאת DB בכל request! (80-90% הפחתה בעומס)
     let userData = null;
     if (user) {
-      // ניסיון לקרוא מ-JWT custom claims (מוגדר דרך auth hook)
-      const userRole = (user as any).user_metadata?.user_role ||
-                       (user as any).app_metadata?.user_role;
-      const userActive = (user as any).user_metadata?.user_active ||
-                         (user as any).app_metadata?.user_active;
+      try {
+        // Get session to access JWT token
+        // Note: We use getUser() first for security validation, then getSession() for JWT claims
+        const { data: { session } } = await supabase.auth.getSession();
 
-      // אם יש claims - השתמש בהם (אפס קריאות נוספות למסד נתונים!)
-      if (userRole !== undefined && userActive !== undefined) {
-        userData = {
-          role: userRole,
-          is_active: userActive
-        };
-      } else {
-        // Fallback: אם אין claims עדיין (משתמש שהתחבר לפני הגדרת ה-JWT hook)
-        // המשתמש צריך לעשות logout/login כדי לקבל claims
-        console.warn('⚠️ JWT claims not found for user, falling back to database query. User should re-login.');
+        if (session?.access_token) {
+          // Decode JWT payload to read custom claims added by Auth Hook
+          const tokenParts = session.access_token.split('.');
+          if (tokenParts.length === 3) {
+            const payload = JSON.parse(
+              Buffer.from(tokenParts[1], 'base64').toString()
+            );
+
+            // Custom claims are at root level of JWT payload
+            if (payload.user_role !== undefined && payload.user_active !== undefined) {
+              userData = {
+                role: payload.user_role,
+                is_active: payload.user_active
+              };
+            }
+          }
+        }
+      } catch (error) {
+        // JWT decoding failed, will fall back to DB
+        if (process.env.NODE_ENV === 'development') {
+          console.error('Error decoding JWT:', error);
+        }
+      }
+
+      // Fallback: אם לא הצלחנו לקרוא מה-JWT, שאל את מסד הנתונים
+      if (!userData) {
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('⚠️ JWT claims not found, falling back to database query.');
+        }
         const { data: dbData } = await supabase
           .from('users')
           .select('role, is_active')

@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { formatCurrency } from '@/src/lib/utils';
+import ShekelIcon from '@/components/ui/shekel-icon';
 
 interface Lab {
   id: string;
@@ -444,7 +445,7 @@ export function LabRepairPricesDialog({ open, onOpenChange }: LabRepairPricesDia
                                 step="0.01"
                                 disabled={!isActive}
                               />
-                              <span className="text-muted-foreground">₪</span>
+                              <ShekelIcon className="h-4 w-4 text-muted-foreground" />
                             </div>
                             <Button
                               size="sm"

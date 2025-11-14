@@ -395,7 +395,7 @@ export default function AdminRepairTypesPage() {
                         }
                       }}
                     />
-                    <span className="text-muted-foreground">₪</span>
+                    <ShekelIcon className="h-4 w-4 text-muted-foreground" />
                   </div>
                 </div>
               );

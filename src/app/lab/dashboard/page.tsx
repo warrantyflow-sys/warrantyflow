@@ -90,7 +90,7 @@ export default function LabDashboardPage() {
       // Fetch recent repairs
       const { data: recent } = await supabase
         .from('repairs')
-        .select('*, device:devices(imei, model), warranty:warranties(customer_name, customer_phone)')
+        .select('*, device:devices(imei, device_models(model_name)), warranty:warranties(customer_name, customer_phone)')
         .eq('lab_id', user.id)
         .order('created_at', { ascending: false })
         .limit(5);
@@ -103,7 +103,7 @@ export default function LabDashboardPage() {
 
       const { data: urgent } = await supabase
         .from('repairs')
-        .select('*, device:devices(imei, model), warranty:warranties(customer_name, customer_phone)')
+        .select('*, device:devices(imei, device_models(model_name)), warranty:warranties(customer_name, customer_phone)')
         .eq('lab_id', user.id)
         .in('status', ['received', 'in_progress'])
         .lt('created_at', twoDaysAgo.toISOString())
@@ -235,7 +235,12 @@ export default function LabDashboardPage() {
             <CardTitle className="text-sm font-medium">הכנסות חודשיות</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-purple-600">{formatCurrency(stats.monthlyRevenue)}</div>
+            <div className="flex items-baseline gap-1">
+              <ShekelIcon className="h-6 w-6 text-purple-600 inline-block mb-1" />
+              <div className="text-3xl font-bold text-purple-600">
+                {stats.monthlyRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            </div>
             <p className="text-xs text-muted-foreground mt-1">
               ממוצע: {formatCurrency(stats.monthlyCompleted > 0 ? stats.monthlyRevenue / stats.monthlyCompleted : 0)}
             </p>
@@ -368,7 +373,7 @@ export default function LabDashboardPage() {
                     onClick={() => router.push('/lab/repairs')}
                   >
                     <div className="flex-1">
-                      <div className="font-medium">{repair.device?.model || 'מכשיר לא ידוע'}</div>
+                      <div className="font-medium">{repair.device?.device_models?.model_name || 'מכשיר לא ידוע'}</div>
                       <div className="text-sm text-muted-foreground">
                         {getFaultTypeLabel(repair.fault_type)} • {formatDate(repair.created_at)}
                       </div>
@@ -420,7 +425,7 @@ export default function LabDashboardPage() {
                         <Clock className="h-5 w-5 text-red-600 dark:text-red-400" />
                       </div>
                       <div className="flex-1">
-                        <div className="font-medium">{repair.device?.model || 'מכשיר לא ידוע'}</div>
+                        <div className="font-medium">{repair.device?.device_models?.model_name || 'מכשיר לא ידוע'}</div>
                         <div className="text-sm text-muted-foreground">
                           {getFaultTypeLabel(repair.fault_type)}
                         </div>

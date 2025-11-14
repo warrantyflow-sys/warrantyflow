@@ -23,6 +23,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Plus, Pencil, Trash2, ArrowRight } from 'lucide-react';
+import ShekelIcon from '@/components/ui/shekel-icon';
 
 interface RepairType {
   id: string;
@@ -243,7 +244,10 @@ export default function AdminLabRepairPricingPage() {
                   {price.repair_types.description && (
                     <p className="text-sm text-gray-600 mb-2">{price.repair_types.description}</p>
                   )}
-                  <p className="text-2xl font-bold text-blue-600">₪{price.price.toFixed(2)}</p>
+                  <div className="flex items-baseline gap-1">
+                    <ShekelIcon className="h-5 w-5 text-blue-600 inline-block" />
+                    <p className="text-2xl font-bold text-blue-600">{price.price.toFixed(2)}</p>
+                  </div>
                   {price.notes && (
                     <p className="text-sm text-gray-500 mt-2">{price.notes}</p>
                   )}
@@ -327,7 +331,10 @@ export default function AdminLabRepairPricingPage() {
             )}
 
             <div>
-              <Label>מחיר (₪)</Label>
+              <Label className="flex items-center gap-1">
+                מחיר
+                <ShekelIcon className="h-3 w-3 inline-block" />
+              </Label>
               <Input
                 type="number"
                 step="0.01"

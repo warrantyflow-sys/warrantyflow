@@ -27,11 +27,31 @@ export async function getUserFromJWT(): Promise<JWTUserData | null> {
     return null;
   }
 
-  // נסה לקרוא מה-JWT claims (אם ה-hook פעיל)
-  const userRole = (user as any).user_metadata?.user_role ||
-                   (user as any).app_metadata?.user_role;
-  const userActive = (user as any).user_metadata?.user_active ||
-                     (user as any).app_metadata?.user_active;
+  // נסה לקרוא מה-JWT claims (מוגדר דרך Auth Hook)
+  let userRole: string | undefined;
+  let userActive: boolean | undefined;
+
+  try {
+    // Get session to access JWT token
+    const { data: { session } } = await supabase.auth.getSession();
+
+    if (session?.access_token) {
+      // Decode JWT payload to read custom claims added by Auth Hook
+      const tokenParts = session.access_token.split('.');
+      if (tokenParts.length === 3) {
+        const payload = JSON.parse(
+          Buffer.from(tokenParts[1], 'base64').toString()
+        );
+
+        // Custom claims are at root level of JWT payload
+        userRole = payload.user_role;
+        userActive = payload.user_active;
+      }
+    }
+  } catch (error) {
+    // JWT decoding failed, will fall back to DB
+    console.error('Error decoding JWT:', error);
+  }
 
   // אם יש claims - השתמש בהם (אפס קריאות נוספות!)
   if (userRole !== undefined && userActive !== undefined) {
@@ -45,7 +65,7 @@ export async function getUserFromJWT(): Promise<JWTUserData | null> {
 
   // Fallback: אם אין claims עדיין (למשל אם המשתמש התחבר לפני הגדרת ה-hook)
   // נצטרך לעשות קריאה למסד נתונים
-  console.warn('JWT claims not found, falling back to database query. User needs to re-login.');
+  console.warn('JWT claims not found, falling back to database query.');
 
   const { data: userData, error: dbError } = await supabase
     .from('users')
