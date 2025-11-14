@@ -36,11 +36,11 @@ import {
   Phone,
   User,
   Calendar,
-  DollarSign,
   FileText,
   TrendingUp,
   Package
 } from 'lucide-react';
+import ShekelIcon from '@/components/ui/shekel-icon';
 import { formatDate, formatDateTime, formatCurrency } from '@/lib/utils';
 
 type RepairStatus = 'received' | 'in_progress' | 'completed' | 'replacement_requested';
@@ -359,7 +359,7 @@ export default function RepairsPage() {
         <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-purple-500">
           <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
             <div className="h-10 w-10 rounded-full bg-purple-100 dark:bg-purple-900 flex items-center justify-center">
-              <DollarSign className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+              <ShekelIcon className="h-5 w-5 text-purple-600 dark:text-purple-400" />
             </div>
             <CardTitle className="text-sm font-medium">עלות כוללת</CardTitle>
           </CardHeader>
@@ -375,7 +375,7 @@ export default function RepairsPage() {
           <CardTitle>סינון תיקונים</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
             <div>
               <Label>חיפוש</Label>
               <div className="relative mt-1">

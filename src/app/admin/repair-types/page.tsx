@@ -25,7 +25,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
-import { Wrench, Plus, Edit, DollarSign, RefreshCw } from 'lucide-react';
+import { Wrench, Plus, Edit, RefreshCw } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import ShekelIcon from '@/components/ui/shekel-icon';
 
@@ -311,7 +311,7 @@ export default function AdminRepairTypesPage() {
                         variant="outline"
                         onClick={() => handleOpenPricingDialog(repairType)}
                       >
-                        <DollarSign className="h-4 w-4 ms-1" />
+                        <ShekelIcon className="h-4 w-4 ms-1" />
                         מחירים
                       </Button>
                       <Button

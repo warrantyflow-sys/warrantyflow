@@ -14,7 +14,6 @@ import {
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  DollarSign,
   Calendar,
   TrendingUp,
   Wallet,
@@ -23,6 +22,7 @@ import {
   CheckCircle,
   Clock
 } from 'lucide-react';
+import ShekelIcon from '@/components/ui/shekel-icon';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 
@@ -163,7 +163,7 @@ export default function LabPaymentsPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">סה"כ קיבלת</CardTitle>
-            <DollarSign className="h-4 w-4 text-blue-600" />
+            <ShekelIcon className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-blue-600">{formatCurrency(totalPaid)}</div>
@@ -278,7 +278,7 @@ export default function LabPaymentsPage() {
             <CardContent>
               {payments.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
-                  <DollarSign className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <ShekelIcon className="h-12 w-12 mx-auto mb-4 opacity-50" />
                   <p>עדיין לא קיבלת תשלומים</p>
                 </div>
               ) : (

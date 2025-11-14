@@ -61,7 +61,7 @@ const iconColorMapping = {
   'Clock': 'orange',
   'CheckCircle': 'green',
   'AlertCircle': 'red',
-  'DollarSign': 'purple',
+  'ShekelIcon': 'purple',
   'Users': 'pink',
   'Store': 'cyan',
   'Plus': 'gray',

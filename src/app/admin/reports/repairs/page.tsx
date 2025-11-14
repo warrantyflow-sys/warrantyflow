@@ -32,9 +32,9 @@ import {
   Building2,
   Calendar,
   TrendingUp,
-  DollarSign,
   ArrowRight
 } from 'lucide-react';
+import ShekelIcon from '@/components/ui/shekel-icon';
 
 type FaultType = 'screen' | 'charging_port' | 'flash' | 'speaker' | 'board' | 'other';
 
@@ -432,7 +432,7 @@ export default function AdminRepairsReportPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">מחיר ממוצע</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <ShekelIcon className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">

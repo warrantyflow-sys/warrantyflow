@@ -4,6 +4,7 @@ import './globals.css';
 import { Providers } from '@/components/providers';
 import { Toaster } from '@/components/ui/toaster';
 
+
 const inter = Inter({ 
   subsets: ['latin'],
   variable: '--font-inter',
@@ -39,6 +40,7 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${inter.variable} ${heebo.variable} ${jetbrainsMono.variable}`}
     >
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
       <body className="font-sans antialiased">
         <Providers>
           {children}

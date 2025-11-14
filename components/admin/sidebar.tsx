@@ -12,7 +12,6 @@ import {
   RefreshCw,
   Building2,
   Users,
-  DollarSign,
   FileText,
   Settings,
   LogOut,
@@ -23,6 +22,7 @@ import {
   Tag,
   Smartphone,
 } from 'lucide-react';
+import ShekelIcon from '@/components/ui/shekel-icon';
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -38,7 +38,7 @@ const navigationSections = [
       { name: 'חנויות', href: '/admin/stores', icon: Store },
       { name: 'מעבדות', href: '/admin/labs', icon: Building2 },
       { name: 'משתמשים', href: '/admin/users', icon: Users },
-      { name: 'תשלומים', href: '/admin/payments', icon: DollarSign },
+      { name: 'תשלומים', href: '/admin/payments', icon: ShekelIcon },
       { name: 'דוחות', href: '/admin/reports', icon: FileText },
     ],
   },
@@ -48,12 +48,18 @@ const navigationSections = [
       { name: 'הגדרות כלליות', href: '/admin/settings', icon: Settings },
       { name: 'דגמי מכשירים', href: '/admin/dashboard?dialog=models', icon: Smartphone },
       { name: 'סוגי תיקונים', href: '/admin/dashboard?dialog=repair-types', icon: Wrench },
-      { name: 'מחירי תיקון', href: '/admin/dashboard?dialog=lab-prices', icon: DollarSign },
+      { name: 'מחירי תיקון', href: '/admin/dashboard?dialog=lab-prices', icon: ShekelIcon },
     ],
   },
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+  isCollapsed: boolean;
+  setIsCollapsed: (isCollapsed: boolean) => void;
+}
+
+
+export function Sidebar({ isCollapsed, setIsCollapsed }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -77,20 +83,33 @@ export function Sidebar() {
       {/* Sidebar */}
       <div
         className={cn(
-          'fixed lg:static inset-y-0 right-0 z-40 w-[280px] bg-card border-l border-border shadow-sm transition-transform duration-200 ease-in-out',
-          isMobileMenuOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
+          'fixed lg:static inset-y-0 right-0 z-40 bg-card border-l border-border shadow-sm transition-all duration-300 ease-in-out', // 3. הוספת transition-all
+          isMobileMenuOpen ? 'translate-x-0 w-[17.5rem]' : 'translate-x-full', // התנהגות מובייל
+          'lg:translate-x-0', // תמיד מוצג בדסקטופ
+          isCollapsed ? 'lg:w-20' : 'lg:w-[17.5rem]' // 4. רוחב דינמי לדסקטופ
         )}
       >
         <div className="flex flex-col h-full">
           {/* Logo */}
-          <div className="flex items-center justify-center h-16 px-4 border-b border-border bg-gradient-to-l from-primary/10 to-transparent">
-            <Image
-              src="/logo.png"
-              alt="לוגו"
-              width={80}
-              height={80}
-              priority
-            />
+          <div className="flex items-center justify-between h-16 px-4 border-b border-border bg-gradient-to-l from-primary/10 to-transparent">
+            {/* 5. הסתרת הלוגו כשהסיידבר מכווץ */}
+            <div className={cn('transition-opacity', isCollapsed ? 'lg:opacity-0 lg:w-0' : 'lg:opacity-100')}>
+              <Image
+                src="/logo.png"
+                alt="לוגו"
+                width={80}
+                height={80}
+                priority
+              />
+            </div>
+            
+            {/* 6. כפתור לכיווץ/הרחבה (מוצג רק בדסקטופ) */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="hidden lg:flex"
+            >
+            </Button>
           </div>
 
           {/* Navigation */}
@@ -98,7 +117,10 @@ export function Sidebar() {
             {navigationSections.map((section, sectionIndex) => (
               <div key={sectionIndex}>
                 {section.title && (
-                  <h3 className="px-3 pt-3 pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  <h3 className={cn(
+                    "px-3 pt-3 pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider",
+                    isCollapsed && 'lg:hidden' // 7. הסתרת כותרות סעיפים
+                  )}>
                     {section.title}
                   </h3>
                 )}
@@ -115,7 +137,8 @@ export function Sidebar() {
                           'group flex items-center gap-3 px-3 py-3 text-sm font-medium rounded-lg transition-all duration-200',
                           isActive
                             ? 'bg-primary text-primary-foreground shadow-md'
-                            : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground hover:shadow-sm'
+                            : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground hover:shadow-sm',
+                          isCollapsed && 'lg:justify-center' // 8. מרכוז האייקון
                         )}
                         onClick={() => setIsMobileMenuOpen(false)}
                       >
@@ -125,8 +148,13 @@ export function Sidebar() {
                             isActive && 'animate-pulse'
                           )}
                         />
-                        <span className="flex-1">{item.name}</span>
-                        {isActive && <ChevronRight className="h-4 w-4 flex-shrink-0" />}
+                        {/* 9. הסתרת הטקסט והחץ כשהסיידבר מכווץ */}
+                        <span className={cn('flex-1', isCollapsed && 'lg:hidden')}>
+                          {item.name}
+                        </span>
+                        {isActive && (
+                          <ChevronRight className={cn('h-4 w-4 flex-shrink-0', isCollapsed && 'lg:hidden')} />
+                        )}
                       </Link>
                     );
                   })}
@@ -139,17 +167,21 @@ export function Sidebar() {
           <div className="p-4 border-t border-border">
             <Button
               variant="ghost"
-              className="w-full justify-start gap-3 text-muted-foreground hover:text-foreground"
+              className={cn(
+                "w-full justify-start gap-3 text-muted-foreground hover:text-foreground",
+                isCollapsed && 'lg:justify-center' // 10. מרכוז כפתור התנתקות
+              )}
               onClick={handleSignOut}
             >
               <LogOut className="h-5 w-5" />
-              <span>התנתק</span>
+              {/* 11. הסתרת טקסט התנתקות */}
+              <span className={cn(isCollapsed && 'lg:hidden')}>התנתק</span>
             </Button>
           </div>
         </div>
       </div>
 
-      {/* Mobile overlay */}
+      {/* Mobile overlay (נשאר ללא שינוי) */}
       {isMobileMenuOpen && (
         <div
           className="lg:hidden fixed inset-0 z-30 bg-black/50 backdrop-blur-sm"

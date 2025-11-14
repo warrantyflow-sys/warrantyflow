@@ -12,7 +12,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/use-toast';
-import { ArrowRight, DollarSign, FileText, Calendar, TrendingUp, Wallet, Download, RefreshCw } from 'lucide-react';
+import { ArrowRight, FileText, Calendar, TrendingUp, Wallet, Download, RefreshCw } from 'lucide-react';
+import ShekelIcon from '@/components/ui/shekel-icon';
 import { formatDate, formatCurrency, cn } from '@/lib/utils';
 
 interface Lab {
@@ -261,7 +262,7 @@ export default function AdminLabPaymentsPage() {
               ייצוא
             </Button>
             <Button onClick={() => setIsPaymentDialogOpen(true)}>
-              <DollarSign className="ms-2 h-4 w-4" />
+              <ShekelIcon className="ms-2 h-4 w-4" />
               רשום תשלום
             </Button>
           </div>
@@ -286,7 +287,7 @@ export default function AdminLabPaymentsPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">סה"כ שילמת</CardTitle>
-            <DollarSign className="h-4 w-4 text-blue-600" />
+            <ShekelIcon className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-blue-600">{formatCurrency(totalPaid)}</div>
@@ -336,7 +337,7 @@ export default function AdminLabPaymentsPage() {
             תיקונים ({completedRepairs.length})
           </TabsTrigger>
           <TabsTrigger value="payments">
-            <DollarSign className="ms-2 h-4 w-4" />
+            <ShekelIcon className="ms-2 h-4 w-4" />
             תשלומים ({payments.length})
           </TabsTrigger>
         </TabsList>
@@ -409,7 +410,7 @@ export default function AdminLabPaymentsPage() {
             <CardContent>
               {payments.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
-                  <DollarSign className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <ShekelIcon className="h-12 w-12 mx-auto mb-4 opacity-50" />
                   <p>אין תשלומים רשומים</p>
                 </div>
               ) : (

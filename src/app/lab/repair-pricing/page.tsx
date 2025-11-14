@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { RefreshCw, DollarSign, FileText } from 'lucide-react';
+import { RefreshCw, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ShekelIcon from '@/components/ui/shekel-icon';
 
@@ -61,7 +61,7 @@ export default function RepairPricingPage() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
-            <DollarSign className="h-7 w-7 text-primary" />
+            <ShekelIcon className="h-7 w-7 text-primary" />
             מחירי תיקונים
           </h1>
           <p className="text-muted-foreground mt-1">רשימת סוגי התיקונים והמחירים המאושרים</p>

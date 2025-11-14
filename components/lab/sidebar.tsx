@@ -7,7 +7,6 @@ import { cn } from '@/lib/utils';
 import {
   LayoutDashboard,
   Wrench,
-  DollarSign,
   FileText,
   Settings,
   LogOut,
@@ -17,6 +16,7 @@ import {
   Tag,
   Home
 } from 'lucide-react';
+import ShekelIcon from '@/components/ui/shekel-icon';
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
@@ -41,10 +41,10 @@ const navigation = [
     icon: Tag,
     description: 'הגדרת מחירים'
   },
-  { 
-    name: 'תשלומים', 
-    href: '/lab/payments', 
-    icon: DollarSign,
+  {
+    name: 'תשלומים',
+    href: '/lab/payments',
+    icon: ShekelIcon,
     description: 'מעקב תשלומים'
   },
   { 

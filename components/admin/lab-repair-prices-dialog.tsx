@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/components/ui/use-toast';
-import { Loader2, DollarSign, Save } from 'lucide-react';
+import { Loader2, Save } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -313,7 +313,7 @@ export function LabRepairPricesDialog({ open, onOpenChange }: LabRepairPricesDia
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <DollarSign className="h-5 w-5 text-primary" />
+            <ShekelIcon className="h-5 w-5 text-primary" />
             ניהול מחירי תיקונים למעבדה
           </DialogTitle>
           <DialogDescription id="lab-prices-description">
@@ -472,7 +472,7 @@ export function LabRepairPricesDialog({ open, onOpenChange }: LabRepairPricesDia
 
           {!selectedLabId && (
             <div className="text-center py-12 text-muted-foreground">
-              <DollarSign className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <ShekelIcon className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>בחר מעבדה כדי להתחיל להגדיר מחירים</p>
             </div>
           )}

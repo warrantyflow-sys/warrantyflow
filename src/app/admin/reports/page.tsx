@@ -25,7 +25,6 @@ import {
   BarChart3,
   PieChart,
   Calendar,
-  DollarSign,
   Package,
   Wrench,
   Shield,
@@ -36,6 +35,7 @@ import {
   RefreshCw,
   Printer
 } from 'lucide-react';
+import ShekelIcon from '@/components/ui/shekel-icon';
 import { formatDate, formatCurrency } from '@/lib/utils';
 
 type ReportType = 'summary' | 'devices' | 'repairs' | 'warranties' | 'payments' | 'performance';
@@ -756,7 +756,7 @@ export default function AdminReportsPage() {
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">הכנסות</CardTitle>
-                  <DollarSign className="h-4 w-4 text-green-600" />
+                  <ShekelIcon className="h-4 w-4 text-green-600" />
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{formatCurrency(reportData.summary.totalRevenue)}</div>

@@ -23,8 +23,7 @@ import {
 } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
 import { formatDate, formatCurrency } from '@/lib/utils';
-import { 
-  DollarSign, 
+import {
   Calendar,
   Wrench,
   TrendingUp,
@@ -33,6 +32,7 @@ import {
   CheckCircle,
   Clock
 } from 'lucide-react';
+import ShekelIcon from '@/components/ui/shekel-icon';
 
 type CompletedRepair = Tables<'repairs'> & {
   device?: (Pick<Tables<'devices'>, 'imei'> & {

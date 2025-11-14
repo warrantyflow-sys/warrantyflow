@@ -67,9 +67,7 @@
     --info: 199 85% 55%;
     --info-foreground: 0 0% 100%;
   }
-}
 
-@layer base {
   * {
     @apply border-border;
   }
