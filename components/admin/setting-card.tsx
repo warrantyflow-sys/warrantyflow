@@ -1,6 +1,5 @@
 'use client';
 
-import { LucideIcon } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -8,7 +7,7 @@ import { cn } from '@/lib/utils';
 interface SettingCardProps {
   title: string;
   description: string;
-  icon: LucideIcon;
+  icon: React.ElementType;
   onClick: () => void;
   disabled?: boolean;
   badge?: string;

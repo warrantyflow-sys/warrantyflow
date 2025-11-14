@@ -234,7 +234,7 @@ export function AdminHeader() {
                 </Avatar>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56" dir="rtl">
+            <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel>
                 <div className="flex flex-col gap-1 text-right">
                   <p className="text-sm font-medium">{user?.full_name || 'מנהל'}</p>

@@ -27,6 +27,7 @@ import {
 import { useToast } from '@/components/ui/use-toast';
 import { Wrench, Plus, Edit, DollarSign, RefreshCw } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
+import ShekelIcon from '@/components/ui/shekel-icon';
 
 interface RepairType {
   id: string;

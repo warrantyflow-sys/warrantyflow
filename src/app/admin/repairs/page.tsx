@@ -308,7 +308,7 @@ export default function RepairsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" dir="rtl">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">ניהול תיקונים</h1>
@@ -321,11 +321,11 @@ export default function RepairsPage() {
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-blue-500">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">סה"כ תיקונים</CardTitle>
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
             <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
               <Wrench className="h-5 w-5 text-blue-600 dark:text-blue-400" />
             </div>
+            <CardTitle className="text-sm font-medium">סה"כ תיקונים</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-blue-600">{stats.total}</div>
@@ -333,11 +333,11 @@ export default function RepairsPage() {
         </Card>
 
         <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-orange-500">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">בטיפול</CardTitle>
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
             <div className="h-10 w-10 rounded-full bg-orange-100 dark:bg-orange-900 flex items-center justify-center">
               <Clock className="h-5 w-5 text-orange-600 dark:text-orange-400" />
             </div>
+            <CardTitle className="text-sm font-medium">בטיפול</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-orange-600">{stats.in_progress}</div>
@@ -345,11 +345,11 @@ export default function RepairsPage() {
         </Card>
 
         <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-green-500">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">הושלמו</CardTitle>
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
             <div className="h-10 w-10 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center">
               <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
             </div>
+            <CardTitle className="text-sm font-medium">הושלמו</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">{stats.completed}</div>
@@ -357,11 +357,11 @@ export default function RepairsPage() {
         </Card>
 
         <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-purple-500">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">עלות כוללת</CardTitle>
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
             <div className="h-10 w-10 rounded-full bg-purple-100 dark:bg-purple-900 flex items-center justify-center">
               <DollarSign className="h-5 w-5 text-purple-600 dark:text-purple-400" />
             </div>
+            <CardTitle className="text-sm font-medium">עלות כוללת</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-purple-600">{formatCurrency(stats.totalCost)}</div>

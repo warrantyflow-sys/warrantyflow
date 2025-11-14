@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import {
@@ -62,10 +63,13 @@ export function StoreSidebar() {
         <div className="flex flex-col h-full">
           {/* Logo */}
           <div className="flex items-center justify-center h-16 px-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-l from-primary/10 to-transparent">
-            <div className="flex items-center gap-2">
-              <Package className="h-6 w-6 text-primary" />
-              <h2 className="text-xl font-bold text-primary">ניהול חנות</h2>
-            </div>
+            <Image
+              src="/logo.png"
+              alt="לוגו"
+              width={80}
+              height={80}
+              priority
+            />
           </div>
 
           {/* Navigation */}

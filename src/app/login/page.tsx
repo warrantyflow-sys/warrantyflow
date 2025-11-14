@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -86,6 +87,15 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
+          <div className="flex justify-center mb-4">
+            <Image
+              src="/logo.png"
+              alt="לוגו"
+              width={120}
+              height={120}
+              priority
+            />
+          </div>
           <CardTitle className="text-2xl font-bold text-center">התחברות למערכת</CardTitle>
           <CardDescription className="text-center">
             הזן את פרטי ההתחברות שלך

@@ -698,15 +698,25 @@ BEGIN
     RETURN; 
   END IF;
   
-  SELECT d.is_replaced, dm.warranty_months 
-  INTO v_is_replaced, v_warranty_months 
-  FROM devices d 
-  JOIN device_models dm ON d.model_id = dm.id 
+  -- Check if device exists
+  SELECT d.is_replaced INTO v_is_replaced
+  FROM devices d
   WHERE d.id = p_device_id;
-  
-  IF NOT FOUND THEN 
-    RETURN QUERY SELECT false, 'מכשיר לא נמצא'::TEXT, NULL::UUID, NULL::DATE; 
-    RETURN; 
+
+  IF NOT FOUND THEN
+    RETURN QUERY SELECT false, 'מכשיר לא נמצא במערכת'::TEXT, NULL::UUID, NULL::DATE;
+    RETURN;
+  END IF;
+
+  -- Get warranty months from device model
+  SELECT dm.warranty_months INTO v_warranty_months
+  FROM devices d
+  JOIN device_models dm ON d.model_id = dm.id
+  WHERE d.id = p_device_id;
+
+  IF NOT FOUND THEN
+    RETURN QUERY SELECT false, 'למכשיר אין מודל תקין במערכת. יש לפנות למנהל'::TEXT, NULL::UUID, NULL::DATE;
+    RETURN;
   END IF;
   
   IF v_is_replaced THEN 
@@ -953,7 +963,7 @@ BEGIN
       CASE WHEN is_admin() THEN u.full_name ELSE NULL END,
       v_searches_today + 1, false
     FROM public.devices d
-    JOIN public.device_models dm ON d.model_id = dm.id
+    LEFT JOIN public.device_models dm ON d.model_id = dm.id
     LEFT JOIN public.warranties w ON w.device_id = d.id AND w.is_active = true AND w.expiry_date >= CURRENT_DATE
     LEFT JOIN public.users u ON w.store_id = u.id
     WHERE d.id = v_device_id;
@@ -1600,25 +1610,25 @@ END $$;
 
 -- IMEI Lookup View
 CREATE OR REPLACE VIEW devices_imei_lookup AS
-SELECT 
+SELECT
   d.id, d.imei, d.imei2, d.is_replaced, dm.model_name,
   EXISTS(SELECT 1 FROM warranties w WHERE w.device_id = d.id AND w.is_active = true AND w.expiry_date >= CURRENT_DATE) AS has_active_warranty,
   EXISTS(SELECT 1 FROM repairs r WHERE r.device_id = d.id AND r.status IN ('received', 'in_progress')) AS has_active_repair
 FROM devices d
-JOIN device_models dm ON d.model_id = dm.id;
+LEFT JOIN device_models dm ON d.model_id = dm.id;
 
 -- Devices with Status View
 CREATE OR REPLACE VIEW devices_with_status AS
-SELECT 
+SELECT
   d.*, dm.model_name, dm.warranty_months,
-  CASE 
+  CASE
     WHEN d.is_replaced THEN 'replaced'
     WHEN EXISTS(SELECT 1 FROM warranties w WHERE w.device_id = d.id AND w.is_active = true AND w.expiry_date >= CURRENT_DATE) THEN 'active'
     WHEN EXISTS(SELECT 1 FROM warranties w WHERE w.device_id = d.id) THEN 'expired'
     ELSE 'new'
   END AS warranty_status
 FROM devices d
-JOIN device_models dm ON d.model_id = dm.id;
+LEFT JOIN device_models dm ON d.model_id = dm.id;
 
 -- Active Warranties with Replacements View
 -- 🔒 SECURITY: Explicitly list columns instead of w.* to control data exposure
@@ -1637,7 +1647,7 @@ SELECT
   (SELECT COUNT(*) FROM replacement_requests rr WHERE rr.device_id = w.device_id AND rr.status = 'approved') AS approved_replacements
 FROM warranties w
 JOIN devices d ON w.device_id = d.id
-JOIN device_models dm ON d.model_id = dm.id
+LEFT JOIN device_models dm ON d.model_id = dm.id
 JOIN users u ON w.store_id = u.id
 WHERE w.is_active = true;
 

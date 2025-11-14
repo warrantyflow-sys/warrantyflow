@@ -34,10 +34,11 @@ export function formatDateTime(date: string | Date) {
 }
 
 export function formatCurrency(amount: number) {
-  return new Intl.NumberFormat('he-IL', {
-    style: 'currency',
-    currency: 'ILS',
-  }).format(amount)
+  const formattedAmount = new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+  return `₪${formattedAmount}`;
 }
 
 export function validateIMEI(imei: string): boolean {

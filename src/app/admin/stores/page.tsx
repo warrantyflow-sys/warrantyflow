@@ -399,7 +399,7 @@ export default function StoresPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" dir="rtl">
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">ניהול חנויות</h2>
@@ -416,9 +416,9 @@ export default function StoresPage() {
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">סה"כ חנויות</CardTitle>
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
             <Store className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">סה"כ חנויות</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.total}</div>
@@ -426,9 +426,9 @@ export default function StoresPage() {
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">פעילות</CardTitle>
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
             <UserCheck className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">פעילות</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.active}</div>
@@ -436,9 +436,9 @@ export default function StoresPage() {
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">מושעות</CardTitle>
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
             <UserX className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">מושעות</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.inactive}</div>

@@ -10,6 +10,7 @@ import { DeviceModelsDialog } from '@/components/admin/device-models-dialog';
 import { RepairTypesDialog } from '@/components/admin/repair-types-dialog';
 import { LabRepairPricesDialog } from '@/components/admin/lab-repair-prices-dialog';
 import { ComingSoonDialog } from '@/components/admin/coming-soon-dialog';
+import ShekelIcon from '@/components/ui/shekel-icon';
 import {
   Package,
   Shield,
@@ -20,7 +21,6 @@ import {
   Store,
   BarChart3,
   Smartphone,
-  DollarSign,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { DashboardSkeleton } from '@/components/ui/loading-skeletons';
@@ -218,11 +218,11 @@ export default function AdminDashboard() {
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6">
         <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-blue-500">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">סה&quot;כ מכשירים</CardTitle>
+          <CardHeader className="flex flex-row-reverse items-center justify-between pb-2">
             <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
               <Package className="h-5 w-5 text-blue-600 dark:text-blue-400" />
             </div>
+            <CardTitle className="text-sm font-medium">סה&quot;כ מכשירים</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-blue-600">{stats.total}</div>
@@ -230,11 +230,11 @@ export default function AdminDashboard() {
         </Card>
 
         <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-gray-500">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">חדשים</CardTitle>
+          <CardHeader className="flex flex-row-reverse items-center justify-between pb-2">
             <div className="h-10 w-10 rounded-full bg-gray-100 dark:bg-gray-900 flex items-center justify-center">
               <Package className="h-5 w-5 text-gray-600 dark:text-gray-400" />
             </div>
+            <CardTitle className="text-sm font-medium">חדשים</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-gray-600">{stats.new}</div>
@@ -242,11 +242,11 @@ export default function AdminDashboard() {
         </Card>
 
         <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-green-500">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">אחריות פעילה</CardTitle>
+          <CardHeader className="flex flex-row-reverse items-center justify-between pb-2">
             <div className="h-10 w-10 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center">
               <Shield className="h-5 w-5 text-green-600 dark:text-green-400" />
             </div>
+            <CardTitle className="text-sm font-medium">אחריות פעילה</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-green-600">{stats.active}</div>
@@ -254,11 +254,11 @@ export default function AdminDashboard() {
         </Card>
 
         <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-red-500">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">אחריות פגה</CardTitle>
+          <CardHeader className="flex flex-row-reverse items-center justify-between pb-2">
             <div className="h-10 w-10 rounded-full bg-red-100 dark:bg-red-900 flex items-center justify-center">
               <XCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
             </div>
+            <CardTitle className="text-sm font-medium">אחריות פגה</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-red-600">{stats.expired}</div>
@@ -266,11 +266,11 @@ export default function AdminDashboard() {
         </Card>
 
         <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-purple-500">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">הוחלפו</CardTitle>
+          <CardHeader className="flex flex-row-reverse items-center justify-between pb-2">
             <div className="h-10 w-10 rounded-full bg-purple-100 dark:bg-purple-900 flex items-center justify-center">
               <RefreshCw className="h-5 w-5 text-purple-600 dark:text-purple-400" />
             </div>
+            <CardTitle className="text-sm font-medium">הוחלפו</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-purple-600">{stats.replaced}</div>
@@ -278,11 +278,11 @@ export default function AdminDashboard() {
         </Card>
 
         <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-orange-500">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">בתיקון</CardTitle>
+          <CardHeader className="flex flex-row-reverse items-center justify-between pb-2">
             <div className="h-10 w-10 rounded-full bg-orange-100 dark:bg-orange-900 flex items-center justify-center">
               <Wrench className="h-5 w-5 text-orange-600 dark:text-orange-400" />
             </div>
+            <CardTitle className="text-sm font-medium">בתיקון</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-orange-600">{stats.inRepair}</div>
@@ -376,7 +376,7 @@ export default function AdminDashboard() {
           <SettingCard
             title="מחירי תיקונים למעבדות"
             description="הגדר מחירים לכל מעבדה לפי סוג תיקון"
-            icon={DollarSign}
+            icon={ShekelIcon}
             onClick={() => setIsLabPricesDialogOpen(true)}
           />
         </div>

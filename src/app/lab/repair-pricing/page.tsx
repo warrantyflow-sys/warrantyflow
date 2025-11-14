@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { RefreshCw, DollarSign, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import ShekelIcon from '@/components/ui/shekel-icon';
 
 interface RepairType {
   id: string;
@@ -106,8 +107,9 @@ export default function RepairPricingPage() {
                   )}
                   <div className="pt-2 border-t">
                     <div className="flex items-baseline gap-1">
+                      <ShekelIcon className="h-6 w-6 text-primary inline-block mb-1" />
                       <span className="text-3xl font-bold text-primary">
-                        ₪{price.price.toFixed(2)}
+                        {price.price.toFixed(2)}
                       </span>
                     </div>
                   </div>
@@ -148,8 +150,9 @@ export default function RepairPricingPage() {
                     )}
                     <div className="pt-2 border-t">
                       <div className="flex items-baseline gap-1">
+                        <ShekelIcon className="h-6 w-6 text-muted-foreground inline-block mb-1" />
                         <span className="text-3xl font-bold text-muted-foreground">
-                          ₪{price.price.toFixed(2)}
+                          {price.price.toFixed(2)}
                         </span>
                       </div>
                     </div>

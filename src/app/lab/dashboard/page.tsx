@@ -17,13 +17,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import ShekelIcon from '@/components/ui/shekel-icon';
 import { 
   Wrench,
   Clock,
   CheckCircle,
   AlertCircle,
   Package,
-  DollarSign,
   TrendingUp,
   Users,
   BarChart3,
@@ -187,11 +187,11 @@ export default function LabDashboardPage() {
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-blue-500">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">תיקונים בהמתנה</CardTitle>
+          <CardHeader className="flex flex-row-reverse items-center justify-between pb-2">
             <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
               <Clock className="h-5 w-5 text-blue-600 dark:text-blue-400" />
             </div>
+            <CardTitle className="text-sm font-medium">תיקונים בהמתנה</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-blue-600">{stats.pendingRepairs}</div>
@@ -200,11 +200,11 @@ export default function LabDashboardPage() {
         </Card>
 
         <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-orange-500">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">בטיפול</CardTitle>
+          <CardHeader className="flex flex-row-reverse items-center justify-between pb-2">
             <div className="h-10 w-10 rounded-full bg-orange-100 dark:bg-orange-900 flex items-center justify-center">
               <Wrench className="h-5 w-5 text-orange-600 dark:text-orange-400" />
             </div>
+            <CardTitle className="text-sm font-medium">בטיפול</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-orange-600">{stats.inProgressRepairs}</div>
@@ -213,11 +213,11 @@ export default function LabDashboardPage() {
         </Card>
 
         <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-green-500">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">הושלמו היום</CardTitle>
+          <CardHeader className="flex flex-row-reverse items-center justify-between pb-2">
             <div className="h-10 w-10 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center">
               <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
             </div>
+            <CardTitle className="text-sm font-medium">הושלמו היום</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-green-600">{stats.completedToday}</div>
@@ -226,13 +226,13 @@ export default function LabDashboardPage() {
             </p>
           </CardContent>
         </Card>
-
+      
         <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-purple-500">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">הכנסות חודשיות</CardTitle>
+          <CardHeader className="flex flex-row-reverse items-center justify-between pb-2">
             <div className="h-10 w-10 rounded-full bg-purple-100 dark:bg-purple-900 flex items-center justify-center">
-              <DollarSign className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+              <ShekelIcon className="h-5 w-5 text-purple-600 dark:text-purple-400" />
             </div>
+            <CardTitle className="text-sm font-medium">הכנסות חודשיות</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-purple-600">{formatCurrency(stats.monthlyRevenue)}</div>
@@ -247,11 +247,11 @@ export default function LabDashboardPage() {
       <div className="grid gap-4 md:grid-cols-3">
         <Card className="shadow-sm">
           <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-lg bg-blue-100 dark:bg-blue-900 flex items-center justify-center text-right">
+            <div className="flex flex-row-reverse items-center justify-between">
+              <div className="h-8 w-8 rounded-lg bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
                 <Clock className="h-4 w-4 text-blue-600 dark:text-blue-400"/>
               </div>
-              <CardTitle className="text-sm font-medium text-right">זמן תיקון ממוצע</CardTitle>
+              <CardTitle className="text-sm font-medium">זמן תיקון ממוצע</CardTitle>
             </div>
           </CardHeader>
           <CardContent>
@@ -267,7 +267,7 @@ export default function LabDashboardPage() {
 
         <Card className="shadow-sm">
           <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-row-reverse items-center justify-between">
               <div className="h-8 w-8 rounded-lg bg-green-100 dark:bg-green-900 flex items-center justify-center">
                 <TrendingUp className="h-4 w-4 text-green-600 dark:text-green-400" />
               </div>
@@ -287,7 +287,7 @@ export default function LabDashboardPage() {
 
         <Card className="shadow-sm">
           <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-row-reverse items-center justify-between">
               <div className="h-8 w-8 rounded-lg bg-orange-100 dark:bg-orange-900 flex items-center justify-center">
                 <AlertCircle className="h-4 w-4 text-orange-600 dark:text-orange-400" />
               </div>
