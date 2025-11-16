@@ -485,24 +485,14 @@ export default function DevicesPage() {
 
       const { data: existingModel, error: searchError } = await (supabase as any)
         .from('device_models')
-        .select('id, warranty_months')
+        .select('id')
         .eq('model_name', data.model.trim())
         .single();
 
       if (existingModel) {
         modelId = existingModel.id;
-
-        // עדכון משך האחריות של הדגם אם השתנה
-        if (existingModel.warranty_months !== data.warranty_months) {
-          const { error: updateError } = await (supabase as any)
-            .from('device_models')
-            .update({ warranty_months: data.warranty_months })
-            .eq('id', existingModel.id);
-
-          if (updateError) throw updateError;
-        }
       } else {
-        // יצירת דגם חדש
+        // יצירת דגם חדש - משתמשים ב-warranty_months של המכשיר כברירת מחדל לדגם
         const { data: newModel, error: createError } = await (supabase as any)
           .from('device_models')
           .insert({
@@ -522,6 +512,7 @@ export default function DevicesPage() {
         imei2: data.imei2 || null,
         model_id: modelId,
         import_batch: data.import_batch || null,
+        warranty_months: data.warranty_months,  // שמירת משך אחריות ספציפי למכשיר
       } as TablesInsert<'devices'>;
 
       const { data: newDevice, error } = await (supabase.from('devices') as any)
@@ -584,24 +575,14 @@ export default function DevicesPage() {
 
       const { data: existingModel, error: searchError } = await (supabase as any)
         .from('device_models')
-        .select('id, warranty_months')
+        .select('id')
         .eq('model_name', data.model.trim())
         .single();
 
       if (existingModel) {
         modelId = existingModel.id;
-
-        // עדכון משך האחריות של הדגם אם השתנה
-        if (existingModel.warranty_months !== data.warranty_months) {
-          const { error: updateError } = await (supabase as any)
-            .from('device_models')
-            .update({ warranty_months: data.warranty_months })
-            .eq('id', existingModel.id);
-
-          if (updateError) throw updateError;
-        }
       } else {
-        // יצירת דגם חדש
+        // יצירת דגם חדש - משתמשים ב-warranty_months של המכשיר כברירת מחדל לדגם
         const { data: newModel, error: createError } = await (supabase as any)
           .from('device_models')
           .insert({
@@ -616,11 +597,13 @@ export default function DevicesPage() {
         modelId = newModel.id;
       }
 
+      // עדכון המכשיר - כולל warranty_months ברמת המכשיר
       const updates = {
         imei: data.imei,
         imei2: data.imei2 || null,
         model_id: modelId,
         import_batch: data.import_batch || null,
+        warranty_months: data.warranty_months,  // עדכון משך אחריות ספציפי למכשיר
       } as TablesUpdate<'devices'>;
 
       const { error } = await (supabase.from('devices') as any)
@@ -628,6 +611,35 @@ export default function DevicesPage() {
         .eq('id', selectedDevice.id);
 
       if (error) throw error;
+
+      // אם שינינו את משך האחריות ויש אחריות פעילה, נעדכן את תאריך התפוגה
+      if (data.warranty_months !== selectedDevice.warranty_months) {
+        const { data: activeWarranty, error: warrantyError } = await supabase
+          .from('warranties')
+          .select('id, activation_date')
+          .eq('device_id', selectedDevice.id)
+          .eq('is_active', true)
+          .maybeSingle();
+
+        if (activeWarranty && !warrantyError) {
+          // חישוב תאריך תפוגה חדש
+          const activationDate = new Date(activeWarranty.activation_date);
+          const newExpiryDate = new Date(activationDate);
+          newExpiryDate.setMonth(newExpiryDate.getMonth() + data.warranty_months);
+
+          const { error: updateWarrantyError } = await supabase
+            .from('warranties')
+            .update({ expiry_date: newExpiryDate.toISOString().split('T')[0] })
+            .eq('id', activeWarranty.id);
+
+          if (updateWarrantyError) throw updateWarrantyError;
+
+          toast({
+            title: 'שים לב',
+            description: `תאריך תפוגת האחריות עודכן ל-${newExpiryDate.toLocaleDateString('he-IL')}`,
+          });
+        }
+      }
 
       // --- Audit Log ---
       const { data: { user } } = await supabase.auth.getUser();
@@ -652,8 +664,10 @@ export default function DevicesPage() {
       reset();
       setIsEditDialogOpen(false);
       setSelectedDevice(null);
-      fetchDevices();
-      fetchStats();
+
+      // רענון מפורש של הנתונים אחרי עדכון
+      await fetchDevices();
+      await fetchStats();
     } catch (error: any) {
       console.error('Error updating device:', error);
       toast({
@@ -929,7 +943,8 @@ export default function DevicesPage() {
         model_id: modelId,
         imei: imei1 || imei2, // אם אין IMEI1, השתמש ב-IMEI2
         imei2: imei1 && imei2 ? imei2 : null, // רק אם יש גם IMEI1
-        import_batch: `IMPORT-${new Date().toISOString().split('T')[0]}`
+        import_batch: `IMPORT-${new Date().toISOString().split('T')[0]}`,
+        warranty_months: 12  // ברירת מחדל לייבוא - ניתן להרחבה בעתיד לקרוא מהקובץ
       } as TablesInsert<'devices'>);
 
       result.success++;
@@ -1290,7 +1305,7 @@ export default function DevicesPage() {
                         </div>
                       ) : (
                         <span className="text-muted-foreground">
-                          {device.device_models?.warranty_months || '-'} חודשים
+                          {device.warranty_months || '-'} חודשים
                         </span>
                       )}
                     </TableCell>
@@ -1499,7 +1514,7 @@ export default function DevicesPage() {
                 </div>
                 <div>
                   <Label>חודשי אחריות</Label>
-                  <p className="font-medium">{selectedDevice.device_models?.warranty_months || '-'} חודשים</p>
+                  <p className="font-medium">{selectedDevice.warranty_months || '-'} חודשים</p>
                 </div>
                 <div>
                   <Label>תאריך הוספה</Label>

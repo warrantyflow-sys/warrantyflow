@@ -1,7 +1,7 @@
 # מבנה מסד נתונים - מערכת ניהול אחריות
 
-**גרסה:** 2.2
-**תאריך:** 2025-11-02
+**גרסה:** 2.3
+**תאריך:** 2025-11-16
 
 ---
 
@@ -140,6 +140,7 @@
 | `imei` | TEXT | - | ❌ | IMEI ראשי (UNIQUE) |
 | `imei2` | TEXT | - | ✅ | IMEI שני (UNIQUE) |
 | `model_id` | UUID | - | ❌ | מזהה הדגם (FK) |
+| `warranty_months` | INTEGER | 12 | ❌ | תקופת אחריות (חודשים) - ספציפי למכשיר |
 | `is_replaced` | BOOLEAN | false | ❌ | הוחלף |
 | `replaced_at` | TIMESTAMPTZ | - | ✅ | תאריך החלפה |
 | `imported_by` | UUID | - | ✅ | יובא על ידי |
@@ -153,6 +154,7 @@
 - `devices_imported_by_fkey`: קשר ל-`auth.users(id)`
 - `devices_imei_check`: בדיוק 15 ספרות
 - `devices_imei2_check`: בדיוק 15 ספרות (אם לא NULL)
+- `devices_warranty_months_check`: בין 1 ל-36 חודשים
 
 ---
 
@@ -375,7 +377,6 @@
 
 **הגדרות ברירת מחדל:**
 - `imei_search_rate_limit`: `{"value": 50}` - מגבלת חיפושי IMEI ליום
-- `warranty_notification_period`: `{"value": 30}` - תקופת התראה על תפוגת אחריות
 
 ---
 
@@ -422,8 +423,8 @@
 
 **עמודות:**
 - כל עמודות `devices`
-- `model_name` - שם דגם
-- `warranty_months` - תקופת אחריות
+- `model_name` - שם דגם (מ-`device_models`)
+- `warranty_months` - תקופת אחריות ספציפית למכשיר (מ-`devices`)
 - `warranty_status` - סטטוס אחריות:
   - `replaced` - הוחלף
   - `active` - אחריות פעילה

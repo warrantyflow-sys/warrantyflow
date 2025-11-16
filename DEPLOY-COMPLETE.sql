@@ -139,6 +139,7 @@ CREATE TABLE IF NOT EXISTS devices (
   imei TEXT NOT NULL,
   imei2 TEXT NULL,
   model_id UUID NOT NULL,
+  warranty_months INTEGER NOT NULL DEFAULT 12,
   is_replaced BOOLEAN NOT NULL DEFAULT false,
   replaced_at TIMESTAMPTZ NULL,
   imported_by UUID NULL,
@@ -146,14 +147,15 @@ CREATE TABLE IF NOT EXISTS devices (
   notes TEXT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  
+
   CONSTRAINT devices_pkey PRIMARY KEY (id),
   CONSTRAINT devices_imei_key UNIQUE (imei),
   CONSTRAINT devices_imei2_key UNIQUE (imei2),
   CONSTRAINT devices_model_id_fkey FOREIGN KEY (model_id) REFERENCES device_models (id) ON DELETE RESTRICT,
   CONSTRAINT devices_imported_by_fkey FOREIGN KEY (imported_by) REFERENCES auth.users (id),
   CONSTRAINT devices_imei_check CHECK (imei ~ '^[0-9]{15}$'),
-  CONSTRAINT devices_imei2_check CHECK (imei2 IS NULL OR imei2 ~ '^[0-9]{15}$')
+  CONSTRAINT devices_imei2_check CHECK (imei2 IS NULL OR imei2 ~ '^[0-9]{15}$'),
+  CONSTRAINT devices_warranty_months_check CHECK (warranty_months >= 1 AND warranty_months <= 36)
 );
 
 -- Repair Types Table
@@ -1620,7 +1622,19 @@ LEFT JOIN device_models dm ON d.model_id = dm.id;
 -- Devices with Status View
 CREATE OR REPLACE VIEW devices_with_status AS
 SELECT
-  d.*, dm.model_name, dm.warranty_months,
+  d.id,
+  d.imei,
+  d.imei2,
+  d.model_id,
+  d.warranty_months,
+  d.is_replaced,
+  d.replaced_at,
+  d.imported_by,
+  d.import_batch,
+  d.notes,
+  d.created_at,
+  d.updated_at,
+  dm.model_name,
   CASE
     WHEN d.is_replaced THEN 'replaced'
     WHEN EXISTS(SELECT 1 FROM warranties w WHERE w.device_id = d.id AND w.is_active = true AND w.expiry_date >= CURRENT_DATE) THEN 'active'
@@ -1695,8 +1709,7 @@ END $$;
 
 INSERT INTO public.settings (key, value)
 VALUES
-    ('imei_search_rate_limit', '{"value": 50}'),
-    ('warranty_notification_period', '{"value": 30}')
+    ('imei_search_rate_limit', '{"value": 50}')
 ON CONFLICT (key) DO NOTHING;
 
 

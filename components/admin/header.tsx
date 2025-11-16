@@ -54,7 +54,12 @@ function useDebounce(value: string, delay: number) {
   return debouncedValue;
 }
 
-export function AdminHeader() {
+interface AdminHeaderProps {
+  isCollapsed?: boolean;
+  setIsCollapsed?: React.Dispatch<React.SetStateAction<boolean>>;
+}
+
+export function AdminHeader({ isCollapsed, setIsCollapsed }: AdminHeaderProps = {}) {
   const [user, setUser] = useState<UserData | null>(null)
   const [notifications, setNotifications] = useState<Notification[]>([])
   const { theme, setTheme } = useTheme()
@@ -234,7 +239,7 @@ export function AdminHeader() {
               </Button>
             </DropdownMenuTrigger>
             {/* align the dropdown menu to the right */}
-            <DropdownMenuContent align="end" className="w-56" dir="rtl">
+            <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel>
                 <div className="flex flex-col gap-1 text-right">
                   <p className="text-sm font-medium">{user?.full_name || 'מנהל'}</p>
