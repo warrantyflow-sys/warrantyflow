@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { User, Moon, Sun, Settings, LogOut, Wrench } from 'lucide-react';
 import { useTheme } from 'next-themes';
+import { useRouter } from 'next/navigation';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +21,7 @@ import { LabNotificationsDropdown } from './notifications-dropdown'; // Import t
 export function LabHeader() {
   const [user, setUser] = useState<UserData | null>(null);
   const { theme, setTheme } = useTheme();
+  const router = useRouter();
   const supabase = createClient();
 
   const fetchUserData = useCallback(async () => {
@@ -95,11 +97,11 @@ export function LabHeader() {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem>
+                <DropdownMenuItem onClick={() => router.push('/lab/profile')}>
                   <span>פרופיל</span>
                   <User className="ms-2 h-4 w-4" />
                 </DropdownMenuItem>
-                <DropdownMenuItem>
+                <DropdownMenuItem onClick={() => router.push('/lab/settings')}>
                   <span>הגדרות</span>
                   <Settings className="ms-2 h-4 w-4" />
                 </DropdownMenuItem>

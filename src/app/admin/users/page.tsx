@@ -577,70 +577,70 @@ export default function UsersPage() {
           </p>
         </div>
         <Button onClick={() => setIsCreateDialogOpen(true)}>
-          <Plus className="h-4 w-4 ms-2" />
           הוסף משתמש
+          <Plus className="ms-2 h-4 w-4" />
         </Button>
       </div>
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-6">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">סה"כ משתמשים</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
             <Users className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">סה"כ משתמשים</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.total}</div>
+            <div className="text-2xl font-bold text-right">{stats.total}</div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">מנהלים</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
             <Shield className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">מנהלים</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.admins}</div>
+            <div className="text-2xl font-bold text-right">{stats.admins}</div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">חנויות</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
             <Store className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">חנויות</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.stores}</div>
+            <div className="text-2xl font-bold text-right">{stats.stores}</div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">מעבדות</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
             <Wrench className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">מעבדות</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.labs}</div>
+            <div className="text-2xl font-bold text-right">{stats.labs}</div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">פעילים</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
             <UserCheck className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">פעילים</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.active}</div>
+            <div className="text-2xl font-bold text-right">{stats.active}</div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">מושעים</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
             <UserX className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">מושעים</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.inactive}</div>
+            <div className="text-2xl font-bold text-right">{stats.inactive}</div>
           </CardContent>
         </Card>
       </div>
@@ -649,12 +649,13 @@ export default function UsersPage() {
         <CardContent className="p-4">
           <div className="flex flex-col sm:flex-row gap-4">
             <div className="relative flex-1">
-              <Search className="absolute right-2 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="חפש לפי שם, אימייל או טלפון..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pe-8"
+                dir="rtl"
+                className="pr-8"
               />
             </div>
             <Select value={roleFilter} onValueChange={setRoleFilter}>
@@ -743,7 +744,7 @@ export default function UsersPage() {
                 <TableHead>תפקיד</TableHead>
                 <TableHead>סטטוס</TableHead>
                 <TableHead>תאריך הצטרפות</TableHead>
-                <TableHead className="text-left">פעולות</TableHead>
+                <TableHead>פעולות</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

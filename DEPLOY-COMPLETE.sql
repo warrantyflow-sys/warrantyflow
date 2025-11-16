@@ -191,7 +191,7 @@ CREATE TABLE IF NOT EXISTS lab_repair_prices (
 CREATE TABLE IF NOT EXISTS warranties (
   id UUID NOT NULL DEFAULT uuid_generate_v4(),
   device_id UUID NOT NULL,
-  store_id UUID NOT NULL,
+  store_id UUID NULL,  -- Changed to NULL to allow admin-created warranties without store assignment
   customer_name TEXT NOT NULL,
   customer_phone TEXT NOT NULL,
   activation_date DATE NOT NULL DEFAULT CURRENT_DATE,
@@ -201,7 +201,7 @@ CREATE TABLE IF NOT EXISTS warranties (
   notes TEXT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  
+
   CONSTRAINT warranties_pkey PRIMARY KEY (id),
   CONSTRAINT warranties_device_id_fkey FOREIGN KEY (device_id) REFERENCES devices (id) ON DELETE CASCADE,
   CONSTRAINT warranties_store_id_fkey FOREIGN KEY (store_id) REFERENCES users (id) ON DELETE RESTRICT,
@@ -1648,7 +1648,7 @@ SELECT
 FROM warranties w
 JOIN devices d ON w.device_id = d.id
 LEFT JOIN device_models dm ON d.model_id = dm.id
-JOIN users u ON w.store_id = u.id
+LEFT JOIN users u ON w.store_id = u.id  -- Changed from JOIN to LEFT JOIN to support NULL store_id
 WHERE w.is_active = true;
 
 -- Admin Dashboard Stats View

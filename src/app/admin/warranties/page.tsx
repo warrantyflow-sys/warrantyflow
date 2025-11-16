@@ -238,20 +238,21 @@ export default function WarrantiesPage() {
 
       const result = searchResult[0];
 
-      if (!result.success) {
+      // Check if device was found (device_id will be null if not found)
+      if (!result.device_id) {
         toast({
           title: 'לא נמצא',
-          description: result.message || `המכשיר עם IMEI ${trimmedIMEI} לא נמצא במערכת`,
+          description: `המכשיר עם IMEI ${trimmedIMEI} לא נמצא במערכת`,
           variant: 'destructive',
         });
         return;
       }
 
-      // Use the device data returned from the search function
-      const deviceFromSearch = result.device_data;
+      // The result object contains the device data directly
+      const deviceFromSearch = result;
 
       const deviceRecord = {
-        id: deviceFromSearch.id,
+        id: deviceFromSearch.device_id,
         imei: deviceFromSearch.imei,
         model: deviceFromSearch.model_name || 'לא ידוע',
         warranty_months: deviceFromSearch.warranty_months || 12,
@@ -385,8 +386,8 @@ export default function WarrantiesPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">ניהול אחריות</h1>
         <Button onClick={() => setIsActivationDialogOpen(true)}>
-          <Plus className="ms-2 h-4 w-4" />
           הפעל אחריות חדשה
+          <Plus className="ms-2 h-4 w-4" />
         </Button>
 
         {/* Activation Dialog */}
@@ -395,7 +396,7 @@ export default function WarrantiesPage() {
             <DialogHeader>
               <DialogTitle>הפעלת אחריות</DialogTitle>
               <DialogDescription>
-                הזן את פרטי הלקוח להפעלת האחריות
+                הזן מספר IMEI להפעלת האחריות
               </DialogDescription>
             </DialogHeader>
             {selectedDevice ? (
@@ -553,7 +554,7 @@ export default function WarrantiesPage() {
                   placeholder="חיפוש..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pe-10"
+                  className="pr-10"
                 />
               </div>
             </div>

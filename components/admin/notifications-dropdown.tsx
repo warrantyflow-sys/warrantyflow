@@ -76,7 +76,7 @@ export function NotificationsDropdown() {
         loadNotifications();
       })
       .subscribe();
-    const interval = setInterval(loadNotifications, 3000);
+    const interval = setInterval(loadNotifications, 10000);
     return () => {
       supabase.removeChannel(channel);
       clearInterval(interval);

@@ -386,8 +386,8 @@ export default function ReplacementsPage() {
           <div className="flex justify-between items-center">
             <CardTitle>בקשות החלפה</CardTitle>
             <Button variant="outline" size="sm" onClick={fetchRequests}>
-              <RefreshCw className="h-4 w-4 ms-2" />
               רענן
+              <RefreshCw className="h-4 w-4 ms-2" />
             </Button>
           </div>
           <div className="flex gap-4 mt-4">
@@ -408,7 +408,7 @@ export default function ReplacementsPage() {
                 placeholder="חיפוש לפי IMEI, דגם, מבקש או סיבה..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pe-10"
+                className="pr-10"
               />
             </div>
           </div>

@@ -254,16 +254,16 @@ export default function AdminLabPaymentsPage() {
           </div>
           <div className="flex gap-2">
             <Button onClick={loadData} variant="outline">
-              <RefreshCw className="ms-2 h-4 w-4" />
               רענן
+              <RefreshCw className="ms-2 h-4 w-4" />
             </Button>
             <Button onClick={exportToCSV} variant="outline">
-              <Download className="ms-2 h-4 w-4" />
               ייצוא
+              <Download className="ms-2 h-4 w-4" />
             </Button>
             <Button onClick={() => setIsPaymentDialogOpen(true)}>
-              <ShekelIcon className="ms-2 h-4 w-4" />
               רשום תשלום
+              <ShekelIcon className="ms-2 h-4 w-4" />
             </Button>
           </div>
         </div>
@@ -272,12 +272,12 @@ export default function AdminLabPaymentsPage() {
       {/* Statistics Cards */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">סה"כ עלות תיקונים</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
             <TrendingUp className="h-4 w-4 text-green-600" />
+            <CardTitle className="text-sm font-medium">סה"כ עלות תיקונים</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{formatCurrency(totalEarned)}</div>
+            <div className="text-2xl font-bold text-right text-green-600">{formatCurrency(totalEarned)}</div>
             <p className="text-xs text-muted-foreground">
               {completedRepairs.length} תיקונים שהושלמו
             </p>
@@ -285,12 +285,12 @@ export default function AdminLabPaymentsPage() {
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">סה"כ שילמת</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
             <ShekelIcon className="h-4 w-4 text-blue-600" />
+            <CardTitle className="text-sm font-medium">סה"כ שילמת</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{formatCurrency(totalPaid)}</div>
+            <div className="text-2xl font-bold text-right text-blue-600">{formatCurrency(totalPaid)}</div>
             <p className="text-xs text-muted-foreground">
               {payments.length} תשלומים
             </p>
@@ -298,13 +298,13 @@ export default function AdminLabPaymentsPage() {
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">יתרה</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
             <Wallet className="h-4 w-4 text-orange-600" />
+            <CardTitle className="text-sm font-medium">יתרה</CardTitle>
           </CardHeader>
           <CardContent>
             <div className={cn(
-              "text-2xl font-bold",
+              "text-2xl font-bold text-right",
               balance > 0 ? "text-orange-600" : balance < 0 ? "text-green-600" : "text-gray-600"
             )}>
               {formatCurrency(Math.abs(balance))}
@@ -316,14 +316,14 @@ export default function AdminLabPaymentsPage() {
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">החודש</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
             <Calendar className="h-4 w-4 text-purple-600" />
+            <CardTitle className="text-sm font-medium">החודש</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-purple-600">{formatCurrency(thisMonthEarned)}</div>
+            <div className="text-2xl font-bold text-right text-purple-600">{formatCurrency(thisMonthEarned)}</div>
             <p className="text-xs text-muted-foreground">
-              הכנסות החודש
+              שילמת החודש
             </p>
           </CardContent>
         </Card>
@@ -333,12 +333,12 @@ export default function AdminLabPaymentsPage() {
       <Tabs defaultValue="repairs" className="space-y-4">
         <TabsList>
           <TabsTrigger value="repairs">
-            <FileText className="ms-2 h-4 w-4" />
             תיקונים ({completedRepairs.length})
+            <FileText className="ms-2 h-4 w-4" />
           </TabsTrigger>
           <TabsTrigger value="payments">
-            <ShekelIcon className="ms-2 h-4 w-4" />
             תשלומים ({payments.length})
+            <ShekelIcon className="ms-2 h-4 w-4" />
           </TabsTrigger>
         </TabsList>
 

@@ -630,7 +630,7 @@ export function RepairTypesDialog({ open, onOpenChange }: RepairTypesDialogProps
             </div>
 
             <div className="flex items-center justify-between">
-              <Label htmlFor="is_active">סוג תיקון פעיל</Label>
+              <Label htmlFor="is_active">תיקון פעיל / מושבת</Label>
               <Switch
                 id="is_active"
                 checked={formData.is_active}

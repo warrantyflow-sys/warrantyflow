@@ -130,53 +130,53 @@ export default function AdminPaymentsPage() {
           <p className="text-muted-foreground">סקירה כללית של יתרות למעבדות</p>
         </div>
         <Button onClick={fetchData} variant="outline">
-          <RefreshCw className="ms-2 h-4 w-4" />
           רענן
+          <RefreshCw className="ms-2 h-4 w-4" />
         </Button>
       </div>
 
       {/* Statistics Cards */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">סה"כ עלות תיקונים</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
             <TrendingUp className="h-4 w-4 text-green-600" />
+            <CardTitle className="text-sm font-medium">סה"כ עלות תיקונים</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{formatCurrency(totalEarned)}</div>
+            <div className="text-2xl font-bold text-right text-green-600">{formatCurrency(totalEarned)}</div>
             <p className="text-xs text-muted-foreground">מכל המעבדות</p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">סה"כ שילמת</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
             <ShekelIcon className="h-4 w-4 text-blue-600" />
+            <CardTitle className="text-sm font-medium">סה"כ שילמת</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{formatCurrency(totalPaid)}</div>
+            <div className="text-2xl font-bold text-right text-blue-600">{formatCurrency(totalPaid)}</div>
             <p className="text-xs text-muted-foreground">לכל המעבדות</p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">יתרת חוב</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
             <Wallet className="h-4 w-4 text-orange-600" />
+            <CardTitle className="text-sm font-medium">יתרת חוב</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-orange-600">{formatCurrency(totalOwed)}</div>
+            <div className="text-2xl font-bold text-right text-orange-600">{formatCurrency(totalOwed)}</div>
             <p className="text-xs text-muted-foreground">חוב כולל למעבדות</p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">מעבדות פעילות</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
             <Users className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">מעבדות פעילות</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{labBalances.length}</div>
+            <div className="text-2xl font-bold text-right">{labBalances.length}</div>
             <p className="text-xs text-muted-foreground">
               {labBalances.filter(l => l.balance > 0).length} עם יתרת חוב
             </p>
@@ -198,11 +198,11 @@ export default function AdminPaymentsPage() {
               <TableRow>
                 <TableHead>מעבדה</TableHead>
                 <TableHead>אימייל</TableHead>
-                <TableHead className="text-center">תיקונים</TableHead>
-                <TableHead className="text-center">תשלומים</TableHead>
-                <TableHead className="text-left">סה"כ עלות תיקונים</TableHead>
-                <TableHead className="text-left">סה"כ שולם</TableHead>
-                <TableHead className="text-left">יתרה</TableHead>
+                <TableHead>תיקונים</TableHead>
+                <TableHead>תשלומים</TableHead>
+                <TableHead>סה"כ עלות תיקונים</TableHead>
+                <TableHead>סה"כ שולם</TableHead>
+                <TableHead>יתרה</TableHead>
                 <TableHead>פעולות</TableHead>
               </TableRow>
             </TableHeader>
@@ -215,46 +215,49 @@ export default function AdminPaymentsPage() {
                 >
                   <TableCell className="font-medium">{lab.lab_name}</TableCell>
                   <TableCell className="text-muted-foreground text-sm">{lab.lab_email}</TableCell>
-                  <TableCell className="text-center">
-                    <span className="text-muted-foreground">{lab.repairs_count}</span>
+                  <TableCell className="text-right">
+                    <span className="text-muted-foreground text-right">{lab.repairs_count}</span>
                   </TableCell>
-                  <TableCell className="text-center">
+                  <TableCell className="text-right">
                     <span className="text-muted-foreground">{lab.payments_count}</span>
                   </TableCell>
-                  <TableCell className="text-left text-green-600 font-medium">
+                  <TableCell className="text-right text-green-600 font-medium">
                     {formatCurrency(lab.total_earned)}
                   </TableCell>
-                  <TableCell className="text-left text-blue-600 font-medium">
+                  <TableCell className="text-right text-blue-600 font-medium">
                     {formatCurrency(lab.total_paid)}
                   </TableCell>
-                  <TableCell className="text-left">
+                  <TableCell className="text-right">
                     {lab.balance > 0 ? (
-                      <span className="font-bold text-orange-600">
+                      <span className="font-bold text-right text-orange-600">
                         {formatCurrency(lab.balance)}
                       </span>
                     ) : lab.balance < 0 ? (
-                      <span className="font-bold text-green-600">
+                      <span className="font-bold text-right text-green-600">
                         +{formatCurrency(Math.abs(lab.balance))}
                       </span>
                     ) : (
-                      <span className="text-muted-foreground font-medium flex items-center gap-1">
+                      <span className="text-muted-foreground text-right font-medium flex items-center gap-1">
                         <CheckCircle className="h-4 w-4" />
                         מעודכן
                       </span>
                     )}
                   </TableCell>
                   <TableCell>
+                    <div className="text-right">
                     <Button
                       size="sm"
                       variant="ghost"
+                      dir="rtl"
                       onClick={(e) => {
                         e.stopPropagation();
                         router.push(`/admin/labs/${lab.lab_id}/payments`);
                       }}
                     >
                       <Eye className="h-4 w-4 ms-1" />
-                      צפה
+                      <span className="text-right">צפה</span>
                     </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

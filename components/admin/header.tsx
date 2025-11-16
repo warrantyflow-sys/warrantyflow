@@ -19,7 +19,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Badge } from '@/components/ui/badge'
 import { Spinner } from '@/components/ui/spinner'
 import { DeviceDetailsModal } from './device-details-modal'
 import { UserDetailsModal } from './user-details-modal'
@@ -170,7 +169,7 @@ export function AdminHeader() {
         {/* Search bar */}
         <div className="flex-1 max-w-md mx-8">
           <div className="relative">
-            <div className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground">
+            <div className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground flex items-center justify-center">
               {isSearchLoading ? <Spinner /> : <Search />}
             </div>
             <Input
@@ -234,7 +233,8 @@ export function AdminHeader() {
                 </Avatar>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
+            {/* align the dropdown menu to the right */}
+            <DropdownMenuContent align="end" className="w-56" dir="rtl">
               <DropdownMenuLabel>
                 <div className="flex flex-col gap-1 text-right">
                   <p className="text-sm font-medium">{user?.full_name || 'מנהל'}</p>

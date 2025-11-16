@@ -313,11 +313,10 @@ export function LabRepairPricesDialog({ open, onOpenChange }: LabRepairPricesDia
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ShekelIcon className="h-5 w-5 text-primary" />
-            ניהול מחירי תיקונים למעבדה
+            ניהול מחירי תיקונים למעבדות
           </DialogTitle>
           <DialogDescription id="lab-prices-description">
-            בחר מעבדה והגדר מחירים לכל סוג תיקון. ניתן להשבית תיקונים ספציפיים למעבדה זו
+            בחר מעבדה והגדר מחירים לכל סוג תיקון. ניתן להשבית תיקונים ספציפיים לכל מעבדה
           </DialogDescription>
         </DialogHeader>
 
@@ -461,10 +460,6 @@ export function LabRepairPricesDialog({ open, onOpenChange }: LabRepairPricesDia
                       );
                     })}
                   </div>
-
-                  <p className="text-xs text-muted-foreground">
-                    טיפ: השתמש במתג להפעיל/להשבית תיקון למעבדה זו. לחץ Enter בשדה המחיר או על כפתור השמירה לשמור מחיר בודד, או השתמש ב&quot;שמור הכל&quot; לשמור את כל השינויים
-                  </p>
                 </div>
               )}
             </>

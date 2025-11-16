@@ -565,8 +565,6 @@ export default function AdminReportsPage() {
           ].map(row => row.join(',')).join('\n');
         }
         break;
-
-      // Add more export formats for other report types...
     }
 
     const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -599,12 +597,12 @@ export default function AdminReportsPage() {
         </div>
         <div className="flex gap-2">
           <Button onClick={exportReport} variant="outline" disabled={isGenerating}>
-            <Download className="ms-2 h-4 w-4" />
             ייצוא לאקסל
+            <Download className="ms-2 h-4 w-4" />
           </Button>
           <Button onClick={() => window.print()} variant="outline">
-            <Printer className="ms-2 h-4 w-4" />
             הדפסה
+            <Printer className="ms-2 h-4 w-4" />
           </Button>
         </div>
       </div>
@@ -723,45 +721,45 @@ export default function AdminReportsPage() {
           {reportType === 'summary' && reportData.summary && (
             <div className="grid gap-4 md:grid-cols-4">
               <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">סה"כ מכשירים</CardTitle>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
                   <Package className="h-4 w-4 text-muted-foreground" />
+                  <CardTitle className="text-sm font-medium">סה"כ מכשירים</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{reportData.summary.totalDevices}</div>
+                  <div className="text-2xl font-bold text-right">{reportData.summary.totalDevices}</div>
                 </CardContent>
               </Card>
 
               <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">אחריות פעילה</CardTitle>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
                   <Shield className="h-4 w-4 text-green-600" />
+                  <CardTitle className="text-sm font-medium">אחריות פעילה</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{reportData.summary.activeWarranties}</div>
+                  <div className="text-2xl font-bold text-right">{reportData.summary.activeWarranties}</div>
                 </CardContent>
               </Card>
 
               <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">תיקונים</CardTitle>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
                   <Wrench className="h-4 w-4 text-blue-600" />
+                  <CardTitle className="text-sm font-medium">תיקונים</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{reportData.summary.completedRepairs}/{reportData.summary.totalRepairs}</div>
-                  <p className="text-xs text-muted-foreground">הושלמו מסה"כ</p>
+                  <div className="text-2xl font-bold text-right">{reportData.summary.completedRepairs}/{reportData.summary.totalRepairs}</div>
+                  <p className="text-xs text-muted-foreground text-right">הושלמו מסה"כ</p>
                 </CardContent>
               </Card>
 
               <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">הכנסות</CardTitle>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
                   <ShekelIcon className="h-4 w-4 text-green-600" />
+                  <CardTitle className="text-sm font-medium">הכנסות</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{formatCurrency(reportData.summary.totalRevenue)}</div>
-                  <p className="text-xs text-muted-foreground">
-                    {formatCurrency(reportData.summary.paidAmount)} שולם
+                  <div className="text-2xl font-bold text-right">{formatCurrency(reportData.summary.totalRevenue)}</div>
+                  <p className="text-xs text-muted-foreground text-right">
+                    <span className="text-right">{formatCurrency(reportData.summary.paidAmount)} שולם</span>
                   </p>
                 </CardContent>
               </Card>

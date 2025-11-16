@@ -485,12 +485,22 @@ export default function DevicesPage() {
 
       const { data: existingModel, error: searchError } = await (supabase as any)
         .from('device_models')
-        .select('id')
+        .select('id, warranty_months')
         .eq('model_name', data.model.trim())
         .single();
 
       if (existingModel) {
         modelId = existingModel.id;
+
+        // עדכון משך האחריות של הדגם אם השתנה
+        if (existingModel.warranty_months !== data.warranty_months) {
+          const { error: updateError } = await (supabase as any)
+            .from('device_models')
+            .update({ warranty_months: data.warranty_months })
+            .eq('id', existingModel.id);
+
+          if (updateError) throw updateError;
+        }
       } else {
         // יצירת דגם חדש
         const { data: newModel, error: createError } = await (supabase as any)
@@ -574,12 +584,22 @@ export default function DevicesPage() {
 
       const { data: existingModel, error: searchError } = await (supabase as any)
         .from('device_models')
-        .select('id')
+        .select('id, warranty_months')
         .eq('model_name', data.model.trim())
         .single();
 
       if (existingModel) {
         modelId = existingModel.id;
+
+        // עדכון משך האחריות של הדגם אם השתנה
+        if (existingModel.warranty_months !== data.warranty_months) {
+          const { error: updateError } = await (supabase as any)
+            .from('device_models')
+            .update({ warranty_months: data.warranty_months })
+            .eq('id', existingModel.id);
+
+          if (updateError) throw updateError;
+        }
       } else {
         // יצירת דגם חדש
         const { data: newModel, error: createError } = await (supabase as any)
@@ -761,7 +781,7 @@ export default function DevicesPage() {
 
   // הורדת טמפלייט בפורמט החדש
   const downloadTemplate = () => {
-    const template = 'דגם,IMEI1,IMEI2\niPhone 14 Pro,123456789012345,987654321098765\nSamsung S23,123456789012346,';
+    const template = 'דגם,IMEI1,IMEI2\nATLAS,123456789012345,987654321098765\nATLAS 10,123456789012346,';
     const blob = new Blob(['\ufeff' + template], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -1008,28 +1028,26 @@ export default function DevicesPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button
-            onClick={() => {
-              fetchDevices();
-              fetchStats();
-              toast({ title: 'הנתונים עודכנו' });
-            }}
-            variant="outline"
-            size="icon"
-          >
-            <RefreshCw className="h-4 w-4" />
+          {/* create a button to refresh the data with text "רענן" */}
+          <Button onClick={() => {
+            fetchDevices();
+            fetchStats();
+            toast({ title: 'הנתונים עודכנו' });
+          }} variant="outline">
+            רענן
+            <RefreshCw className="ms-2 h-4 w-4" />
           </Button>
           <Button onClick={exportToCSV} variant="outline">
-            <Download className="ms-2 h-4 w-4" />
             ייצוא CSV
+            <Download className="ms-2 h-4 w-4" />
           </Button>
           <Button onClick={() => setIsImportDialogOpen(true)} variant="outline">
-            <Upload className="ms-2 h-4 w-4" />
             ייבוא CSV
+            <Upload className="ms-2 h-4 w-4" />
           </Button>
           <Button onClick={() => setIsAddDialogOpen(true)}>
-            <Plus className="ms-2 h-4 w-4" />
             הוסף מכשיר
+            <Plus className="ms-2 h-4 w-4" />
           </Button>
         </div>
       </div>
@@ -1346,7 +1364,7 @@ export default function DevicesPage() {
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div>
               <Label htmlFor="model">דגם</Label>
-              <Input id="model" {...register('model')} placeholder="iPhone 14 Pro" />
+              <Input id="model" {...register('model')} placeholder="ATLAS S9" />
               {errors.model && (
                 <p className="text-sm text-red-500 mt-1">{errors.model.message}</p>
               )}
@@ -1468,10 +1486,12 @@ export default function DevicesPage() {
                 </div>
                 <div>
                   <Label>סטטוס</Label>
+                  <p>
                   {(() => {
                     const deviceStatus = getStatusBadge(calculateWarrantyStatus(selectedDevice));
                     return <Badge variant={deviceStatus.variant}>{deviceStatus.label}</Badge>;
                   })()}
+                  </p>
                 </div>
                 <div>
                   <Label>מספר אצווה</Label>

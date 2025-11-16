@@ -25,7 +25,6 @@ import {
 import { useToast } from '@/components/ui/use-toast';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import {
-  FileText,
   Filter,
   Download,
   Wrench,
@@ -310,17 +309,17 @@ export default function AdminRepairsReportPage() {
           </p>
         </div>
         <Button onClick={exportToCSV} variant="outline">
-          <Download className="ms-2 h-4 w-4" />
           ייצוא לאקסל
+          <Download className="ms-2 h-4 w-4" />
         </Button>
       </div>
 
       {/* Filters */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row items-center justify-end" dir="rtl">
           <div className="flex items-center gap-2">
-            <Filter className="h-5 w-5" />
             <CardTitle>סינונים</CardTitle>
+            <Filter className="h-5 w-5" />
             {(filterLab !== 'all' || filterFaultType !== 'all' || filterMonth !== 'all') && (
               <Badge variant="secondary" className="mr-2">
                 {[filterLab !== 'all', filterFaultType !== 'all', filterMonth !== 'all'].filter(Boolean).length} פעילים
@@ -400,42 +399,42 @@ export default function AdminRepairsReportPage() {
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">סה"כ תיקונים</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
             <Wrench className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">סה"כ תיקונים</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{report.totalRepairs}</div>
+            <div className="text-2xl font-bold text-right">{report.totalRepairs}</div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">סה"כ עלות</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
             <TrendingUp className="h-4 w-4 text-green-600" />
+            <CardTitle className="text-sm font-medium">סה"כ עלות</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(report.totalRevenue)}</div>
+            <div className="text-2xl font-bold text-right">{formatCurrency(report.totalRevenue)}</div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">מעבדות פעילות</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
             <Building2 className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">מעבדות פעילות</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{Object.keys(report.byLab).length}</div>
+            <div className="text-2xl font-bold text-right">{Object.keys(report.byLab).length}</div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">מחיר ממוצע</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
             <ShekelIcon className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">מחיר ממוצע</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
+            <div className="text-2xl font-bold text-right">
               {formatCurrency(report.totalRepairs > 0 ? report.totalRevenue / report.totalRepairs : 0)}
             </div>
           </CardContent>

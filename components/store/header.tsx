@@ -21,6 +21,7 @@ import { StoreNotificationsDropdown } from './notifications-dropdown'; // Import
 export function StoreHeader() {
   const [user, setUser] = useState<UserData | null>(null);
   const { theme, setTheme } = useTheme();
+  const router = useRouter();
   const supabase = createClient();
 
   const fetchUserData = useCallback(async () => {
@@ -96,11 +97,11 @@ export function StoreHeader() {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem>
+                <DropdownMenuItem onClick={() => router.push('/store/profile')}>
                   <span>פרופיל</span>
                   <User className="ms-2 h-4 w-4" />
                 </DropdownMenuItem>
-                <DropdownMenuItem>
+                <DropdownMenuItem onClick={() => router.push('/store/settings')}>
                   <span>הגדרות</span>
                   <Settings className="ms-2 h-4 w-4" />
                 </DropdownMenuItem>

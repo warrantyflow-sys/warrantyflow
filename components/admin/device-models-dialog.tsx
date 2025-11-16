@@ -537,7 +537,7 @@ export function DeviceModelsDialog({ open, onOpenChange }: DeviceModelsDialogPro
                   validateField('model_name', e.target.value);
                 }}
                 onBlur={(e) => validateField('model_name', e.target.value)}
-                placeholder="לדוגמה: iPhone 14 Pro"
+                placeholder="לדוגמה: ATLAS 10"
                 className={formErrors.model_name ? 'border-red-500' : ''}
               />
               {formErrors.model_name && (
@@ -553,7 +553,7 @@ export function DeviceModelsDialog({ open, onOpenChange }: DeviceModelsDialogPro
                 onChange={(e) =>
                   setFormData({ ...formData, manufacturer: e.target.value })
                 }
-                placeholder="לדוגמה: Apple"
+                placeholder="לדוגמה: ATLAS"
               />
             </div>
 

@@ -408,8 +408,8 @@ export default function StoresPage() {
           </p>
         </div>
         <Button onClick={() => setIsCreateDialogOpen(true)}>
-          <Plus className="h-4 w-4 ms-2" />
           הוסף חנות
+          <Plus className="ms-2 h-4 w-4" />
         </Button>
       </div>
 
@@ -450,12 +450,13 @@ export default function StoresPage() {
         <CardContent className="p-4">
           <div className="flex flex-col sm:flex-row gap-4">
             <div className="relative flex-1">
-              <Search className="absolute right-2 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="חפש לפי שם, אימייל או טלפון..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pe-8"
+                dir="rtl"
+                className="pr-8"
               />
             </div>
             <div className="flex gap-2">
