@@ -1384,32 +1384,35 @@ DECLARE
   v_device_imei TEXT;
   v_lab_name TEXT;
   v_repair_type_name TEXT;
+  v_model_name TEXT;
 BEGIN
-  SELECT imei INTO v_device_imei
-  FROM devices
-  WHERE id = NEW.device_id;
-
+  SELECT d.imei, dm.model_name
+  INTO v_device_imei, v_model_name
+  FROM devices d
+  LEFT JOIN device_models dm ON d.model_id = dm.id
+  WHERE d.id = NEW.device_id;
+  
   SELECT full_name INTO v_lab_name
   FROM users
   WHERE id = NEW.lab_id;
 
   IF (TG_OP = 'INSERT') THEN
-
     PERFORM notify_admins(
       'repair_new',
       'תיקון חדש נוצר',
-      'תיקון חדש נוצר על ידי ' || COALESCE(v_lab_name, 'מעבדה') || ' למכשיר ' || v_device_imei,
+      'תיקון חדש נוצר (' || COALESCE(v_model_name, 'דגם לא ידוע') || ') על ידי ' || COALESCE(v_lab_name, 'מעבדה') || ' למכשיר ' || v_device_imei,
       jsonb_build_object(
-        'IMEI', v_device_imei,
-        'שם המעבדה', COALESCE(v_lab_name, 'מעבדה'),
-        'סוג התקלה', NEW.fault_type
+        'device_imei', v_device_imei,
+        'model_name', COALESCE(v_model_name, 'לא ידוע'),
+        'lab_name', COALESCE(v_lab_name, 'מעבדה'),
+        'fault_type', NEW.fault_type
       )
     );
 
   ELSIF (TG_OP = 'UPDATE') THEN
 
     IF (NEW.status = 'completed' AND OLD.status != 'completed') THEN
-
+    
       IF NEW.repair_type_id IS NOT NULL THEN
         SELECT name INTO v_repair_type_name FROM repair_types WHERE id = NEW.repair_type_id;
       ELSE
@@ -1419,12 +1422,13 @@ BEGIN
       PERFORM notify_admins(
         'repair_completed',
         'תיקון הושלם',
-        'התיקון למכשיר ' || v_device_imei || ' (עלות: ' || COALESCE(NEW.cost::text, 'לא נקבע') || ' ש"ח) הושלם.',
+        'התיקון למכשיר ' || COALESCE(v_model_name, v_device_imei) || ' (עלות: ' || COALESCE(NEW.cost::text, 'לא נקבע') || ' ש"ח) הושלם.',
         jsonb_build_object(
-          'IMEI', v_device_imei,
-          'שם המעבדה', COALESCE(v_lab_name, 'מעבדה'),
-          'סוג התיקון', COALESCE(v_repair_type_name, 'לא צוין'),
-          'עלות', NEW.cost
+          'device_imei', v_device_imei,
+          'model_name', COALESCE(v_model_name, 'לא ידוע'),
+          'lab_name', COALESCE(v_lab_name, 'מעבדה'),
+          'repair_type', COALESCE(v_repair_type_name, 'לא צוין'),
+          'cost', NEW.cost
         )
       );
     END IF;
