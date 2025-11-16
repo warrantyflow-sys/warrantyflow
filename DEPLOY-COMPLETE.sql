@@ -330,15 +330,15 @@ CREATE TABLE IF NOT EXISTS notifications (
   CONSTRAINT notifications_pkey PRIMARY KEY (id),
   CONSTRAINT notifications_user_id_fkey FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
   CONSTRAINT notifications_type_check CHECK (type IN (
-    'replacement_request_new',
-    'replacement_request_updated',
-    'repair_new',
-    'repair_updated',
-    'payment_new',
-    'user_registered'
-  ))
+  'replacement_request_new',
+  'replacement_request_updated',
+  'repair_new',
+  'repair_updated',
+  'payment_new',
+  'user_registered',
+  'repair_completed'
+ ))
 );
-
 -- Payment Requests and Payment Repairs tables removed
 -- Simplified payment system: Payments are direct, no request/approval needed
 -- Balance = SUM(completed repairs) - SUM(payments)
@@ -516,6 +516,49 @@ BEGIN
 
   -- Return boolean value
   RETURN v_value::BOOLEAN;
+END;
+$$;
+
+-- Auth Hook: Add user_role and user_active to JWT
+CREATE OR REPLACE FUNCTION public.custom_access_token_hook(event jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  claims jsonb;
+  user_role text;
+  user_active boolean;
+BEGIN
+  -- Initialize claims from event
+  claims := event->'claims';
+
+  -- Fetch role and active status from users table
+  SELECT role::text, is_active
+  INTO user_role, user_active
+  FROM public.users
+  WHERE id = (event->>'user_id')::uuid;
+
+  -- Only add claims if user was found and values exist
+  IF user_role IS NOT NULL THEN
+    claims := jsonb_set(claims, '{user_role}', to_jsonb(user_role));
+  END IF;
+
+  IF user_active IS NOT NULL THEN
+    claims := jsonb_set(claims, '{user_active}', to_jsonb(user_active));
+  END IF;
+
+  -- Update the 'claims' object in the event
+  event := jsonb_set(event, '{claims}', claims);
+
+  RETURN event;
+EXCEPTION
+  WHEN OTHERS THEN
+    -- If there's any error, just return the event unchanged
+    -- This ensures the auth flow doesn't break
+    RAISE WARNING 'Error in custom_access_token_hook: %', SQLERRM;
+    RETURN event;
 END;
 $$;
 
@@ -1331,8 +1374,8 @@ EXCEPTION
 END;
 $$;
 
--- Notify on new repair
-CREATE OR REPLACE FUNCTION notify_on_new_repair()
+-- Notify on new repair OR completed repair
+CREATE OR REPLACE FUNCTION handle_repair_notifications()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -1340,29 +1383,53 @@ AS $$
 DECLARE
   v_device_imei TEXT;
   v_lab_name TEXT;
+  v_repair_type_name TEXT;
 BEGIN
   SELECT imei INTO v_device_imei
   FROM devices
   WHERE id = NEW.device_id;
-  
+
   SELECT full_name INTO v_lab_name
   FROM users
   WHERE id = NEW.lab_id;
-  
-  PERFORM notify_admins(
-    'repair_new',
-    'תיקון חדש נוצר',
-    'תיקון חדש נוצר על ידי ' || COALESCE(v_lab_name, 'מעבדה') || ' למכשיר ' || v_device_imei,
-    jsonb_build_object(
-      'repair_id', NEW.id,
-      'device_id', NEW.device_id,
-      'device_imei', v_device_imei,
-      'lab_id', NEW.lab_id,
-      'lab_name', v_lab_name,
-      'fault_type', NEW.fault_type
-    )
-  );
-  
+
+  IF (TG_OP = 'INSERT') THEN
+
+    PERFORM notify_admins(
+      'repair_new',
+      'תיקון חדש נוצר',
+      'תיקון חדש נוצר על ידי ' || COALESCE(v_lab_name, 'מעבדה') || ' למכשיר ' || v_device_imei,
+      jsonb_build_object(
+        'IMEI', v_device_imei,
+        'שם המעבדה', COALESCE(v_lab_name, 'מעבדה'),
+        'סוג התקלה', NEW.fault_type
+      )
+    );
+
+  ELSIF (TG_OP = 'UPDATE') THEN
+
+    IF (NEW.status = 'completed' AND OLD.status != 'completed') THEN
+
+      IF NEW.repair_type_id IS NOT NULL THEN
+        SELECT name INTO v_repair_type_name FROM repair_types WHERE id = NEW.repair_type_id;
+      ELSE
+        v_repair_type_name := NEW.custom_repair_description;
+      END IF;
+
+      PERFORM notify_admins(
+        'repair_completed',
+        'תיקון הושלם',
+        'התיקון למכשיר ' || v_device_imei || ' (עלות: ' || COALESCE(NEW.cost::text, 'לא נקבע') || ' ש"ח) הושלם.',
+        jsonb_build_object(
+          'IMEI', v_device_imei,
+          'שם המעבדה', COALESCE(v_lab_name, 'מעבדה'),
+          'סוג התיקון', COALESCE(v_repair_type_name, 'לא צוין'),
+          'עלות', NEW.cost
+        )
+      );
+    END IF;
+  END IF;
+
   RETURN NEW;
 END;
 $$;
@@ -1570,10 +1637,18 @@ CREATE TRIGGER prevent_unreplace_device_trigger
 
 -- Notification triggers
 DROP TRIGGER IF EXISTS trigger_notify_new_repair ON repairs;
-CREATE TRIGGER trigger_notify_new_repair
-  AFTER INSERT ON repairs
-  FOR EACH ROW
-  EXECUTE FUNCTION notify_on_new_repair();
+
+DROP TRIGGER IF EXISTS on_new_repair ON repairs;
+CREATE TRIGGER on_new_repair
+ AFTER INSERT ON repairs
+ FOR EACH ROW
+ EXECUTE FUNCTION handle_repair_notifications();
+
+DROP TRIGGER IF EXISTS on_update_repair ON repairs;
+CREATE TRIGGER on_update_repair
+ AFTER UPDATE ON repairs
+ FOR EACH ROW
+ EXECUTE FUNCTION handle_repair_notifications();
 
 DROP TRIGGER IF EXISTS trigger_notify_new_payment ON payments;
 CREATE TRIGGER trigger_notify_new_payment
@@ -1762,16 +1837,11 @@ CREATE POLICY "lab_select" ON lab_repair_prices FOR SELECT TO authenticated USIN
 -- Warranties Policies
 CREATE POLICY "admin_all" ON warranties FOR ALL TO authenticated USING (is_admin()) WITH CHECK (is_admin());
 CREATE POLICY "store_select" ON warranties FOR SELECT TO authenticated USING (is_store() AND store_id = auth.uid());
--- 🔒 SECURITY: Labs can only see warranties for devices they're actively repairing
-CREATE POLICY "lab_select" ON warranties FOR SELECT TO authenticated USING (
-  is_lab() AND EXISTS (
-    SELECT 1 FROM repairs r
-    WHERE r.warranty_id = warranties.id
-      AND r.lab_id = auth.uid()
-      AND r.status IN ('received', 'in_progress', 'completed', 'replacement_requested')
-  )
-);
-CREATE POLICY "store_insert" ON warranties FOR INSERT TO authenticated WITH CHECK (is_store() AND store_id = auth.uid());
+CREATE POLICY "lab_select"
+ON "public"."warranties"
+FOR SELECT
+TO authenticated
+USING (is_lab());
 
 -- Repairs Policies
 CREATE POLICY "admin_all" ON repairs FOR ALL TO authenticated USING (is_admin()) WITH CHECK (is_admin());
@@ -1831,6 +1901,10 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO authenticated;
 -- Authenticated users can execute RPC functions (SECURITY DEFINER protects them)
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO authenticated;
 
+-- Grant execute permission to supabase_auth_admin for the auth hook
+GRANT EXECUTE ON FUNCTION public.custom_access_token_hook TO supabase_auth_admin;
+
+
 -- Revoke execute on internal/system functions that should only be called by triggers
 REVOKE EXECUTE ON FUNCTION notify_admins(TEXT, TEXT, TEXT, JSONB, UUID) FROM authenticated;
 REVOKE EXECUTE ON FUNCTION handle_new_user() FROM authenticated;
@@ -1839,11 +1913,12 @@ REVOKE EXECUTE ON FUNCTION validate_repair_cost() FROM authenticated;
 REVOKE EXECUTE ON FUNCTION populate_replacement_customer_details() FROM authenticated;
 REVOKE EXECUTE ON FUNCTION prevent_warranty_date_change() FROM authenticated;
 REVOKE EXECUTE ON FUNCTION prevent_unreplace_device() FROM authenticated;
-REVOKE EXECUTE ON FUNCTION notify_on_new_repair() FROM authenticated;
+REVOKE EXECUTE ON FUNCTION handle_repair_notifications() FROM authenticated;
 REVOKE EXECUTE ON FUNCTION notify_on_new_payment() FROM authenticated;
 REVOKE EXECUTE ON FUNCTION notify_on_replacement_request() FROM authenticated;
 REVOKE EXECUTE ON FUNCTION notify_on_replacement_status_change() FROM authenticated;
 REVOKE EXECUTE ON FUNCTION audit_replacement_request_creation() FROM authenticated;
+REVOKE EXECUTE ON FUNCTION public.custom_access_token_hook FROM authenticated, anon, public;
 
 -- Views: Read-only access for authenticated users
 GRANT SELECT ON devices_imei_lookup TO authenticated;

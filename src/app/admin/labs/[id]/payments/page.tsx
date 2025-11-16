@@ -323,7 +323,7 @@ export default function AdminLabPaymentsPage() {
           <CardContent>
             <div className="text-2xl font-bold text-right text-purple-600">{formatCurrency(thisMonthEarned)}</div>
             <p className="text-xs text-muted-foreground">
-              שילמת החודש
+             עלויות התיקונים החודש
             </p>
           </CardContent>
         </Card>

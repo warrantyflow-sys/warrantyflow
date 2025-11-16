@@ -494,8 +494,16 @@ export default function LabRepairsPage() {
 
       // Auto-fill customer details from warranty (always required)
       if (warrantyData) {
+        setSearchedDevice(data);
         setValue('customer_name', warrantyData.customer_name || '');
         setValue('customer_phone', warrantyData.customer_phone || '');
+      } else {
+        toast({
+          title: 'שגיאת נתונים',
+          description: 'המכשיר נמצא אך פרטי הלקוח המשויכים לאחריות לא אותרו.',
+          variant: 'destructive',
+        });
+        setSearchedDevice(null);
       }
 
     } catch (error) {
@@ -539,7 +547,7 @@ export default function LabRepairsPage() {
         .from('repairs')
         .select('id, status')
         .eq('device_id', searchedDevice.id)
-        .not('status', 'in', '("completed", "cancelled", "replacement_requested")')
+        .not('status', 'in', '(completed,cancelled,replacement_requested)')
         .limit(1)
         .maybeSingle();
 
