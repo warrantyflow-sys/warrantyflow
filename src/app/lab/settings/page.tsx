@@ -3,7 +3,7 @@
 import { SettingsLayout } from '@/components/shared/settings-layout';
 import { ProfileSettingsCard } from '@/components/shared/profile-settings-card';
 import { PasswordSettingsCard } from '@/components/shared/password-settings-card';
-import { LabNotificationsCard } from '@/components/lab/lab-notifications-card';
+import { NotificationPreferencesCard } from '@/components/shared/notification-preferences-card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { User, Lock, Bell } from 'lucide-react';
 
@@ -38,7 +38,7 @@ export default function LabSettingsPage() {
         </TabsContent>
 
         <TabsContent value="notifications" className="mt-6">
-          <LabNotificationsCard />
+          <NotificationPreferencesCard />
         </TabsContent>
       </Tabs>
     </SettingsLayout>

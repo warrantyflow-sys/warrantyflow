@@ -177,17 +177,22 @@ export function NotificationsDropdown() {
       );
     }
 
-    // Fallback for other notification types
-    if (Object.keys(data).length > 0) {
-      return (
-        <div className="bg-muted p-4 rounded-lg space-y-2">
-          <p className="text-sm font-medium">פרטים נוספים:</p>
-          {Object.entries(data).map(([key, value]) => (
-            <p key={key} className="text-sm"><span className="font-medium">{key}:</span> {String(value)}</p>
-          ))}
-        </div>
-      );
-    }
+  // Fallback for other notification types
+  if (Object.keys(data).length > 0) {
+   return (
+    <div className="bg-muted p-4 rounded-lg space-y-2">
+     <p className="text-sm font-medium">פרטים נוספים:</p>
+     <div className="space-y-1 mt-2">
+      {Object.entries(data).map(([key, value]) => (
+       <div key={key} className="flex justify-between text-sm gap-2">
+        <span className="font-medium text-muted-foreground">{key}:</span>
+        <span className="text-right">{String(value)}</span>
+       </div>
+      ))}
+     </div>
+    </div>
+   );
+  }
 
     return null;
   };
