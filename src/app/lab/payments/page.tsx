@@ -148,54 +148,54 @@ export default function LabPaymentsPage() {
       {/* Statistics Cards */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">סה"כ הכנסות מתיקונים</CardTitle>
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
             <TrendingUp className="h-4 w-4 text-green-600" />
+            <CardTitle className="text-sm font-medium">סה"כ הכנסות מתיקונים</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{formatCurrency(totalEarned)}</div>
-            <p className="text-xs text-muted-foreground">
+            <div className="text-2xl font-bold text-right text-green-600">{formatCurrency(totalEarned)}</div>
+            <p className="text-xs text-muted-foreground text-right">
               {completedRepairs.length} תיקונים שהושלמו
             </p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">סה"כ קיבלת</CardTitle>
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
             <ShekelIcon className="h-4 w-4 text-blue-600" />
+            <CardTitle className="text-sm font-medium">סה"כ קיבלת</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{formatCurrency(totalPaid)}</div>
-            <p className="text-xs text-muted-foreground">
+            <div className="text-2xl font-bold text-right text-blue-600">{formatCurrency(totalPaid)}</div>
+            <p className="text-xs text-muted-foreground text-right">
               {payments.length} תשלומים
             </p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">יתרה</CardTitle>
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
             <Wallet className="h-4 w-4 text-orange-600" />
+            <CardTitle className="text-sm font-medium">יתרה</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${balance > 0 ? 'text-orange-600' : balance < 0 ? 'text-green-600' : 'text-gray-600'}`}>
+            <div className={`text-2xl font-bold text-right ${balance > 0 ? 'text-orange-600' : balance < 0 ? 'text-green-600' : 'text-gray-600'}`}>
               {formatCurrency(Math.abs(balance))}
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-muted-foreground text-right">
               {balance > 0 ? 'המנהל חייב לך' : balance < 0 ? 'אתה בפלוס!' : 'מעודכן'}
             </p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">החודש</CardTitle>
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
             <Calendar className="h-4 w-4 text-purple-600" />
+            <CardTitle className="text-sm font-medium">החודש</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-purple-600">{formatCurrency(thisMonthEarned)}</div>
-            <p className="text-xs text-muted-foreground">
+            <div className="text-2xl font-bold text-right text-purple-600">{formatCurrency(thisMonthEarned)}</div>
+            <p className="text-xs text-muted-foreground text-right">
               {lastPaymentDate ? `תשלום אחרון: ${formatDate(lastPaymentDate)}` : 'אין תשלומים'}
             </p>
           </CardContent>

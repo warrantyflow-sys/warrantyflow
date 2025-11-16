@@ -61,7 +61,6 @@ export default function RepairPricingPage() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
-            <ShekelIcon className="h-7 w-7 text-primary" />
             מחירי תיקונים
           </h1>
           <p className="text-muted-foreground mt-1">רשימת סוגי התיקונים והמחירים המאושרים</p>
@@ -72,8 +71,8 @@ export default function RepairPricingPage() {
           disabled={loading}
           className="flex-1 sm:flex-none"
         >
-          <RefreshCw className={cn("h-4 w-4 ms-2", loading && "animate-spin")} />
           רענן
+          <RefreshCw className={cn("h-4 w-4 ms-2", loading && "animate-spin")} />
         </Button>
       </div>
 

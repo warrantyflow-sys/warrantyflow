@@ -84,7 +84,8 @@ export default function RepairsPage() {
           *,
           device:devices(imei, device_model:device_models(model_name)),
           lab:users!repairs_lab_id_fkey(full_name, email),
-          warranty:warranties(customer_name, customer_phone, store:users!warranties_store_id_fkey(full_name, email))
+          warranty:warranties(customer_name, customer_phone, store:users!warranties_store_id_fkey(full_name, email)),
+          repair_type:repair_types(id, name)
         `)
         .order('created_at', { ascending: false });
 
@@ -274,6 +275,7 @@ export default function RepairsPage() {
     );
   };
 
+  // Legacy fault type labels for backwards compatibility
   const getFaultTypeLabel = (type: FaultType) => {
     const labels = {
       screen: 'מסך',
@@ -284,6 +286,19 @@ export default function RepairsPage() {
       other: 'אחר',
     };
     return labels[type] || type;
+  };
+
+  const getRepairTypeDisplay = (repair: any) => {
+    if (repair.repair_type?.name) {
+      return repair.repair_type.name;
+    }
+    if (repair.custom_repair_description) {
+      return repair.custom_repair_description;
+    }
+    if (repair.fault_type) {
+      return getFaultTypeLabel(repair.fault_type);
+    }
+    return 'לא ידוע';
   };
 
   const getUrgencyBadge = (createdAt: string, status: RepairStatus) => {
@@ -507,7 +522,7 @@ export default function RepairsPage() {
               <TableRow>
                 <TableHead>מכשיר</TableHead>
                 <TableHead>לקוח</TableHead>
-                <TableHead>תקלה</TableHead>
+                <TableHead>תיקון</TableHead>
                 <TableHead>מעבדה</TableHead>
                 <TableHead>סטטוס</TableHead>
                 <TableHead>נפתח</TableHead>
@@ -539,7 +554,7 @@ export default function RepairsPage() {
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline">
-                      {getFaultTypeLabel(repair.fault_type)}
+                      {getRepairTypeDisplay(repair)}
                     </Badge>
                   </TableCell>
                   <TableCell>
@@ -678,8 +693,8 @@ export default function RepairsPage() {
                   <p className="text-sm text-muted-foreground">{selectedRepair.customer_phone}</p>
                 </div>
                 <div>
-                  <Label>סוג תקלה</Label>
-                  <p className="font-medium">{getFaultTypeLabel(selectedRepair.fault_type)}</p>
+                  <Label>סוג תיקון</Label>
+                  <p className="font-medium">{getRepairTypeDisplay(selectedRepair)}</p>
                 </div>
                 <div>
                   <Label>סטטוס</Label>

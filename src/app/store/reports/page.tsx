@@ -321,46 +321,46 @@ export default function StoreReportsPage() {
         <>
           {/* Summary Cards */}
           <div className="grid gap-4 md:grid-cols-4">
-            <Card dir="rtl">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">סה"כ אחריות</CardTitle>
-                <Shield className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-right">{reportData.summary.totalWarranties}</div>
-              </CardContent>
-            </Card>
+          <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-blue-500">
+            <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
+              <Shield className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              <CardTitle className="text-sm font-medium">סה"כ אחריות</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-right text-blue-600">{reportData.summary.totalWarranties}</div>
+            </CardContent>
+          </Card>
 
-            <Card dir="rtl">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">אחריות פעילות</CardTitle>
-                <CheckCircle className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-right">{reportData.summary.activeWarranties}</div>
-              </CardContent>
-            </Card>
+          <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-green-500">
+            <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
+              <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
+              <CardTitle className="text-sm font-medium">אחריות פעילות</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-right text-green-600">{reportData.summary.activeWarranties}</div>
+            </CardContent>
+          </Card>
 
-            <Card dir="rtl">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">אחריות שפגו</CardTitle>
-                <AlertCircle className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-right">{reportData.summary.expiredWarranties}</div>
-              </CardContent>
-            </Card>
+          <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-red-500">
+            <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
+              <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+              <CardTitle className="text-sm font-medium">אחריות שפגו</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-right text-red-600">{reportData.summary.expiredWarranties}</div>
+            </CardContent>
+          </Card>
 
-            <Card dir="rtl">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">בקשות החלפה</CardTitle>
-                <RefreshCw className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-right">{reportData.summary.replacements}</div>
-              </CardContent>
-            </Card>
-          </div>
+          <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-orange-500">
+            <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
+              <RefreshCw className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+              <CardTitle className="text-sm font-medium">בקשות החלפה</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-right text-orange-600">{reportData.summary.replacements}</div>
+            </CardContent>
+          </Card>
+        </div>
 
           {/* Monthly Activations */}
           {reportData.summary.monthlyActivations.length > 0 && (

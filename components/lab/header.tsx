@@ -97,18 +97,18 @@ export function LabHeader() {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => router.push('/lab/profile')}>
-                  <span>פרופיל</span>
+                <DropdownMenuItem onClick={() => router.push('/lab/profile')} className="gap-2 justify-end">
                   <User className="ms-2 h-4 w-4" />
+                  <span>פרופיל</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => router.push('/lab/settings')}>
-                  <span>הגדרות</span>
+                <DropdownMenuItem onClick={() => router.push('/lab/settings')} className="gap-2 justify-end">
                   <Settings className="ms-2 h-4 w-4" />
+                  <span>הגדרות</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-red-600" onClick={handleSignOut}>
-                  <span>התנתק</span>
+                <DropdownMenuItem className="text-red-600 gap-2 justify-end" onClick={handleSignOut}>
                   <LogOut className="ms-2 h-4 w-4" />
+                  <span>התנתק</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

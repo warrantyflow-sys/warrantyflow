@@ -543,12 +543,12 @@ export default function StoreDashboard() {
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-green-500 cursor-pointer" onClick={() => setActiveTab('active-warranties')} dir="rtl">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">אחריות פעילות</CardTitle>
+        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-green-500 cursor-pointer" onClick={() => setActiveTab('active-warranties')}>
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
             <div className="h-10 w-10 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center">
               <Shield className="h-5 w-5 text-green-600 dark:text-green-400" />
             </div>
+            <CardTitle className="text-sm font-medium">אחריות פעילות</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-green-600 text-right">{stats.activeWarranties}</div>
@@ -556,12 +556,12 @@ export default function StoreDashboard() {
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-orange-500 cursor-pointer" onClick={() => setActiveTab('replacements')} dir="rtl">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">בקשות החלפה</CardTitle>
+        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-orange-500 cursor-pointer" onClick={() => setActiveTab('replacements')}>
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
             <div className="h-10 w-10 rounded-full bg-orange-100 dark:bg-orange-900 flex items-center justify-center">
               <RefreshCw className="h-5 w-5 text-orange-600 dark:text-orange-400" />
             </div>
+            <CardTitle className="text-sm font-medium">בקשות החלפה</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-orange-600 text-right">{stats.pendingReplacements}</div>
@@ -569,12 +569,12 @@ export default function StoreDashboard() {
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-blue-500 cursor-pointer" onClick={() => router.push('/store/reports')} dir="rtl">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">הפעלות החודש</CardTitle>
+        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-blue-500 cursor-pointer" onClick={() => router.push('/store/reports')}>
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
             <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
               <TrendingUp className="h-5 w-5 text-blue-600 dark:text-blue-400" />
             </div>
+            <CardTitle className="text-sm font-medium">הפעלות החודש</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-blue-600 text-right">{stats.monthlyActivations}</div>
@@ -582,12 +582,12 @@ export default function StoreDashboard() {
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-purple-500 cursor-pointer" onClick={() => router.push('/store/devices')} dir="rtl">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">סה"כ מכשירים</CardTitle>
+        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-purple-500 cursor-pointer" onClick={() => router.push('/store/devices')}>
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
             <div className="h-10 w-10 rounded-full bg-purple-100 dark:bg-purple-900 flex items-center justify-center">
               <Package className="h-5 w-5 text-purple-600 dark:text-purple-400" />
             </div>
+            <CardTitle className="text-sm font-medium">סה"כ מכשירים</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-purple-600 text-right">{stats.totalDevices}</div>

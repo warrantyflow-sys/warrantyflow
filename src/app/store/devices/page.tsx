@@ -297,52 +297,52 @@ export default function StoreDevicesPage() {
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-4">
-        <Card dir="rtl">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-blue-500">
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
+            <Package className="h-4 w-4 text-blue-600 dark:text-blue-400" />
             <CardTitle className="text-sm font-medium">סה"כ מכשירים</CardTitle>
-            <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-right">{stats.total}</div>
+            <div className="text-2xl font-bold text-right text-blue-600">{stats.total}</div>
             <p className="text-xs text-muted-foreground text-right">
               מכשירים עם אחריות
             </p>
           </CardContent>
         </Card>
 
-        <Card dir="rtl">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-green-500">
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
+            <Shield className="h-4 w-4 text-green-600 dark:text-green-400" />
             <CardTitle className="text-sm font-medium">אחריות פעילה</CardTitle>
-            <Shield className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-right">{stats.active}</div>
+            <div className="text-2xl font-bold text-right text-green-600">{stats.active}</div>
             <p className="text-xs text-muted-foreground text-right">
               בתוקף
             </p>
           </CardContent>
         </Card>
 
-        <Card dir="rtl">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-red-500">
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
+            <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
             <CardTitle className="text-sm font-medium">פג תוקף</CardTitle>
-            <XCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-right">{stats.expired}</div>
+            <div className="text-2xl font-bold text-right text-red-600">{stats.expired}</div>
             <p className="text-xs text-muted-foreground text-right">
               אחריות שפגה
             </p>
           </CardContent>
         </Card>
 
-        <Card dir="rtl">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-orange-500">
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
+            <Wrench className="h-4 w-4 text-orange-600 dark:text-orange-400" />
             <CardTitle className="text-sm font-medium">בתיקון</CardTitle>
-            <Wrench className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-right">{stats.inRepair}</div>
+            <div className="text-2xl font-bold text-right text-orange-600">{stats.inRepair}</div>
             <p className="text-xs text-muted-foreground text-right">
               במעבדה כרגע
             </p>

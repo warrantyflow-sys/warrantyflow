@@ -216,7 +216,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6 2xl:grid-cols-6">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6">
         <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-blue-500">
           <CardHeader className="flex flex-row-reverse items-center justify-between pb-2">
             <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">

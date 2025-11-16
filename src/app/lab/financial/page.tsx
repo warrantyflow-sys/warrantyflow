@@ -41,6 +41,7 @@ type CompletedRepair = Tables<'repairs'> & {
   warranty?: (Tables<'warranties'> & {
     store?: Pick<Tables<'users'>, 'full_name' | 'email'> | null;
   }) | null;
+  repair_type?: Pick<Tables<'repair_types'>, 'id' | 'name'> | null;
 };
 
 type LabPayment = Tables<'payments'>;
@@ -51,15 +52,13 @@ interface MonthlyReport {
   repairs: CompletedRepair[];
   totalRepairs: number;
   totalRevenue: number;
-  byFaultType: Record<string, { count: number; revenue: number }>;
+  byRepairType: Record<string, { count: number; revenue: number }>;
   payments: LabPayment[];
 }
 
 export default function LabFinancialReportPage() {
   const [monthlyReports, setMonthlyReports] = useState<MonthlyReport[]>([]);
-  const [selectedMonth, setSelectedMonth] = useState<string>(
-    new Date().toISOString().substring(0, 7)
-  );
+  const [selectedMonth, setSelectedMonth] = useState<string>('');
   const [labData, setLabData] = useState<Tables<'users'> | null>(null);
   const [totalStats, setTotalStats] = useState({
     totalRepairs: 0,
@@ -72,6 +71,7 @@ export default function LabFinancialReportPage() {
   const supabase = createClient();
   const { toast } = useToast();
 
+  // Legacy fault type labels for backwards compatibility
   const faultTypeLabels: Record<string, string> = {
     screen: 'מסך',
     charging_port: 'שקע טעינה',
@@ -79,6 +79,16 @@ export default function LabFinancialReportPage() {
     speaker: 'רמקול',
     board: 'לוח אם',
     other: 'אחר',
+  };
+
+  const getRepairTypeName = (repair: CompletedRepair): string => {
+    if (repair.repair_type?.name) {
+      return repair.repair_type.name;
+    }
+    if (repair.fault_type) {
+      return faultTypeLabels[repair.fault_type] || repair.fault_type;
+    }
+    return 'אחר';
   };
 
   const fetchData = useCallback(async () => {
@@ -108,7 +118,8 @@ export default function LabFinancialReportPage() {
           warranty:warranties(
             customer_name,
             store:users!warranties_store_id_fkey(full_name, email)
-          )
+          ),
+          repair_type:repair_types(id, name)
         `)
         .eq('lab_id', labId)
         .eq('status', 'completed')
@@ -136,22 +147,22 @@ export default function LabFinancialReportPage() {
             repairs: [],
             totalRepairs: 0,
             totalRevenue: 0,
-            byFaultType: {},
+            byRepairType: {},
             payments: []
           };
         }
-        
+
         reportsByMonth[month].repairs.push(repair);
         reportsByMonth[month].totalRepairs++;
         reportsByMonth[month].totalRevenue += repair.cost || 0;
-        
-        // Group by fault type
-        const faultType = repair.fault_type || 'other';
-        if (!reportsByMonth[month].byFaultType[faultType]) {
-          reportsByMonth[month].byFaultType[faultType] = { count: 0, revenue: 0 };
+
+        // Group by repair type
+        const repairTypeName = getRepairTypeName(repair);
+        if (!reportsByMonth[month].byRepairType[repairTypeName]) {
+          reportsByMonth[month].byRepairType[repairTypeName] = { count: 0, revenue: 0 };
         }
-        reportsByMonth[month].byFaultType[faultType].count++;
-        reportsByMonth[month].byFaultType[faultType].revenue += repair.cost || 0;
+        reportsByMonth[month].byRepairType[repairTypeName].count++;
+        reportsByMonth[month].byRepairType[repairTypeName].revenue += repair.cost || 0;
       });
 
       // Add payments to months
@@ -169,6 +180,11 @@ export default function LabFinancialReportPage() {
       });
 
       setMonthlyReports(sortedReports);
+
+      if (sortedReports.length > 0) {
+        const mostRecentMonth = `${sortedReports[0].year}-${String(sortedReports[0].month).padStart(2, '0')}`;
+        setSelectedMonth(mostRecentMonth);
+      }
 
       // Calculate totals
       const totalRevenue = (repairs || []).reduce((sum, r) => sum + (r.cost || 0), 0);
@@ -212,20 +228,20 @@ export default function LabFinancialReportPage() {
       ['תיקונים', 'הכנסות'],
       [selectedReport.totalRepairs, formatCurrency(selectedReport.totalRevenue)],
       [''],
-      ['פירוט לפי סוג תקלה'],
-      ['סוג תקלה', 'כמות', 'הכנסה'],
-      ...Object.entries(selectedReport.byFaultType).map(([type, data]) => [
-        faultTypeLabels[type] || type,
+      ['פירוט לפי סוג תיקון'],
+      ['סוג תיקון', 'כמות', 'הכנסה'],
+      ...Object.entries(selectedReport.byRepairType).map(([type, data]) => [
+        type,
         data.count,
         formatCurrency(data.revenue)
       ]),
       [''],
       ['פירוט תיקונים'],
-      ['תאריך', 'דגם', 'תקלה', 'מחיר', 'חנות'],
+      ['תאריך', 'דגם', 'תיקון', 'מחיר', 'חנות'],
       ...selectedReport.repairs.map(repair => [
         repair.completed_at ? formatDate(repair.completed_at) : formatDate(repair.created_at),
         repair.device?.device_models?.model_name || 'לא ידוע',
-        faultTypeLabels[repair.fault_type || 'other'] || repair.fault_type || 'אחר',
+        getRepairTypeName(repair),
         formatCurrency(repair.cost || 0),
         repair.warranty?.store?.full_name || repair.warranty?.store?.email || ''
       ])
@@ -262,7 +278,7 @@ export default function LabFinancialReportPage() {
         <div className="flex gap-4">
           <Select value={selectedMonth} onValueChange={setSelectedMonth}>
             <SelectTrigger className="w-[200px]">
-              <SelectValue />
+              <SelectValue placeholder="בחר חודש..." />
             </SelectTrigger>
             <SelectContent>
               {monthlyReports.map((report) => {
@@ -285,46 +301,46 @@ export default function LabFinancialReportPage() {
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">סה"כ תיקונים</CardTitle>
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
             <Wrench className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">סה"כ תיקונים</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalStats.totalRepairs}</div>
-            <p className="text-xs text-muted-foreground">תיקונים שהושלמו</p>
+            <div className="text-2xl font-bold text-right">{totalStats.totalRepairs}</div>
+            <p className="text-xs text-muted-foreground text-right">תיקונים שהושלמו</p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">סה"כ הכנסות</CardTitle>
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
             <TrendingUp className="h-4 w-4 text-green-600" />
+            <CardTitle className="text-sm font-medium">סה"כ הכנסות</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(totalStats.totalRevenue)}</div>
-            <p className="text-xs text-muted-foreground">הכנסות מתיקונים</p>
+            <div className="text-2xl font-bold text-right">{formatCurrency(totalStats.totalRevenue)}</div>
+            <p className="text-xs text-muted-foreground text-right">הכנסות מתיקונים</p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">התקבל</CardTitle>
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
             <CheckCircle className="h-4 w-4 text-blue-600" />
+            <CardTitle className="text-sm font-medium">התקבל</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(totalStats.totalPaid)}</div>
-            <p className="text-xs text-muted-foreground">תשלומים שהתקבלו</p>
+            <div className="text-2xl font-bold text-right">{formatCurrency(totalStats.totalPaid)}</div>
+            <p className="text-xs text-muted-foreground text-right">תשלומים שהתקבלו</p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">יתרה</CardTitle>
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
             <Clock className="h-4 w-4 text-orange-600" />
+            <CardTitle className="text-sm font-medium">יתרה</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(totalStats.balance)}</div>
-            <p className="text-xs text-muted-foreground">מאזן תשלומים</p>
+            <div className="text-2xl font-bold text-right">{formatCurrency(totalStats.balance)}</div>
+            <p className="text-xs text-muted-foreground text-right">מאזן תשלומים</p>
           </CardContent>
         </Card>
       </div>
@@ -341,22 +357,22 @@ export default function LabFinancialReportPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {/* By Fault Type */}
+                {/* By Repair Type */}
                 <div>
-                  <h4 className="font-medium mb-2">פילוח לפי סוג תקלה</h4>
+                  <h4 className="font-medium mb-2">פילוח לפי סוג תיקון</h4>
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="text-right">סוג תקלה</TableHead>
+                        <TableHead className="text-right">סוג תיקון</TableHead>
                         <TableHead className="text-right">כמות</TableHead>
                         <TableHead className="text-right">מחיר יחידה</TableHead>
                         <TableHead className="text-right">סה"כ</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {Object.entries(currentMonthReport.byFaultType).map(([type, data]) => (
+                      {Object.entries(currentMonthReport.byRepairType).map(([type, data]) => (
                         <TableRow key={type}>
-                          <TableCell>{faultTypeLabels[type] || type}</TableCell>
+                          <TableCell>{type}</TableCell>
                           <TableCell>{data.count}</TableCell>
                       <TableCell>
                         {formatCurrency(data.count > 0 ? data.revenue / data.count : 0)}
@@ -417,7 +433,7 @@ export default function LabFinancialReportPage() {
                   <TableRow>
                     <TableHead className="text-right">תאריך</TableHead>
                     <TableHead className="text-right">מכשיר</TableHead>
-                    <TableHead className="text-right">תקלה</TableHead>
+                    <TableHead className="text-right">תיקון</TableHead>
                     <TableHead className="text-right">לקוח</TableHead>
                     <TableHead className="text-right">חנות</TableHead>
                     <TableHead className="text-right">מחיר</TableHead>
@@ -433,7 +449,7 @@ export default function LabFinancialReportPage() {
                           <div className="text-xs text-muted-foreground">{repair.device?.imei}</div>
                         </div>
                       </TableCell>
-                      <TableCell>{faultTypeLabels[repair.fault_type || 'other']}</TableCell>
+                      <TableCell>{getRepairTypeName(repair)}</TableCell>
                       <TableCell>{repair.warranty?.customer_name || repair.customer_name}</TableCell>
                       <TableCell>{repair.warranty?.store?.full_name || repair.warranty?.store?.email || '-'}</TableCell>
                       <TableCell className="font-medium">{formatCurrency(repair.cost || 0)}</TableCell>

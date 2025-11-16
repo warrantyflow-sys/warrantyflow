@@ -384,58 +384,58 @@ export default function StoreReplacementsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">בקשות החלפה</h1>
         <Button onClick={() => setIsNewRequestDialogOpen(true)}>
-          <Plus className="ms-2 h-4 w-4" />
           בקשה חדשה
+          <Plus className="ms-2 h-4 w-4" />
         </Button>
       </div>
 
-      {/* Stats */}
+      {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-blue-500">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">סה"כ בקשות</CardTitle>
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
             <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
               <RefreshCw className="h-5 w-5 text-blue-600 dark:text-blue-400" />
             </div>
+            <CardTitle className="text-sm font-medium">סה"כ בקשות</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{stats.total}</div>
+            <div className="text-2xl font-bold text-blue-600 text-right">{stats.total}</div>
           </CardContent>
         </Card>
 
         <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-orange-500">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">ממתינות</CardTitle>
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
             <div className="h-10 w-10 rounded-full bg-orange-100 dark:bg-orange-900 flex items-center justify-center">
               <Clock className="h-5 w-5 text-orange-600 dark:text-orange-400" />
             </div>
+            <CardTitle className="text-sm font-medium">ממתינות</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-orange-600">{stats.pending}</div>
+            <div className="text-2xl font-bold text-orange-600 text-right">{stats.pending}</div>
           </CardContent>
         </Card>
 
         <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-green-500">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">אושרו</CardTitle>
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
             <div className="h-10 w-10 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center">
               <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
             </div>
+            <CardTitle className="text-sm font-medium">אושרו</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{stats.approved}</div>
+            <div className="text-2xl font-bold text-green-600 text-right">{stats.approved}</div>
           </CardContent>
         </Card>
 
         <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-red-500">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">נדחו</CardTitle>
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
             <div className="h-10 w-10 rounded-full bg-red-100 dark:bg-red-900 flex items-center justify-center">
               <XCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
             </div>
+            <CardTitle className="text-sm font-medium">נדחו</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">{stats.rejected}</div>
+            <div className="text-2xl font-bold text-red-600 text-right">{stats.rejected}</div>
           </CardContent>
         </Card>
       </div>

@@ -889,15 +889,15 @@ export default function LabRepairsPage() {
             disabled={isLoading}
             className="flex-1 sm:flex-none"
           >
-            <RefreshCw className={cn("h-4 w-4 me-2", isLoading && "animate-spin")} />
             רענן
+            <RefreshCw className={cn("h-4 w-4 me-2", isLoading && "animate-spin")} />
           </Button>
           <Button
             onClick={() => setIsNewRepairDialogOpen(true)}
             className="flex-1 sm:flex-none"
           >
-            <Plus className="h-4 w-4 me-2" />
             תיקון חדש
+            <Plus className="h-4 w-4 ms-2" />
           </Button>
         </div>
       </div>
@@ -1106,8 +1106,8 @@ export default function LabRepairsPage() {
               </p>
               {!searchQuery && filterStatus === 'all' && (
                 <Button onClick={() => setIsNewRepairDialogOpen(true)}>
-                  <Plus className="h-4 w-4 me-2" />
                   תיקון חדש
+                  <Plus className="h-4 w-4 ms-2" />
                 </Button>
               )}
             </div>
@@ -1184,8 +1184,8 @@ export default function LabRepairsPage() {
         </CardContent>
       </Card>
 
-      {/* New Repair Dialog */}
-      <Dialog open={isNewRepairDialogOpen} onOpenChange={setIsNewRepairDialogOpen}>
+{/* New Repair Dialog */}
+<Dialog open={isNewRepairDialogOpen} onOpenChange={setIsNewRepairDialogOpen}>
         <DialogContent dir="rtl" className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>תיקון חדש</DialogTitle>
@@ -1222,66 +1222,63 @@ export default function LabRepairsPage() {
                 </div>
               )}
             </div>
+            
+            <div>
+              <Label htmlFor="customer_name">שם הלקוח *</Label>
+              <Input
+                id="customer_name"
+                {...register('customer_name')}
+                placeholder="פרטי הלקוח יוזנו אוטומטית"
+                className={errors.customer_name ? 'border-red-500' : ''}
+                readOnly
+              />
+              {errors.customer_name && (
+                <p className="text-sm text-red-500 mt-1">{errors.customer_name.message}</p>
+              )}
+            </div>
 
-            {searchedDevice && (
-              <>
-                <div>
-                  <Label htmlFor="customer_name">שם הלקוח *</Label>
-                  <Input
-                    id="customer_name"
-                    {...register('customer_name')}
-                    placeholder="פרטי הלקוח יוזנו אוטומטית"
-                    className={errors.customer_name ? 'border-red-500' : ''}
-                    readOnly
-                  />
-                  {errors.customer_name && (
-                    <p className="text-sm text-red-500 mt-1">{errors.customer_name.message}</p>
-                  )}
-                </div>
+            <div>
+              <Label htmlFor="customer_phone">טלפון הלקוח *</Label>
+              <Input
+                id="customer_phone"
+                {...register('customer_phone')}
+                placeholder="פרטי הלקוח יוזנו אוטומטית"
+                className={errors.customer_phone ? 'border-red-500' : ''}
+                readOnly
+              />
+              {errors.customer_phone && (
+                <p className="text-sm text-red-500 mt-1">{errors.customer_phone.message}</p>
+              )}
+            </div>
 
-                <div>
-                  <Label htmlFor="customer_phone">טלפון הלקוח *</Label>
-                  <Input
-                    id="customer_phone"
-                    {...register('customer_phone')}
-                    placeholder="פרטי הלקוח יוזנו אוטומטית"
-                    className={errors.customer_phone ? 'border-red-500' : ''}
-                    readOnly
-                  />
-                  {errors.customer_phone && (
-                    <p className="text-sm text-red-500 mt-1">{errors.customer_phone.message}</p>
-                  )}
-                </div>
+            <div>
+              <Label htmlFor="fault_description">תיאור התקלה *</Label>
+              <Textarea
+                id="fault_description"
+                {...register('fault_description')}
+                placeholder="תאר את התקלה שדווחה על ידי הלקוח..."
+                rows={4}
+                className={errors.fault_description ? 'border-red-500' : ''}
+                disabled={!searchedDevice}
+              />
+              {errors.fault_description && (
+                <p className="text-sm text-red-500 mt-1">{errors.fault_description.message}</p>
+              )}
+              <p className="text-xs text-muted-foreground mt-1">
+                * סוג התיקון והמחיר יוגדרו מאוחר יותר בעת עדכון הסטטוס
+              </p>
+            </div>
 
-                <div>
-                  <Label htmlFor="fault_description">תיאור התקלה *</Label>
-                  <Textarea
-                    id="fault_description"
-                    {...register('fault_description')}
-                    placeholder="תאר את התקלה שדווחה על ידי הלקוח..."
-                    rows={4}
-                    className={errors.fault_description ? 'border-red-500' : ''}
-                  />
-                  {errors.fault_description && (
-                    <p className="text-sm text-red-500 mt-1">{errors.fault_description.message}</p>
-                  )}
-                  <p className="text-xs text-muted-foreground mt-1">
-                    * סוג התיקון והמחיר יוגדרו מאוחר יותר בעת עדכון הסטטוס
-                  </p>
-                </div>
-
-
-
-                <div>
-                  <Label htmlFor="notes">הערות</Label>
-                  <Textarea
-                    id="notes"
-                    {...register('notes')}
-                    rows={2}
-                  />
-                </div>
-              </>
-            )}
+            <div>
+              <Label htmlFor="notes">הערות</Label>
+              <Textarea
+                id="notes"
+                {...register('notes')}
+                rows={2}
+                disabled={!searchedDevice}
+              />
+            </div>
+            
 
             <DialogFooter>
               <Button

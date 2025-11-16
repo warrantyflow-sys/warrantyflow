@@ -40,17 +40,35 @@ type FaultType = 'screen' | 'charging_port' | 'flash' | 'speaker' | 'board' | 'o
 interface RepairReport {
   repairs: any[];
   byLab: Record<string, { count: number; revenue: number }>;
-  byFaultType: Record<string, { count: number; revenue: number }>;
+  byRepairType: Record<string, { count: number; revenue: number }>;
   byMonth: Record<string, { count: number; revenue: number }>;
   totalRepairs: number;
   totalRevenue: number;
 }
 
+// Legacy fault type labels for backwards compatibility
+const faultTypeLabels: Record<FaultType, string> = {
+  screen: 'מסך',
+  charging_port: 'שקע טעינה',
+  flash: 'פנס',
+  speaker: 'רמקול',
+  board: 'לוח אם',
+  other: 'אחר',
+};
+
+const statusLabels: Record<string, string> = {
+  received: 'התקבל',
+  in_progress: 'בטיפול',
+  completed: 'הושלם',
+  replacement_requested: 'בקשת החלפה',
+  cancelled: 'בוטל',
+};
+
 export default function AdminRepairsReportPage() {
   const [report, setReport] = useState<RepairReport>({
     repairs: [],
     byLab: {},
-    byFaultType: {},
+    byRepairType: {},
     byMonth: {},
     totalRepairs: 0,
     totalRevenue: 0
@@ -63,37 +81,23 @@ export default function AdminRepairsReportPage() {
     warranty?: (Tables<'warranties'> & {
       store?: Pick<Tables<'users'>, 'full_name' | 'email'> | null;
     }) | null;
+    repair_type?: Pick<Tables<'repair_types'>, 'id' | 'name'> | null;
   };
 
   type LabRow = Pick<Tables<'users'>, 'id' | 'full_name' | 'email' | 'phone'>;
+  type RepairType = Pick<Tables<'repair_types'>, 'id' | 'name' | 'is_active'>;
 
   const [allRepairs, setAllRepairs] = useState<AdminRepair[]>([]);
   const [labs, setLabs] = useState<LabRow[]>([]);
+  const [repairTypes, setRepairTypes] = useState<RepairType[]>([]);
   const [filterLab, setFilterLab] = useState<string>('all');
-  const [filterFaultType, setFilterFaultType] = useState<string>('all');
+  const [filterRepairType, setFilterRepairType] = useState<string>('all');
   const [filterMonth, setFilterMonth] = useState<string>('all');
   const [availableMonths, setAvailableMonths] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const supabase = createClient();
   const { toast } = useToast();
-
-  const faultTypeLabels: Record<FaultType, string> = {
-    screen: 'מסך',
-    charging_port: 'שקע טעינה',
-    flash: 'פנס',
-    speaker: 'רמקול',
-    board: 'לוח אם',
-    other: 'אחר',
-  };
-
-  const statusLabels: Record<string, string> = {
-    received: 'התקבל',
-    in_progress: 'בטיפול',
-    completed: 'הושלם',
-    replacement_requested: 'בקשת החלפה',
-    cancelled: 'בוטל',
-  };
 
   const fetchData = useCallback(async () => {
     try {
@@ -109,6 +113,16 @@ export default function AdminRepairsReportPage() {
 
       setLabs(labsData || []);
 
+      // Fetch all repair types
+      const { data: repairTypesData } = await supabase
+        .from('repair_types')
+        .select('id, name, is_active')
+        .eq('is_active', true)
+        .order('name')
+        .returns<RepairType[]>();
+
+      setRepairTypes(repairTypesData || []);
+
       // Fetch all repairs with related data
       const { data: repairsData } = await supabase
         .from('repairs')
@@ -120,7 +134,8 @@ export default function AdminRepairsReportPage() {
             customer_name,
             customer_phone,
             store:users!warranties_store_id_fkey(full_name, email)
-          )
+          ),
+          repair_type:repair_types(id, name)
         `)
         .order('created_at', { ascending: false })
         .returns<AdminRepair[]>();
@@ -154,8 +169,8 @@ export default function AdminRepairsReportPage() {
     if (filterLab !== 'all') {
       filteredRepairs = filteredRepairs.filter(r => r.lab_id === filterLab);
     }
-    if (filterFaultType !== 'all') {
-      filteredRepairs = filteredRepairs.filter(r => r.fault_type === filterFaultType);
+    if (filterRepairType !== 'all') {
+      filteredRepairs = filteredRepairs.filter(r => r.repair_type_id === filterRepairType);
     }
     if (filterMonth !== 'all') {
       filteredRepairs = filteredRepairs.filter(r => r.created_at.startsWith(filterMonth));
@@ -163,7 +178,7 @@ export default function AdminRepairsReportPage() {
 
     // Process statistics
     const byLab: Record<string, { count: number; revenue: number }> = {};
-    const byFaultType: Record<string, { count: number; revenue: number }> = {};
+    const byRepairType: Record<string, { count: number; revenue: number }> = {};
     const byMonth: Record<string, { count: number; revenue: number }> = {};
     let totalRevenue = 0;
 
@@ -179,13 +194,13 @@ export default function AdminRepairsReportPage() {
       byLab[labName].count++;
       byLab[labName].revenue += revenue;
 
-      // By Fault Type
-      const faultType = repair.fault_type || 'other';
-      if (!byFaultType[faultType]) {
-        byFaultType[faultType] = { count: 0, revenue: 0 };
+      // By Repair Type
+      const repairTypeName = repair.repair_type?.name || faultTypeLabels[repair.fault_type as FaultType] || 'לא ידוע';
+      if (!byRepairType[repairTypeName]) {
+        byRepairType[repairTypeName] = { count: 0, revenue: 0 };
       }
-      byFaultType[faultType].count++;
-      byFaultType[faultType].revenue += revenue;
+      byRepairType[repairTypeName].count++;
+      byRepairType[repairTypeName].revenue += revenue;
 
       // By Month
       const month = repair.created_at.substring(0, 7);
@@ -199,12 +214,12 @@ export default function AdminRepairsReportPage() {
     setReport({
       repairs: filteredRepairs,
       byLab,
-      byFaultType,
+      byRepairType,
       byMonth,
       totalRepairs: filteredRepairs.length,
       totalRevenue
     });
-  }, [allRepairs, filterLab, filterFaultType, filterMonth]);
+  }, [allRepairs, filterLab, filterRepairType, filterMonth]);
 
   useEffect(() => {
     fetchData();
@@ -217,13 +232,15 @@ export default function AdminRepairsReportPage() {
   const exportToCSV = () => {
     const selectedLab = filterLab === 'all' ? null : labs.find(l => l.id === filterLab);
     const labLabel = filterLab === 'all' ? 'הכל' : (selectedLab?.full_name || selectedLab?.email || '');
+    const selectedRepairType = filterRepairType === 'all' ? null : repairTypes.find(rt => rt.id === filterRepairType);
+    const repairTypeLabel = filterRepairType === 'all' ? 'הכל' : (selectedRepairType?.name || '');
     const csvContent = [
       ['דוח תיקונים מפורט'],
       ['תאריך הפקה: ' + new Date().toLocaleDateString('he-IL')],
       [''],
       ['סינונים:'],
       ['מעבדה: ' + labLabel],
-      ['סוג תקלה: ' + (filterFaultType === 'all' ? 'הכל' : faultTypeLabels[filterFaultType as FaultType])],
+      ['סוג תיקון: ' + repairTypeLabel],
       ['חודש: ' + (filterMonth === 'all' ? 'הכל' : filterMonth)],
       [''],
       ['סיכום כללי'],
@@ -241,12 +258,12 @@ export default function AdminRepairsReportPage() {
           formatCurrency(data.revenue / data.count)
         ]),
       [''],
-      ['פילוח לפי סוג תקלה'],
-      ['סוג תקלה', 'כמות', 'הכנסה', 'ממוצע'],
-      ...Object.entries(report.byFaultType)
+      ['פילוח לפי סוג תיקון'],
+      ['סוג תיקון', 'כמות', 'הכנסה', 'ממוצע'],
+      ...Object.entries(report.byRepairType)
         .sort((a, b) => b[1].count - a[1].count)
         .map(([type, data]) => [
-          faultTypeLabels[type as FaultType] || type,
+          type,
           data.count,
           formatCurrency(data.revenue),
           formatCurrency(data.revenue / data.count)
@@ -264,11 +281,11 @@ export default function AdminRepairsReportPage() {
         ]),
       [''],
       ['פירוט תיקונים'],
-      ['תאריך', 'מכשיר', 'תקלה', 'מעבדה', 'חנות', 'סטטוס', 'עלות'],
+      ['תאריך', 'מכשיר', 'תיקון', 'מעבדה', 'חנות', 'סטטוס', 'עלות'],
       ...report.repairs.map(repair => [
         formatDate(repair.created_at),
         `${repair.device?.device_models?.model_name || 'לא ידוע'} - ${repair.device?.imei}`,
-        faultTypeLabels[repair.fault_type as FaultType],
+        repair.repair_type?.name || faultTypeLabels[repair.fault_type as FaultType] || 'לא ידוע',
         repair.lab?.full_name || repair.lab?.email || '',
         repair.warranty?.store?.full_name || repair.warranty?.store?.email || '',
         statusLabels[repair.status] || repair.status,
@@ -320,19 +337,19 @@ export default function AdminRepairsReportPage() {
           <div className="flex items-center gap-2">
             <CardTitle>סינונים</CardTitle>
             <Filter className="h-5 w-5" />
-            {(filterLab !== 'all' || filterFaultType !== 'all' || filterMonth !== 'all') && (
+            {(filterLab !== 'all' || filterRepairType !== 'all' || filterMonth !== 'all') && (
               <Badge variant="secondary" className="mr-2">
-                {[filterLab !== 'all', filterFaultType !== 'all', filterMonth !== 'all'].filter(Boolean).length} פעילים
+                {[filterLab !== 'all', filterRepairType !== 'all', filterMonth !== 'all'].filter(Boolean).length} פעילים
               </Badge>
             )}
           </div>
-          {(filterLab !== 'all' || filterFaultType !== 'all' || filterMonth !== 'all') && (
+          {(filterLab !== 'all' || filterRepairType !== 'all' || filterMonth !== 'all') && (
             <Button
               variant="ghost"
               size="sm"
               onClick={() => {
                 setFilterLab('all');
-                setFilterFaultType('all');
+                setFilterRepairType('all');
                 setFilterMonth('all');
               }}
             >
@@ -360,16 +377,16 @@ export default function AdminRepairsReportPage() {
             </div>
 
             <div>
-              <label className="text-sm font-medium">סוג תקלה</label>
-              <Select value={filterFaultType} onValueChange={setFilterFaultType}>
+              <label className="text-sm font-medium">סוג תיקון</label>
+              <Select value={filterRepairType} onValueChange={setFilterRepairType}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">כל סוגי התקלות</SelectItem>
-                  {Object.entries(faultTypeLabels).map(([value, label]) => (
-                    <SelectItem key={value} value={value}>
-                      {label}
+                  <SelectItem value="all">כל סוגי התיקונים</SelectItem>
+                  {repairTypes.map((repairType) => (
+                    <SelectItem key={repairType.id} value={repairType.id}>
+                      {repairType.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -482,36 +499,36 @@ export default function AdminRepairsReportPage() {
           </CardContent>
         </Card>
 
-        {/* By Fault Type */}
+        {/* By Repair Type */}
         <Card>
           <CardHeader>
-            <CardTitle>פילוח לפי סוג תקלה</CardTitle>
-            <CardDescription>התפלגות סוגי התקלות</CardDescription>
+            <CardTitle>פילוח לפי סוג תיקון</CardTitle>
+            <CardDescription>התפלגות סוגי התיקונים</CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-right">סוג תקלה</TableHead>
+                  <TableHead className="text-right">סוג תיקון</TableHead>
                   <TableHead className="text-right">תיקונים</TableHead>
                   <TableHead className="text-right">הכנסה</TableHead>
                   <TableHead className="text-right">ממוצע</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {Object.entries(report.byFaultType)
+                {Object.entries(report.byRepairType)
                   .sort((a, b) => b[1].count - a[1].count)
                   .map(([type, data]) => (
                     <TableRow key={type}>
                       <TableCell className="font-medium">
-                        {faultTypeLabels[type as FaultType] || type}
+                        {type}
                       </TableCell>
                       <TableCell>{data.count}</TableCell>
                       <TableCell>{formatCurrency(data.revenue)}</TableCell>
                       <TableCell>{formatCurrency(data.revenue / data.count)}</TableCell>
                     </TableRow>
                   ))}
-                {Object.keys(report.byFaultType).length === 0 && (
+                {Object.keys(report.byRepairType).length === 0 && (
                   <TableRow>
                     <TableCell colSpan={4} className="text-center text-muted-foreground">
                       אין נתונים להצגה
@@ -574,7 +591,7 @@ export default function AdminRepairsReportPage() {
               <Wrench className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <h3 className="text-lg font-semibold mb-2">אין תיקונים להצגה</h3>
               <p className="text-muted-foreground">
-                {(filterLab !== 'all' || filterFaultType !== 'all' || filterMonth !== 'all')
+                {(filterLab !== 'all' || filterRepairType !== 'all' || filterMonth !== 'all')
                   ? 'נסה לשנות את הסינונים כדי לראות תוצאות'
                   : 'עדיין לא בוצעו תיקונים במערכת'}
               </p>
@@ -586,7 +603,7 @@ export default function AdminRepairsReportPage() {
                   <TableRow>
                     <TableHead className="text-right">תאריך</TableHead>
                     <TableHead className="text-right">מכשיר</TableHead>
-                    <TableHead className="text-right">תקלה</TableHead>
+                    <TableHead className="text-right">תיקון</TableHead>
                     <TableHead className="text-right">מעבדה</TableHead>
                     <TableHead className="text-right">חנות</TableHead>
                     <TableHead className="text-right">סטטוס</TableHead>
@@ -603,7 +620,7 @@ export default function AdminRepairsReportPage() {
                           <div className="text-xs text-muted-foreground">{repair.device?.imei}</div>
                         </div>
                       </TableCell>
-                      <TableCell>{faultTypeLabels[repair.fault_type as FaultType]}</TableCell>
+                      <TableCell>{repair.repair_type?.name || faultTypeLabels[repair.fault_type as FaultType] || 'לא ידוע'}</TableCell>
                       <TableCell>{repair.lab?.full_name || repair.lab?.email || '-'}</TableCell>
                       <TableCell>{repair.warranty?.store?.full_name || repair.warranty?.store?.email || '-'}</TableCell>
                       <TableCell>

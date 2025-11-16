@@ -60,7 +60,7 @@ interface ReportData {
   };
   repairs?: {
     byStatus: Record<string, number>;
-    byFaultType: Record<string, number>;
+    byRepairType: Record<string, number>;
     byLab: Record<string, { count: number; revenue: number }>;
     monthlyRepairs: { month: string; count: number; revenue: number }[];
   };
@@ -81,7 +81,7 @@ interface ReportData {
   performance?: {
     topStores: { name: string; warranties: number; revenue: number }[];
     topLabs: { name: string; repairs: number; revenue: number }[];
-    topFaultTypes: { type: string; count: number; percentage: number }[];
+    topRepairTypes: { type: string; count: number; percentage: number }[];
     avgWarrantyDuration: number;
   };
 }
@@ -270,30 +270,49 @@ export default function AdminReportsPage() {
         cost,
         created_at,
         completed_at,
-        lab:users!repairs_lab_id_fkey(id, full_name, email)
+        lab:users!repairs_lab_id_fkey(id, full_name, email),
+        repair_type:repair_types(id, name)
       `)
       .gte('created_at', startDate)
       .lte('created_at', endDate);
 
     const repairsList = (repairs ?? []) as Array<{
       status: string;
-      fault_type: string;
+      fault_type: string | null;
       cost: number | null;
       created_at: string;
       completed_at: string | null;
       lab: { id: string; full_name: string | null; email: string | null } | null;
+      repair_type: { id: string; name: string } | null;
     }>;
     const byStatus: Record<string, number> = {};
-    const byFaultType: Record<string, number> = {};
+    const byRepairType: Record<string, number> = {};
     const byLab: Record<string, { count: number; revenue: number }> = {};
     const monthlyRepairs: Record<string, { count: number; revenue: number }> = {};
+
+    // Legacy fault type labels for backwards compatibility
+    const faultTypeLabels: Record<string, string> = {
+      screen: 'מסך',
+      charging_port: 'שקע טעינה',
+      flash: 'פנס',
+      speaker: 'רמקול',
+      board: 'לוח אם',
+      other: 'אחר',
+    };
+
+    const getRepairTypeName = (repair: typeof repairsList[0]): string => {
+      if (repair.repair_type?.name) return repair.repair_type.name;
+      if (repair.fault_type) return faultTypeLabels[repair.fault_type] || repair.fault_type;
+      return 'אחר';
+    };
 
     repairsList.forEach(repair => {
       // By status
       byStatus[repair.status] = (byStatus[repair.status] || 0) + 1;
 
-      // By fault type
-      byFaultType[repair.fault_type] = (byFaultType[repair.fault_type] || 0) + 1;
+      // By repair type
+      const repairTypeName = getRepairTypeName(repair);
+      byRepairType[repairTypeName] = (byRepairType[repairTypeName] || 0) + 1;
 
       // By lab
       if (repair.lab) {
@@ -318,7 +337,7 @@ export default function AdminReportsPage() {
 
     return {
       byStatus,
-      byFaultType,
+      byRepairType,
       byLab,
       monthlyRepairs: Object.entries(monthlyRepairs).map(([month, data]) => ({ month, ...data })),
     };
@@ -513,26 +532,46 @@ export default function AdminReportsPage() {
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 5);
 
-    // Top fault types
-    const { data: faultData } = await supabase
+    // Top repair types
+    const { data: repairData } = await supabase
       .from('repairs')
-      .select('fault_type')
+      .select('fault_type, repair_type:repair_types(id, name)')
       .gte('created_at', startDate)
       .lte('created_at', endDate);
 
-    const faultDataList = (faultData ?? []) as Array<{ fault_type: string }>;
-    const faultCounts: Record<string, number> = {};
-    const totalFaults = faultData?.length || 0;
+    const repairDataList = (repairData ?? []) as Array<{
+      fault_type: string | null;
+      repair_type: { id: string; name: string } | null;
+    }>;
 
-    faultDataList.forEach(repair => {
-      faultCounts[repair.fault_type] = (faultCounts[repair.fault_type] || 0) + 1;
+    // Legacy fault type labels
+    const faultTypeLabels: Record<string, string> = {
+      screen: 'מסך',
+      charging_port: 'שקע טעינה',
+      flash: 'פנס',
+      speaker: 'רמקול',
+      board: 'לוח אם',
+      other: 'אחר',
+    };
+
+    const repairTypeCounts: Record<string, number> = {};
+    const totalRepairs = repairData?.length || 0;
+
+    repairDataList.forEach(repair => {
+      let typeName = 'אחר';
+      if (repair.repair_type?.name) {
+        typeName = repair.repair_type.name;
+      } else if (repair.fault_type) {
+        typeName = faultTypeLabels[repair.fault_type] || repair.fault_type;
+      }
+      repairTypeCounts[typeName] = (repairTypeCounts[typeName] || 0) + 1;
     });
 
-    const topFaultTypes = Object.entries(faultCounts)
+    const topRepairTypes = Object.entries(repairTypeCounts)
       .map(([type, count]) => ({
         type,
         count,
-        percentage: totalFaults > 0 ? (count / totalFaults) * 100 : 0,
+        percentage: totalRepairs > 0 ? (count / totalRepairs) * 100 : 0,
       }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
@@ -540,7 +579,7 @@ export default function AdminReportsPage() {
     return {
       topStores,
       topLabs,
-      topFaultTypes,
+      topRepairTypes,
       avgWarrantyDuration: 12, // Default from system
     };
   };
@@ -822,9 +861,9 @@ export default function AdminReportsPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-2">
-                      {Object.entries(reportData.repairs.byFaultType).map(([type, count]) => (
+                      {Object.entries(reportData.repairs.byRepairType).map(([type, count]) => (
                         <div key={type} className="flex justify-between items-center">
-                          <span>{getFaultTypeLabel(type)}</span>
+                          <span>{type}</span>
                           <Badge>{count}</Badge>
                         </div>
                       ))}

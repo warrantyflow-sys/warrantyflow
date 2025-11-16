@@ -247,18 +247,18 @@ export function AdminHeader({ isCollapsed, setIsCollapsed }: AdminHeaderProps = 
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => router.push('/admin/profile')} className="gap-2">
-                <span>פרופיל</span>
+              <DropdownMenuItem onClick={() => router.push('/admin/profile')} className="gap-2 justify-end">
                 <User className="h-4 w-4" />
+                <span>פרופיל</span>
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => router.push('/admin/settings')} className="gap-2">
-                <span>הגדרות</span>
+              <DropdownMenuItem onClick={() => router.push('/admin/settings')} className="gap-2 justify-end">
                 <Settings className="h-4 w-4" />
+                <span>הגדרות</span>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-destructive gap-2" onClick={handleSignOut}>
-                <span>התנתק</span>
+              <DropdownMenuItem className="text-destructive gap-2 justify-end" onClick={handleSignOut}>
                 <LogOut className="h-4 w-4" />
+                <span>התנתק</span>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
