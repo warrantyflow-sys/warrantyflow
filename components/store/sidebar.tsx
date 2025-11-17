@@ -70,7 +70,7 @@ export function StoreSidebar() {
                   alt="ATLAS"
                   width={180}
                   height={26}
-                  className="w-full h-auto scale-125 origin-center"
+                  className="w-full h-full object-contain"
                   priority
                 />
               </div>
