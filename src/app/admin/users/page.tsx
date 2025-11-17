@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
+
 import { createClient } from '@/lib/supabase/client';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -91,8 +92,6 @@ export default function UsersPage() {
   const { users, isLoading, isFetching } = useAllUsers();
 
   // Local state for filtering/pagination
-  const [filteredUsers, setFilteredUsers] = useState<ManagedUser[]>([]);
-  const [paginatedUsers, setPaginatedUsers] = useState<ManagedUser[]>([]);
   const [selectedUser, setSelectedUser] = useState<ManagedUser | null>(null);
 
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -149,6 +148,22 @@ export default function UsersPage() {
     labs: users.filter(u => u.role === 'lab').length,
     active: users.filter(u => u.is_active).length,
     inactive: users.filter(u => !u.is_active).length,
+  };
+
+
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    setCurrentPage(1);
+  };
+  
+  const handleRoleFilterChange = (value: string) => {
+    setRoleFilter(value);
+    setCurrentPage(1);
+  };
+  
+  const handleStatusFilterChange = (value: string) => {
+    setStatusFilter(value);
+    setCurrentPage(1);
   };
 
   // אופטימיזציה: טעינת כל הסטטיסטיקות מראש - 2 קריאות במקום N*3
@@ -248,18 +263,19 @@ export default function UsersPage() {
     }
   }, [statsLoaded, users.length]);
 
-  useEffect(() => {
-    let filtered = users;
 
+  const filteredUsers = useMemo(() => {
+    let filtered = users;
+  
     if (roleFilter !== 'all') {
       filtered = filtered.filter(u => u.role === roleFilter);
     }
-
+  
     if (statusFilter !== 'all') {
       const isActive = statusFilter === 'active';
       filtered = filtered.filter(u => u.is_active === isActive);
     }
-
+  
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(u =>
@@ -268,16 +284,14 @@ export default function UsersPage() {
         u.phone?.includes(query)
       );
     }
-
-    setFilteredUsers(filtered);
-    setCurrentPage(1); // Reset to first page when filters change
+  
+    return filtered;
   }, [users, searchQuery, roleFilter, statusFilter]);
 
-  useEffect(() => {
-    // Apply pagination to filtered users
+  const paginatedUsers = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
     const endIndex = startIndex + itemsPerPage;
-    setPaginatedUsers(filteredUsers.slice(startIndex, endIndex));
+    return filteredUsers.slice(startIndex, endIndex);
   }, [filteredUsers, currentPage, itemsPerPage]);
 
   // אופטימיזציה: שימוש ב-cache במקום קריאות חדשות - חוסך 3-6 קריאות לכל משתמש!
@@ -632,15 +646,15 @@ export default function UsersPage() {
           <div className="flex flex-col sm:flex-row gap-4">
             <div className="relative flex-1">
               <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="חפש לפי שם, אימייל או טלפון..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                dir="rtl"
-                className="pr-8"
-              />
+                <Input
+                  placeholder="חפש לפי שם, אימייל או טלפון..."
+                  value={searchQuery}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  dir="rtl"
+                  className="pr-8"
+                />
             </div>
-            <Select value={roleFilter} onValueChange={setRoleFilter}>
+            <Select value={roleFilter} onValueChange={handleRoleFilterChange}>
               <SelectTrigger className="w-[180px]">
                 <SelectValue />
               </SelectTrigger>
@@ -651,7 +665,7 @@ export default function UsersPage() {
                 <SelectItem value="lab">מעבדות</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <Select value={statusFilter} onValueChange={handleStatusFilterChange}>
               <SelectTrigger className="w-[180px]">
                 <SelectValue />
               </SelectTrigger>

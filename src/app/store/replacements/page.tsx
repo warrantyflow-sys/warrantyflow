@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useStoreReplacementRequests } from '@/hooks/queries/useReplacements';
-import { useCurrentUser } from '@/hooks/queries/useCurrentUser';
+import { useCurrentUser } from '@/hooks/useCurrentUser'; // <-- תיקון 1: נתיב הייבוא
 import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
 import { ReplacementsPageSkeleton } from '@/components/ui/loading-skeletons';
 import type { Tables, TablesInsert } from '@/lib/supabase/database.types';
@@ -86,7 +86,6 @@ export default function StoreReplacementsPage() {
   const isLoading = isUserLoading || isRequestsLoading;
 
   // Local state for filtering
-  const [filteredRequests, setFilteredRequests] = useState<ReplacementRequestRow[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [selectedRequest, setSelectedRequest] = useState<ReplacementRequestRow | null>(null);
@@ -95,12 +94,6 @@ export default function StoreReplacementsPage() {
   const [searchIMEI, setSearchIMEI] = useState('');
   const [searchedDevice, setSearchedDevice] = useState<DeviceSearchResult | null>(null);
   const [isSearching, setIsSearching] = useState(false);
-  const [stats, setStats] = useState({
-    total: 0,
-    pending: 0,
-    approved: 0,
-    rejected: 0,
-  });
 
   const supabase = createClient();
   const { toast } = useToast();
@@ -115,7 +108,10 @@ export default function StoreReplacementsPage() {
     resolver: zodResolver(replacementRequestSchema),
   });
 
-  const filterData = useCallback(() => {
+  // --- [תיקון 2: החלפת useState + useEffect ב-useMemo] ---
+
+  // חישוב הרשימה המסוננת
+  const filteredRequests = useMemo(() => {
     let filtered = [...requests];
 
     if (searchQuery) {
@@ -134,23 +130,21 @@ export default function StoreReplacementsPage() {
       filtered = filtered.filter(request => request.status === filterStatus);
     }
 
-    setFilteredRequests(filtered);
+    return filtered;
   }, [requests, searchQuery, filterStatus]);
 
-  const calculateStats = useCallback(() => {
-    setStats({
+  // חישוב הסטטיסטיקות
+  const stats = useMemo(() => {
+    return {
       total: requests.length,
       pending: requests.filter(r => r.status === 'pending').length,
       approved: requests.filter(r => r.status === 'approved').length,
       rejected: requests.filter(r => r.status === 'rejected').length,
-    });
+    };
   }, [requests]);
 
-  useEffect(() => {
-    filterData();
-    calculateStats();
-  }, [filterData, calculateStats]);
-
+  // --- [סוף תיקון 2] ---
+  
   const handleSearchDevice = async () => {
     const trimmedIMEI = searchIMEI.trim().replace(/[\s-]/g, '');
     if (!trimmedIMEI) {

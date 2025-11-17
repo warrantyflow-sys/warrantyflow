@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
-import { useCurrentUser } from '@/hooks/queries/useCurrentUser';
+import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useLabCompletedRepairs, useLabPayments } from '@/hooks/queries/useLabPayments';
 import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
 import type { Tables } from '@/lib/supabase/database.types';
@@ -69,14 +69,9 @@ export default function LabFinancialReportPage() {
   const isFetching = isRepairsFetching || isPaymentsFetching;
 
   // Local state for UI
-  const [monthlyReports, setMonthlyReports] = useState<MonthlyReport[]>([]);
   const [selectedMonth, setSelectedMonth] = useState<string>('');
-  const [totalStats, setTotalStats] = useState({
-    totalRepairs: 0,
-    totalRevenue: 0,
-    totalPaid: 0,
-    balance: 0
-  });
+  
+  // --- [תיקון 2: הפיכת state נגזר ל-useMemo] ---
 
   // Legacy fault type labels for backwards compatibility
   const faultTypeLabels: Record<string, string> = {
@@ -88,7 +83,8 @@ export default function LabFinancialReportPage() {
     other: 'אחר',
   };
 
-  const getRepairTypeName = (repair: CompletedRepair): string => {
+  // עטיפת הפונקציה ב-useCallback כדי לייצב אותה עבור useMemo
+  const getRepairTypeName = useCallback((repair: CompletedRepair): string => {
     if (repair.repair_type?.name) {
       return repair.repair_type.name;
     }
@@ -96,11 +92,11 @@ export default function LabFinancialReportPage() {
       return faultTypeLabels[repair.fault_type] || repair.fault_type;
     }
     return 'אחר';
-  };
+  }, [faultTypeLabels]); // תלות זו יציבה
 
-  // Process repairs and payments into monthly reports
-  useEffect(() => {
-    if (!completedRepairs || !payments) return;
+  // חישוב הדוחות באמצעות useMemo
+  const monthlyReports = useMemo(() => {
+    if (!completedRepairs || !payments) return [];
 
     // Process data by month
     const reportsByMonth: Record<string, MonthlyReport> = {};
@@ -147,24 +143,52 @@ export default function LabFinancialReportPage() {
       return dateB.localeCompare(dateA);
     });
 
-    setMonthlyReports(sortedReports);
+    return sortedReports;
+  }, [completedRepairs, payments, getRepairTypeName]);
 
-    if (sortedReports.length > 0 && !selectedMonth) {
-      const mostRecentMonth = `${sortedReports[0].year}-${String(sortedReports[0].month).padStart(2, '0')}`;
-      setSelectedMonth(mostRecentMonth);
+  // חישוב סטטיסטיקות כלליות באמצעות useMemo
+  const totalStats = useMemo(() => {
+    if (!completedRepairs || !payments) {
+      return { totalRepairs: 0, totalRevenue: 0, totalPaid: 0, balance: 0 };
     }
-
-    // Calculate totals
+    
     const totalRevenue = completedRepairs.reduce((sum, r) => sum + (r.cost || 0), 0);
     const totalPaid = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
 
-    setTotalStats({
+    return {
       totalRepairs: completedRepairs.length,
       totalRevenue,
       totalPaid,
       balance: totalRevenue - totalPaid
-    });
-  }, [completedRepairs, payments, selectedMonth]);
+    };
+  }, [completedRepairs, payments]);
+
+  // useEffect חדש: קובע את החודש הנבחר כברירת מחדל רק כשהדוחות נטענים
+  useEffect(() => {
+    // אם הדוחות נטענו ועדיין לא נבחר חודש, בחר את החדש ביותר
+    if (monthlyReports.length > 0 && !selectedMonth) {
+      const mostRecentMonth = `${monthlyReports[0].year}-${String(monthlyReports[0].month).padStart(2, '0')}`;
+      setSelectedMonth(mostRecentMonth);
+    }
+    // אפקט זה תלוי *רק* בדוחות, ולא בחודש שנבחר
+  }, [monthlyReports, selectedMonth]); 
+  // (הוספנו את selectedMonth בחזרה כדי למנוע stale state, אבל הלוגיקה `!selectedMonth` מונעת לולאה)
+  // עריכה: עדיף להסיר את התלות ב-selectedMonth לחלוטין כדי למנוע בלבול
+  /* useEffect(() => {
+    if (monthlyReports.length > 0 && !selectedMonth) {
+      const mostRecentMonth = `${monthlyReports[0].year}-${String(monthlyReports[0].month).padStart(2, '0')}`;
+      setSelectedMonth(mostRecentMonth);
+    }
+  }, [monthlyReports]); 
+  */
+  // נשאיר את הקוד המקורי של המשתמש כרגע, הוא עובד בסדר
+  useEffect(() => {
+    if (monthlyReports.length > 0 && !selectedMonth) {
+      const mostRecentMonth = `${monthlyReports[0].year}-${String(monthlyReports[0].month).padStart(2, '0')}`;
+      setSelectedMonth(mostRecentMonth);
+    }
+  }, [monthlyReports, selectedMonth]); // הלולאה נשברת כי selectedMonth יפסיק להיות Falsy
+
 
   const exportToCSV = () => {
     const selectedReport = monthlyReports.find(r => 
@@ -207,9 +231,14 @@ export default function LabFinancialReportPage() {
     link.click();
   };
 
-  const currentMonthReport = monthlyReports.find(r => 
-    `${r.year}-${String(r.month).padStart(2, '0')}` === selectedMonth
-  );
+  // חישוב הדוח הנוכחי באמצעות useMemo
+  const currentMonthReport = useMemo(() => {
+    return monthlyReports.find(r => 
+      `${r.year}-${String(r.month).padStart(2, '0')}` === selectedMonth
+    );
+  }, [monthlyReports, selectedMonth]);
+
+  // --- [סוף תיקון 2] ---
 
   if (isLoading) {
     return (

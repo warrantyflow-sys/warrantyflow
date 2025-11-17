@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAllReplacementRequests } from '@/hooks/queries/useReplacements';
 import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
@@ -50,10 +50,9 @@ type RequestStatus = 'pending' | 'approved' | 'rejected';
 
 export default function ReplacementsPage() {
   // React Query hook with Realtime
-  const { requests, isLoading, isFetching } = useAllReplacementRequests();
-
+  
+  const { requests, isLoading, isFetching, refetch } = useAllReplacementRequests();
   // Local state for filtering
-  const [filteredRequests, setFilteredRequests] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | RequestStatus>('all');
   const [selectedRequest, setSelectedRequest] = useState<any>(null);
@@ -61,13 +60,6 @@ export default function ReplacementsPage() {
   const [isDecisionDialogOpen, setIsDecisionDialogOpen] = useState(false);
   const [decision, setDecision] = useState<'approve' | 'reject'>('approve');
   const [adminNotes, setAdminNotes] = useState('');
-  const [stats, setStats] = useState({
-    total: 0,
-    pending: 0,
-    approved: 0,
-    rejected: 0,
-    avgProcessTime: 0,
-  });
 
   // אופטימיזציה: שמירת user ID לצורך audit logging
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -80,13 +72,15 @@ export default function ReplacementsPage() {
     return user.full_name?.trim() || user.email || '';
   }, []);
 
-  const filterRequests = useCallback(() => {
-    let filtered = requests;
 
+
+  const filteredRequests = useMemo(() => {
+    let filtered = requests;
+  
     if (filterStatus !== 'all') {
       filtered = filtered.filter(r => r.status === filterStatus);
     }
-
+  
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(
@@ -97,31 +91,9 @@ export default function ReplacementsPage() {
           request.reason?.toLowerCase().includes(query)
       );
     }
-
-    setFilteredRequests(filtered);
+    return filtered;
   }, [requests, searchQuery, filterStatus, getUserDisplayName]);
 
-  const calculateStats = useCallback(() => {
-    const stats = {
-      total: requests.length,
-      pending: requests.filter(r => r.status === 'pending').length,
-      approved: requests.filter(r => r.status === 'approved').length,
-      rejected: requests.filter(r => r.status === 'rejected').length,
-      avgProcessTime: 0,
-    };
-
-    const processedRequests = requests.filter(r => r.resolved_at);
-    if (processedRequests.length > 0) {
-      const totalTime = processedRequests.reduce((sum, r) => {
-        const created = new Date(r.created_at).getTime();
-        const resolved = new Date(r.resolved_at).getTime();
-        return sum + (resolved - created);
-      }, 0);
-      stats.avgProcessTime = totalTime / processedRequests.length / (1000 * 60 * 60);
-    }
-
-    setStats(stats);
-  }, [requests]);
 
   // אופטימיזציה: טעינת user ID פעם אחת בלבד
   useEffect(() => {
@@ -134,13 +106,26 @@ export default function ReplacementsPage() {
     loadUserId();
   }, [supabase]);
 
-  useEffect(() => {
-    filterRequests();
-  }, [filterRequests]);
-
-  useEffect(() => {
-    calculateStats();
-  }, [calculateStats]);
+  const stats = useMemo(() => {
+    const statsData = {
+      total: requests.length,
+      pending: requests.filter(r => r.status === 'pending').length,
+      approved: requests.filter(r => r.status === 'approved').length,
+      rejected: requests.filter(r => r.status === 'rejected').length,
+      avgProcessTime: 0,
+    };
+  
+    const processedRequests = requests.filter(r => r.resolved_at);
+    if (processedRequests.length > 0) {
+      const totalTime = processedRequests.reduce((sum, r) => {
+        const created = new Date(r.created_at).getTime();
+        const resolved = new Date(r.resolved_at).getTime();
+        return sum + (resolved - created);
+      }, 0);
+      statsData.avgProcessTime = totalTime / processedRequests.length / (1000 * 60 * 60);
+    }
+    return statsData;
+  }, [requests]);
 
   const handleDecision = async () => {
     if (!selectedRequest) return;
@@ -356,7 +341,7 @@ export default function ReplacementsPage() {
         <CardHeader>
           <div className="flex justify-between items-center">
             <CardTitle>בקשות החלפה</CardTitle>
-            <Button variant="outline" size="sm" onClick={fetchRequests}>
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
               רענן
               <RefreshCw className="h-4 w-4 ms-2" />
             </Button>

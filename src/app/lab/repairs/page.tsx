@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 
 // Force dynamic rendering to prevent prerendering issues
 export const dynamic = 'force-dynamic';
@@ -91,8 +91,7 @@ export default function LabRepairsPage() {
   const isLoading = isUserLoading || isRepairsLoading || isRepairTypesLoading;
   const isFetching = isRepairsFetching || isRepairTypesFetching;
 
-  const [filteredRepairs, setFilteredRepairs] = useState<any[]>([]);
-  const [paginatedRepairs, setPaginatedRepairs] = useState<any[]>([]);
+  // State
   const [selectedRepair, setSelectedRepair] = useState<any>(null);
   const [isNewRepairDialogOpen, setIsNewRepairDialogOpen] = useState(false);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
@@ -120,30 +119,28 @@ export default function LabRepairsPage() {
 
   // אופטימיזציה: שמירת user ID לצורך audit logging
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  
+  // --- [תיקון 1: הוספת useMemo עבור רשימות סינון ייחודיות] ---
+  const uniqueFilterRepairTypes = useMemo(() => {
+    const allRepairTypes = repairs.map(r => r.repair_type).filter(Boolean);
+    const uniqueMap = new Map();
+    allRepairTypes.forEach(rt => {
+      if (!uniqueMap.has(rt.id)) {
+        uniqueMap.set(rt.id, rt);
+      }
+    });
+    return Array.from(uniqueMap.values());
+  }, [repairs]);
 
-  const supabase = createClient();
-  const { toast } = useToast();
+  const uniqueFilterDeviceModels = useMemo(() => {
+    const allModels = repairs.map(r => r.device?.device_models?.model_name).filter(Boolean);
+    return Array.from(new Set(allModels)).sort();
+  }, [repairs]);
 
-  const {
-    register,
-    handleSubmit,
-    reset,
-    setValue,
-    watch,
-    control,
-    formState: { errors, isSubmitting },
-  } = useForm<RepairFormData>({
-    resolver: zodResolver(repairSchema),
-  });
-
-  // Update currentUserId from currentUser
-  useEffect(() => {
-    if (currentUser) {
-      setCurrentUserId(currentUser.id);
-    }
-  }, [currentUser]);
-
-  const filterData = useCallback(() => {
+  // --- [תיקון 2: החלפת useEffect + useState ב-useMemo עבור נתונים נגזרים] ---
+  
+  // חישוב הרשימה המסוננת
+  const filteredRepairs = useMemo(() => {
     let filtered = repairs;
 
     if (filterStatus.startsWith('replacement_')) {
@@ -184,20 +181,78 @@ export default function LabRepairsPage() {
       );
     }
 
-    setFilteredRepairs(filtered);
-    setCurrentPage(1); // Reset to first page when filters change
+    return filtered;
   }, [repairs, searchQuery, filterStatus, filterRepairType, filterDeviceModel, filterDateFrom, filterDateTo]);
-
-  useEffect(() => {
-    // Apply pagination to filtered repairs
+  
+  // חישוב הרשימה המחולקת לעמודים
+  const paginatedRepairs = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
     const endIndex = startIndex + itemsPerPage;
-    setPaginatedRepairs(filteredRepairs.slice(startIndex, endIndex));
+    return filteredRepairs.slice(startIndex, endIndex);
   }, [filteredRepairs, currentPage, itemsPerPage]);
 
+
+  // --- [תיקון 3: הוספת Event Handlers לאיפוס עמוד] ---
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    setCurrentPage(1);
+  };
+  const handleStatusChange = (value: string) => {
+    setFilterStatus(value);
+    setCurrentPage(1);
+  };
+  const handleRepairTypeChange = (value: string) => {
+    setFilterRepairType(value);
+    setCurrentPage(1);
+  };
+  const handleDeviceModelChange = (value: string) => {
+    setFilterDeviceModel(value);
+    setCurrentPage(1);
+  };
+  const handleDateFromChange = (value: string) => {
+    setFilterDateFrom(value);
+    setCurrentPage(1);
+  };
+  const handleDateToChange = (value: string) => {
+    setFilterDateTo(value);
+    setCurrentPage(1);
+  };
+  
+  const handleClearFilters = () => {
+    setSearchQuery('');
+    setFilterStatus('all');
+    setFilterRepairType('all');
+    setFilterDeviceModel('all');
+    setFilterDateFrom('');
+    setFilterDateTo('');
+    setCurrentPage(1);
+  };
+  // --- [סוף התיקונים] ---
+
+
+  const supabase = createClient();
+  const { toast } = useToast();
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    setValue,
+    watch,
+    control,
+    formState: { errors, isSubmitting },
+  } = useForm<RepairFormData>({
+    resolver: zodResolver(repairSchema),
+  });
+
+  // Update currentUserId from currentUser
   useEffect(() => {
-    filterData();
-  }, [filterData]);
+    if (currentUser) {
+      setCurrentUserId(currentUser.id);
+    }
+  }, [currentUser]);
+
+  // (הסרנו את הלוגיקה הבעייתית של filterData ו-useEffect)
 
   useEffect(() => {
     if (isUpdateDialogOpen && selectedRepair) {
@@ -731,7 +786,7 @@ export default function LabRepairsPage() {
                 <Input
                   placeholder="IMEI, דגם או שם לקוח..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => handleSearchChange(e.target.value)}
                   className="pr-10"
                 />
               </div>
@@ -739,7 +794,7 @@ export default function LabRepairsPage() {
 
             <div>
               <Label>סטטוס</Label>
-              <Select value={filterStatus} onValueChange={setFilterStatus}>
+              <Select value={filterStatus} onValueChange={handleStatusChange}>
                 <SelectTrigger className="mt-1">
                   <SelectValue placeholder="כל הסטטוסים" />
                 </SelectTrigger>
@@ -757,14 +812,14 @@ export default function LabRepairsPage() {
 
             <div>
               <Label>סוג תיקון</Label>
-              <Select value={filterRepairType} onValueChange={setFilterRepairType}>
+              <Select value={filterRepairType} onValueChange={handleRepairTypeChange}>
                 <SelectTrigger className="mt-1">
                   <SelectValue placeholder="כל הסוגים" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">כל הסוגים</SelectItem>
-                  {Array.from(new Set(repairs.map(r => r.repair_type).filter(Boolean)))
-                    .map((rt: any) => (
+                  {/* [תיקון 1.1]: שימוש במשתנה החדש שהוכן עם useMemo */}
+                  {uniqueFilterRepairTypes.map((rt: any) => (
                       <SelectItem key={rt.id} value={rt.id}>
                         {rt.name}
                       </SelectItem>
@@ -775,15 +830,14 @@ export default function LabRepairsPage() {
 
             <div>
               <Label>דגם מכשיר</Label>
-              <Select value={filterDeviceModel} onValueChange={setFilterDeviceModel}>
+              <Select value={filterDeviceModel} onValueChange={handleDeviceModelChange}>
                 <SelectTrigger className="mt-1">
                   <SelectValue placeholder="כל הדגמים" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">כל הדגמים</SelectItem>
-                  {Array.from(new Set(repairs.map(r => r.device?.device_models?.model_name).filter(Boolean)))
-                    .sort()
-                    .map((model: any) => (
+                  {/* [תיקון 1.2]: שימוש במשתנה החדש שהוכן עם useMemo */}
+                  {uniqueFilterDeviceModels.map((model: any) => (
                       <SelectItem key={model} value={model}>
                         {model}
                       </SelectItem>
@@ -797,7 +851,7 @@ export default function LabRepairsPage() {
               <Input
                 type="date"
                 value={filterDateFrom}
-                onChange={(e) => setFilterDateFrom(e.target.value)}
+                onChange={(e) => handleDateFromChange(e.target.value)}
                 className="mt-1"
               />
             </div>
@@ -807,7 +861,7 @@ export default function LabRepairsPage() {
               <Input
                 type="date"
                 value={filterDateTo}
-                onChange={(e) => setFilterDateTo(e.target.value)}
+                onChange={(e) => handleDateToChange(e.target.value)}
                 className="mt-1"
               />
             </div>
@@ -815,14 +869,7 @@ export default function LabRepairsPage() {
             <div className="lg:col-span-3 flex items-end">
               <Button
                 variant="outline"
-                onClick={() => {
-                  setSearchQuery('');
-                  setFilterStatus('all');
-                  setFilterRepairType('all');
-                  setFilterDeviceModel('all');
-                  setFilterDateFrom('');
-                  setFilterDateTo('');
-                }}
+                onClick={handleClearFilters}
                 className="w-full"
               >
                 נקה סינונים

@@ -26,7 +26,7 @@ import { formatCurrency, cn } from '@/lib/utils';
 
 export default function AdminPaymentsPage() {
   // React Query hook with Realtime
-  const { labBalances, isLoading, isFetching } = useAllLabsBalances();
+  const { labBalances, isLoading, isFetching, refetch } = useAllLabsBalances();
   const router = useRouter();
 
   if (isLoading) {
@@ -55,7 +55,7 @@ export default function AdminPaymentsPage() {
           <h1 className="text-3xl font-bold">ניהול תשלומים</h1>
           <p className="text-muted-foreground">סקירה כללית של יתרות למעבדות</p>
         </div>
-        <Button onClick={fetchData} variant="outline">
+        <Button onClick={() => refetch()} variant="outline">
           רענן
           <RefreshCw className="ms-2 h-4 w-4" />
         </Button>
