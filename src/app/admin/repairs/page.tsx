@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { useAllRepairs } from '@/hooks/queries/useRepairs';
+import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -47,10 +49,12 @@ type RepairStatus = 'received' | 'in_progress' | 'completed' | 'replacement_requ
 type FaultType = 'screen' | 'charging_port' | 'flash' | 'speaker' | 'board' | 'other';
 
 export default function RepairsPage() {
-  const [repairs, setRepairs] = useState<any[]>([]);
+  // React Query hooks with Realtime subscriptions
+  const { repairs, isLoading: isRepairsLoading, isFetching, refetch: refetchRepairs } = useAllRepairs();
+  const isLoading = isRepairsLoading;
+
   const [filteredRepairs, setFilteredRepairs] = useState<any[]>([]);
   const [labs, setLabs] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | RepairStatus>('all');
   const [filterLab, setFilterLab] = useState<string>('all');
@@ -75,41 +79,17 @@ export default function RepairsPage() {
   const supabase = createClient();
   const { toast } = useToast();
 
-  const fetchData = useCallback(async () => {
-    try {
-      // Fetch repairs with related data
-      const { data: repairsData, error: repairsError } = await supabase
-        .from('repairs')
-        .select(`
-          *,
-          device:devices(imei, device_model:device_models(model_name)),
-          lab:users!repairs_lab_id_fkey(full_name, email),
-          warranty:warranties(customer_name, customer_phone, store:users!warranties_store_id_fkey(full_name, email)),
-          repair_type:repair_types(id, name)
-        `)
-        .order('created_at', { ascending: false });
-
-      if (repairsError) throw repairsError;
-      setRepairs(repairsData || []);
-      setFilteredRepairs(repairsData || []);
-
-      // Fetch labs
+  // Fetch labs on mount
+  useEffect(() => {
+    const fetchLabs = async () => {
       const { data: labsData } = await supabase
         .from('users')
         .select('id, full_name, email')
         .eq('role', 'lab');
       setLabs(labsData || []);
-    } catch (error) {
-      console.error('Error fetching data:', error);
-      toast({
-        title: 'שגיאה',
-        description: 'לא ניתן לטעון את הנתונים',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [supabase, toast]);
+    };
+    fetchLabs();
+  }, [supabase]);
 
   const filterRepairs = useCallback(() => {
     let filtered = repairs;
@@ -136,11 +116,11 @@ export default function RepairsPage() {
 
     // Filter by date range
     if (filterDateFrom) {
-      filtered = filtered.filter(r => r.created_at >= filterDateFrom);
+      filtered = filtered.filter(r => r.created_at && r.created_at >= filterDateFrom);
     }
 
     if (filterDateTo) {
-      filtered = filtered.filter(r => r.created_at <= filterDateTo + 'T23:59:59');
+      filtered = filtered.filter(r => r.created_at && r.created_at <= filterDateTo + 'T23:59:59');
     }
 
     // Filter by search query
@@ -186,13 +166,12 @@ export default function RepairsPage() {
   }, [filteredRepairs]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    filterRepairs();
+  }, [filterRepairs]);
 
   useEffect(() => {
-    filterRepairs();
     calculateStats();
-  }, [filterRepairs, calculateStats]);
+  }, [calculateStats]);
 
   const handleAssignLab = async () => {
     if (!selectedRepair || !selectedLabId) return;
@@ -216,7 +195,7 @@ export default function RepairsPage() {
       setIsAssignDialogOpen(false);
       setSelectedRepair(null);
       setSelectedLabId('');
-      fetchData();
+      refetchRepairs();
     } catch (error: any) {
       toast({
         title: 'שגיאה',
@@ -246,7 +225,7 @@ export default function RepairsPage() {
         description: 'הסטטוס עודכן בהצלחה',
       });
 
-      fetchData();
+      refetchRepairs();
     } catch (error: any) {
       toast({
         title: 'שגיאה',
@@ -324,6 +303,12 @@ export default function RepairsPage() {
 
   return (
     <div className="space-y-6" dir="rtl">
+      {/* Background refresh indicator */}
+      <BackgroundRefreshIndicator
+        isFetching={isFetching}
+        isLoading={isLoading}
+      />
+
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">ניהול תיקונים</h1>
@@ -443,8 +428,18 @@ export default function RepairsPage() {
                 onChange={(e) => setFilterRepairType(e.target.value)}
               >
                 <option value="all">כל הסוגים</option>
-                {Array.from(new Set(repairs.map(r => r.repair_type).filter(Boolean)))
-                  .map((rt: any) => (
+                {Array.from(
+                  new Map(
+                    repairs
+                      .map(r => r.repair_type)
+                      .filter(
+                        (rt): rt is NonNullable<typeof rt> => !!rt
+                      )
+                      .map(rt => [rt.id, rt])
+                  ).values()
+                )
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map((rt) => (
                     <option key={rt.id} value={rt.id}>
                       {rt.name}
                     </option>
@@ -678,6 +673,7 @@ export default function RepairsPage() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>פרטי תיקון</DialogTitle>
+            <DialogDescription>פרטי התיקון שנבחר.</DialogDescription>
           </DialogHeader>
           {selectedRepair && (
             <div className="space-y-4 py-4">

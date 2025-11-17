@@ -70,16 +70,20 @@ export function NotificationsDropdown() {
 
   useEffect(() => {
     loadNotifications();
+
+    // Realtime subscription for instant updates (no polling needed)
     const channel = supabase
       .channel('notifications')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, () => {
         loadNotifications();
       })
       .subscribe();
-    const interval = setInterval(loadNotifications, 10000);
+
+    // ✅ Removed polling interval - Supabase Realtime handles updates instantly
+    // This reduces database load by ~3,000 queries/minute for 500 concurrent users
+
     return () => {
       supabase.removeChannel(channel);
-      clearInterval(interval);
     };
   }, [loadNotifications, supabase]);
 

@@ -2,6 +2,9 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { useStoreReplacementRequests } from '@/hooks/queries/useReplacements';
+import { useCurrentUser } from '@/hooks/queries/useCurrentUser';
+import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
 import { ReplacementsPageSkeleton } from '@/components/ui/loading-skeletons';
 import type { Tables, TablesInsert } from '@/lib/supabase/database.types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -75,9 +78,15 @@ type DeviceSearchResult = Tables<'devices'> & {
 };
 
 export default function StoreReplacementsPage() {
-  const [requests, setRequests] = useState<ReplacementRequestRow[]>([]);
+  // React Query hooks with Realtime
+  const { user, isLoading: isUserLoading } = useCurrentUser();
+  const storeId = user?.id || null;
+  const { requests, isLoading: isRequestsLoading, isFetching } = useStoreReplacementRequests(storeId);
+
+  const isLoading = isUserLoading || isRequestsLoading;
+
+  // Local state for filtering
   const [filteredRequests, setFilteredRequests] = useState<ReplacementRequestRow[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [selectedRequest, setSelectedRequest] = useState<ReplacementRequestRow | null>(null);
@@ -105,68 +114,6 @@ export default function StoreReplacementsPage() {
   } = useForm<ReplacementRequestData>({
     resolver: zodResolver(replacementRequestSchema),
   });
-
-  const fetchRequests = useCallback(async () => {
-    try {
-      setIsLoading(true);
-
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data: userData } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', user.id)
-        .single<Tables<'users'>>();
-
-      if (!userData) return;
-      const strId = userData.id;
-
-      // Fetch replacement requests for this store
-      const { data: requestsData, error } = await supabase
-        .from('replacement_requests')
-        .select(`
-          *,
-          device:devices!inner(
-            id,
-            imei,
-            imei2,
-            model_id,
-            device_models(*),
-            warranty:warranties!inner(
-              customer_name,
-              customer_phone,
-              activation_date,
-              expiry_date,
-              store_id
-            )
-          ),
-          repair:repairs(
-            fault_type,
-            fault_description,
-            lab:users!repairs_lab_id_fkey(full_name, email)
-          ),
-          resolver:users!replacement_requests_resolved_by_fkey(full_name)
-        `)
-        .eq('device.warranty.store_id', strId)
-        .order('created_at', { ascending: false })
-        .returns<ReplacementRequestRow[]>();
-
-      if (error) throw error;
-
-      setRequests(requestsData || []);
-      setFilteredRequests(requestsData || []);
-    } catch (error) {
-      console.error('Error fetching requests:', error);
-      toast({
-        title: 'שגיאה',
-        description: 'לא ניתן לטעון את הבקשות',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [supabase, toast]);
 
   const filterData = useCallback(() => {
     let filtered = [...requests];
@@ -198,10 +145,6 @@ export default function StoreReplacementsPage() {
       rejected: requests.filter(r => r.status === 'rejected').length,
     });
   }, [requests]);
-
-  useEffect(() => {
-    fetchRequests();
-  }, [fetchRequests]);
 
   useEffect(() => {
     filterData();
@@ -347,7 +290,7 @@ export default function StoreReplacementsPage() {
       reset();
       setSearchedDevice(null);
       setSearchIMEI('');
-      fetchRequests();
+      // React Query + Realtime will auto-refresh
     } catch (error: any) {
       toast({
         title: 'שגיאה',
@@ -381,6 +324,12 @@ export default function StoreReplacementsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Background refresh indicator */}
+      <BackgroundRefreshIndicator
+        isFetching={isFetching}
+        isLoading={isLoading}
+      />
+
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">בקשות החלפה</h1>
         <Button onClick={() => setIsNewRequestDialogOpen(true)}>

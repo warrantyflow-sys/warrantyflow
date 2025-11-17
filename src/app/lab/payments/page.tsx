@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { useMemo } from 'react';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useLabCompletedRepairs, useLabPayments } from '@/hooks/queries/useLabPayments';
+import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import {
   Table,
   TableBody,
@@ -24,105 +25,39 @@ import {
 } from 'lucide-react';
 import ShekelIcon from '@/components/ui/shekel-icon';
 import { formatDate, formatCurrency } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-
-interface Repair {
-  id: string;
-  cost: number;
-  completed_at: string;
-  device: {
-    imei: string;
-    device_models?: {
-      model_name: string;
-    } | null;
-  } | null;
-  repair_type?: {
-    name: string;
-  } | null;
-}
-
-interface Payment {
-  id: string;
-  amount: number;
-  payment_date: string;
-  reference: string | null;
-  notes: string | null;
-}
 
 export default function LabPaymentsPage() {
-  const [completedRepairs, setCompletedRepairs] = useState<Repair[]>([]);
-  const [payments, setPayments] = useState<Payment[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [user, setUser] = useState<any>(null);
+  // React Query hooks with Realtime
+  const { user, isLoading: isUserLoading } = useCurrentUser();
+  const labId = user?.id || null;
+  const { repairs: completedRepairs, isLoading: isRepairsLoading, isFetching: isRepairsFetching } = useLabCompletedRepairs(labId);
+  const { payments, isLoading: isPaymentsLoading, isFetching: isPaymentsFetching } = useLabPayments(labId);
 
-  const supabase = createClient();
+  const isLoading = isUserLoading || isRepairsLoading || isPaymentsLoading;
+  const isFetching = isRepairsFetching || isPaymentsFetching;
 
-  const loadData = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      // Get current user
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      if (!authUser) return;
+  // Calculate stats (memoized for performance)
+  const stats = useMemo(() => {
+    const totalEarned = completedRepairs.reduce((sum, repair) => sum + (repair.cost || 0), 0);
+    const totalPaid = payments.reduce((sum, payment) => sum + (payment.amount || 0), 0);
+    const balance = totalEarned - totalPaid;
 
-      const { data: userData } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', authUser.id)
-        .single() as { data: any };
+    // Calculate this month
+    const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+    const thisMonthEarned = completedRepairs
+      .filter(r => r.completed_at?.startsWith(currentMonth))
+      .reduce((sum, r) => sum + (r.cost || 0), 0);
 
-      setUser(userData);
+    const lastPaymentDate = payments[0]?.payment_date || null;
 
-      // Get all completed repairs
-      const { data: repairsData } = await supabase
-        .from('repairs')
-        .select(`
-          id,
-          cost,
-          completed_at,
-          device:devices!repairs_device_id_fkey(
-            imei,
-            device_models!devices_model_id_fkey(model_name)
-          ),
-          repair_type:repair_types!repairs_repair_type_id_fkey(name)
-        `)
-        .eq('lab_id', authUser.id)
-        .eq('status', 'completed')
-        .order('completed_at', { ascending: false }) as { data: any };
-
-      setCompletedRepairs(repairsData || []);
-
-      // Get all payments
-      const { data: paymentsData } = await supabase
-        .from('payments')
-        .select('*')
-        .eq('lab_id', authUser.id)
-        .order('payment_date', { ascending: false }) as { data: any };
-
-      setPayments(paymentsData || []);
-
-    } catch (error) {
-      console.error('Error loading data:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [supabase]);
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  // Calculate balance
-  const totalEarned = completedRepairs.reduce((sum, repair) => sum + (repair.cost || 0), 0);
-  const totalPaid = payments.reduce((sum, payment) => sum + (payment.amount || 0), 0);
-  const balance = totalEarned - totalPaid;
-
-  // Calculate this month
-  const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
-  const thisMonthEarned = completedRepairs
-    .filter(r => r.completed_at?.startsWith(currentMonth))
-    .reduce((sum, r) => sum + (r.cost || 0), 0);
-
-  const lastPaymentDate = payments[0]?.payment_date || null;
+    return {
+      totalEarned,
+      totalPaid,
+      balance,
+      thisMonthEarned,
+      lastPaymentDate,
+    };
+  }, [completedRepairs, payments]);
 
   if (isLoading) {
     return (
@@ -134,15 +69,17 @@ export default function LabPaymentsPage() {
 
   return (
     <div className="space-y-6 p-6">
+      {/* Background refresh indicator */}
+      <BackgroundRefreshIndicator
+        isFetching={isFetching}
+        isLoading={isLoading}
+      />
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">תשלומים</h1>
           <p className="text-muted-foreground">צפייה ביתרה ותשלומים</p>
         </div>
-        <Button onClick={loadData} variant="outline">
-          <RefreshCw className="ms-2 h-4 w-4" />
-          רענן
-        </Button>
       </div>
 
       {/* Statistics Cards */}
@@ -153,7 +90,7 @@ export default function LabPaymentsPage() {
             <CardTitle className="text-sm font-medium">סה"כ הכנסות מתיקונים</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-right text-green-600">{formatCurrency(totalEarned)}</div>
+            <div className="text-2xl font-bold text-right text-green-600">{formatCurrency(stats.totalEarned)}</div>
             <p className="text-xs text-muted-foreground text-right">
               {completedRepairs.length} תיקונים שהושלמו
             </p>
@@ -166,7 +103,7 @@ export default function LabPaymentsPage() {
             <CardTitle className="text-sm font-medium">סה"כ קיבלת</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-right text-blue-600">{formatCurrency(totalPaid)}</div>
+            <div className="text-2xl font-bold text-right text-blue-600">{formatCurrency(stats.totalPaid)}</div>
             <p className="text-xs text-muted-foreground text-right">
               {payments.length} תשלומים
             </p>
@@ -179,11 +116,11 @@ export default function LabPaymentsPage() {
             <CardTitle className="text-sm font-medium">יתרה</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold text-right ${balance > 0 ? 'text-orange-600' : balance < 0 ? 'text-green-600' : 'text-gray-600'}`}>
-              {formatCurrency(Math.abs(balance))}
+            <div className={`text-2xl font-bold text-right ${stats.balance > 0 ? 'text-orange-600' : stats.balance < 0 ? 'text-green-600' : 'text-gray-600'}`}>
+              {formatCurrency(Math.abs(stats.balance))}
             </div>
             <p className="text-xs text-muted-foreground text-right">
-              {balance > 0 ? 'המנהל חייב לך' : balance < 0 ? 'אתה בפלוס!' : 'מעודכן'}
+              {stats.balance > 0 ? 'המנהל חייב לך' : stats.balance < 0 ? 'אתה בפלוס!' : 'מעודכן'}
             </p>
           </CardContent>
         </Card>
@@ -194,9 +131,9 @@ export default function LabPaymentsPage() {
             <CardTitle className="text-sm font-medium">החודש</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-right text-purple-600">{formatCurrency(thisMonthEarned)}</div>
+            <div className="text-2xl font-bold text-right text-purple-600">{formatCurrency(stats.thisMonthEarned)}</div>
             <p className="text-xs text-muted-foreground text-right">
-              {lastPaymentDate ? `תשלום אחרון: ${formatDate(lastPaymentDate)}` : 'אין תשלומים'}
+              {stats.lastPaymentDate ? `תשלום אחרון: ${formatDate(stats.lastPaymentDate)}` : 'אין תשלומים'}
             </p>
           </CardContent>
         </Card>

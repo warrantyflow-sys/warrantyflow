@@ -3,6 +3,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { Tables } from '@/lib/supabase/database.types';
+import { useStoreWarranties } from '@/hooks/queries/useWarranties';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
 import { StoreDevicesPageSkeleton } from '@/components/ui/loading-skeletons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -64,14 +67,30 @@ type StoreWarranty = Tables<'warranties'> & {
 };
 
 export default function StoreDevicesPage() {
-  const [warranties, setWarranties] = useState<StoreWarranty[]>([]);
-  const [filteredWarranties, setFilteredWarranties] = useState<StoreWarranty[]>([]);
-  const [paginatedWarranties, setPaginatedWarranties] = useState<StoreWarranty[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // Load current user to get storeId
+  const { user: currentUser, isLoading: isUserLoading } = useCurrentUser();
+  const storeId = currentUser?.id || null;
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(50);
+
+  // React Query hook - fetch all warranties (stores typically have fewer devices)
+  const {
+    warranties,
+    total,
+    isLoading: isWarrantiesLoading,
+    isFetching,
+    refetch: refetchWarranties,
+  } = useStoreWarranties(storeId, 1, 10000); // Large page size to get all data
+
+  const isLoading = isUserLoading || isWarrantiesLoading;
+
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'expired'>('all');
   const [selectedWarranty, setSelectedWarranty] = useState<StoreWarranty | null>(null);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
+  const [filteredWarranties, setFilteredWarranties] = useState<any[]>([]);
   const [stats, setStats] = useState({
     total: 0,
     active: 0,
@@ -79,87 +98,32 @@ export default function StoreDevicesPage() {
     inRepair: 0,
   });
 
-  // Pagination state
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(50);
   const { toast } = useToast();
   const supabase = createClient();
   const router = useRouter();
 
-  const fetchWarranties = useCallback(async () => {
-    try {
-      setIsLoading(true);
+  // Calculate stats when warranties change
+  useEffect(() => {
+    const now = new Date();
+    const activeCount = warranties.filter((w: any) =>
+      new Date(w.expiry_date) > now && w.is_active
+    ).length;
 
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+    const expiredCount = warranties.filter((w: any) =>
+      new Date(w.expiry_date) <= now || !w.is_active
+    ).length;
 
-      const { data: userData } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', user.id)
-        .single() as { data: any };
+    const inRepairCount = warranties.filter((w: any) =>
+      (w.repairs || []).some((r: any) => ['received', 'in_progress', 'replacement_requested'].includes(r.status))
+    ).length;
 
-      if (!userData) return;
-      const strId = userData.id;
-
-      // Fetch warranties for this store (no limit needed - stores typically have fewer devices)
-      const { data: warrantiesData, error } = await supabase
-        .from('warranties')
-        .select(`
-          *,
-          device:devices!inner(
-            id,
-            imei,
-            imei2,
-            device_models(model_name)
-          ),
-          repairs(
-            id,
-            status,
-            fault_type,
-            lab_id,
-            created_at,
-            completed_at
-          )
-        `)
-        .eq('store_id', strId)
-        .order('created_at', { ascending: false }) as { data: any[] | null; error: any };
-
-      if (error) throw error;
-
-      setWarranties(warrantiesData || []);
-
-      // Calculate stats
-      const now = new Date();
-      const activeCount = warrantiesData?.filter((w: any) =>
-        new Date(w.expiry_date) > now && w.is_active
-      ).length || 0;
-
-      const expiredCount = warrantiesData?.filter((w: any) =>
-        new Date(w.expiry_date) <= now || !w.is_active
-      ).length || 0;
-
-      const inRepairCount = warrantiesData?.filter((w: any) =>
-        (w.repairs || []).some((r: any) => ['received', 'in_progress', 'replacement_requested'].includes(r.status))
-      ).length || 0;
-
-      setStats({
-        total: warrantiesData?.length || 0,
-        active: activeCount,
-        expired: expiredCount,
-        inRepair: inRepairCount,
-      });
-    } catch (error) {
-      console.error('Error fetching warranties:', error);
-      toast({
-        title: 'שגיאה',
-        description: 'אירעה שגיאה בטעינת המכשירים',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [supabase, toast]);
+    setStats({
+      total,
+      active: activeCount,
+      expired: expiredCount,
+      inRepair: inRepairCount,
+    });
+  }, [warranties, total]);
 
   const filterData = useCallback(() => {
     let filtered = [...warranties];
@@ -191,18 +155,14 @@ export default function StoreDevicesPage() {
     setCurrentPage(1); // Reset to first page when filters change
   }, [warranties, searchQuery, filterStatus]);
 
-  useEffect(() => {
-    fetchWarranties();
-    const interval = setInterval(fetchWarranties, 60000);
-    return () => clearInterval(interval);
-  }, [fetchWarranties]);
+  const [paginatedWarranties, setPaginatedWarranties] = useState<any[]>([]);
 
   useEffect(() => {
     filterData();
   }, [filterData]);
 
   useEffect(() => {
-    // Apply pagination to filtered warranties
+    // Apply client-side pagination to filtered warranties
     const startIndex = (currentPage - 1) * itemsPerPage;
     const endIndex = startIndex + itemsPerPage;
     setPaginatedWarranties(filteredWarranties.slice(startIndex, endIndex));
@@ -282,6 +242,12 @@ export default function StoreDevicesPage() {
 
   return (
     <div className="space-y-6">
+      {/* Background refresh indicator */}
+      <BackgroundRefreshIndicator
+        isFetching={isFetching}
+        isLoading={isLoading}
+      />
+
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">המכשירים שלי</h1>

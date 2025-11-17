@@ -1,7 +1,11 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { useAllWarranties } from '@/hooks/queries/useWarranties';
+import { useDevicesWithoutWarranty } from '@/hooks/queries/useDevices';
+import { useAllUsers } from '@/hooks/queries/useUsers';
+import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -54,12 +58,18 @@ const warrantySchema = z.object({
 type WarrantyFormData = z.infer<typeof warrantySchema>;
 
 export default function WarrantiesPage() {
-  const [warranties, setWarranties] = useState<any[]>([]);
+  // React Query hooks with Realtime
+  const { warranties, isLoading: isWarrantiesLoading, isFetching: isWarrantiesFetching } = useAllWarranties();
+  const { devices, isLoading: isDevicesLoading, isFetching: isDevicesFetching } = useDevicesWithoutWarranty();
+  const { users: allUsers, isLoading: isUsersLoading, isFetching: isUsersFetching } = useAllUsers();
+  const stores = useMemo(() => allUsers.filter(u => u.role === 'store'), [allUsers]);
+
+  const isLoading = isWarrantiesLoading || isDevicesLoading || isUsersLoading;
+  const isFetching = isWarrantiesFetching || isDevicesFetching || isUsersFetching;
+
+  // Local state for filtering/pagination
   const [filteredWarranties, setFilteredWarranties] = useState<any[]>([]);
   const [paginatedWarranties, setPaginatedWarranties] = useState<any[]>([]);
-  const [devices, setDevices] = useState<any[]>([]);
-  const [stores, setStores] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [isActivationDialogOpen, setIsActivationDialogOpen] = useState(false);
   const [selectedDevice, setSelectedDevice] = useState<any>(null);
@@ -100,51 +110,6 @@ export default function WarrantiesPage() {
     return <Badge className="bg-green-500">פעיל</Badge>;
   };
 
-  const fetchData = useCallback(async () => {
-    try {
-      // Fetch warranties with related data - FIX HERE
-      const { data: warrantiesData, error: warrantiesError } = await supabase
-        .from('warranties')
-        .select(`
-          *,
-          device:devices(
-            imei,
-            device_model:device_models!devices_model_id_fkey(model_name)
-          ),
-          store:users!warranties_store_id_fkey(full_name, email)
-        `)
-        .order('created_at', { ascending: false });
-
-      if (warrantiesError) throw warrantiesError;
-      setWarranties(warrantiesData || []);
-      setFilteredWarranties(warrantiesData || []);
-
-      // Fetch devices without warranty
-      const { data: devicesData } = await supabase
-        .from('devices_with_status')
-        .select('*')
-        .eq('warranty_status', 'new');
-      setDevices(devicesData || []);
-
-      // Fetch stores
-      const { data: storesData } = await supabase
-        .from('users')
-        .select('id, full_name, email')
-        .eq('role', 'store')
-        .order('full_name', { ascending: true, nullsFirst: false });
-      setStores(storesData || []);
-    } catch (error) {
-      console.error('Error fetching data:', error);
-      toast({
-        title: 'שגיאה',
-        description: 'לא ניתן לטעון את הנתונים',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [supabase, toast]);
-
   const filterWarranties = useCallback(() => {
     let filtered = warranties;
 
@@ -177,10 +142,6 @@ export default function WarrantiesPage() {
     setFilteredWarranties(filtered);
     setCurrentPage(1); // Reset to first page when filters change
   }, [warranties, filterStatus, searchQuery, getUserDisplayName]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
 
   useEffect(() => {
     filterWarranties();
@@ -341,7 +302,7 @@ export default function WarrantiesPage() {
       setIsActivationDialogOpen(false);
       reset();
       setSelectedDevice(null);
-      fetchData();
+      // React Query + Realtime will auto-refresh
     } catch (error: any) {
       toast({
         title: 'שגיאה',
@@ -367,7 +328,7 @@ export default function WarrantiesPage() {
         description: 'האחריות בוטלה בהצלחה',
       });
 
-      fetchData();
+      // React Query + Realtime will auto-refresh
     } catch (error: any) {
       toast({
         title: 'שגיאה',
@@ -383,6 +344,12 @@ export default function WarrantiesPage() {
 
   return (
     <div className="space-y-6">
+      {/* Background refresh indicator */}
+      <BackgroundRefreshIndicator
+        isFetching={isFetching}
+        isLoading={isLoading}
+      />
+
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">ניהול אחריות</h1>
         <Button onClick={() => setIsActivationDialogOpen(true)}>

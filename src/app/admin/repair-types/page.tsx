@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { useAllRepairTypes, useActiveLabs, useLabRepairPrices } from '@/hooks/queries/useRepairTypes';
+import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,39 +27,19 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
-import { Wrench, Plus, Edit, RefreshCw } from 'lucide-react';
+import { Wrench, Plus, Edit } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import ShekelIcon from '@/components/ui/shekel-icon';
-
-interface RepairType {
-  id: string;
-  name: string;
-  description: string | null;
-  is_active: boolean;
-  created_at: string;
-}
-
-interface Lab {
-  id: string;
-  full_name: string | null;
-  email: string;
-}
-
-interface LabPrice {
-  id: string;
-  lab_id: string;
-  repair_type_id: string;
-  price: number;
-  is_active: boolean;
-  lab: Lab;
-}
+import type { RepairType } from '@/lib/api/repairs';
+import type { Lab, LabRepairPrice } from '@/hooks/queries/useRepairTypes';
 
 export default function AdminRepairTypesPage() {
-  const [repairTypes, setRepairTypes] = useState<RepairType[]>([]);
-  const [labs, setLabs] = useState<Lab[]>([]);
+  // React Query hooks with Realtime
+  const { repairTypes, isLoading: isTypesLoading, isFetching: isTypesFetching } = useAllRepairTypes();
+  const { labs, isLoading: isLabsLoading, isFetching: isLabsFetching } = useActiveLabs();
+
+  // Local state
   const [selectedRepairType, setSelectedRepairType] = useState<RepairType | null>(null);
-  const [labPrices, setLabPrices] = useState<LabPrice[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [isNewTypeDialogOpen, setIsNewTypeDialogOpen] = useState(false);
   const [isPricingDialogOpen, setIsPricingDialogOpen] = useState(false);
   const [newTypeName, setNewTypeName] = useState('');
@@ -66,64 +48,11 @@ export default function AdminRepairTypesPage() {
   const supabase = createClient();
   const { toast } = useToast();
 
-  const fetchData = useCallback(async () => {
-    try {
-      setIsLoading(true);
+  const isLoading = isTypesLoading || isLabsLoading;
+  const isFetching = isTypesFetching || isLabsFetching;
 
-      // Fetch repair types
-      const { data: typesData, error: typesError } = await supabase
-        .from('repair_types')
-        .select('*')
-        .order('name');
-
-      if (typesError) throw typesError;
-      setRepairTypes(typesData || []);
-
-      // Fetch labs
-      const { data: labsData, error: labsError } = await supabase
-        .from('users')
-        .select('id, full_name, email')
-        .eq('role', 'lab')
-        .eq('is_active', true)
-        .order('full_name');
-
-      if (labsError) throw labsError;
-      setLabs(labsData || []);
-    } catch (error: any) {
-      toast({
-        title: 'שגיאה',
-        description: error.message || 'לא ניתן לטעון את הנתונים',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [supabase, toast]);
-
-  const fetchLabPrices = async (repairTypeId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('lab_repair_prices')
-        .select(`
-          *,
-          lab:users!lab_repair_prices_lab_id_fkey(id, full_name, email)
-        `)
-        .eq('repair_type_id', repairTypeId);
-
-      if (error) throw error;
-      setLabPrices(data || []);
-    } catch (error: any) {
-      toast({
-        title: 'שגיאה',
-        description: 'לא ניתן לטעון מחירים',
-        variant: 'destructive',
-      });
-    }
-  };
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  // Lab prices for selected repair type
+  const { labPrices } = useLabRepairPrices(selectedRepairType?.id || null);
 
   const handleCreateRepairType = async () => {
     if (!newTypeName.trim()) {
@@ -154,7 +83,7 @@ export default function AdminRepairTypesPage() {
       setIsNewTypeDialogOpen(false);
       setNewTypeName('');
       setNewTypeDescription('');
-      fetchData();
+      // React Query + Realtime will auto-refresh
     } catch (error: any) {
       toast({
         title: 'שגיאה',
@@ -177,8 +106,7 @@ export default function AdminRepairTypesPage() {
         title: 'הצלחה',
         description: `סוג התיקון ${repairType.is_active ? 'הושבת' : 'הופעל'} בהצלחה`,
       });
-
-      fetchData();
+      // React Query + Realtime will auto-refresh
     } catch (error: any) {
       toast({
         title: 'שגיאה',
@@ -188,10 +116,10 @@ export default function AdminRepairTypesPage() {
     }
   };
 
-  const handleOpenPricingDialog = async (repairType: RepairType) => {
+  const handleOpenPricingDialog = (repairType: RepairType) => {
     setSelectedRepairType(repairType);
-    await fetchLabPrices(repairType.id);
     setIsPricingDialogOpen(true);
+    // useLabRepairPrices hook will auto-fetch based on selectedRepairType
   };
 
   const handleUpdatePrice = async (labId: string, price: string) => {
@@ -242,8 +170,7 @@ export default function AdminRepairTypesPage() {
         title: 'הצלחה',
         description: 'המחיר עודכן בהצלחה',
       });
-
-      await fetchLabPrices(selectedRepairType.id);
+      // React Query + Realtime will auto-refresh
     } catch (error: any) {
       toast({
         title: 'שגיאה',
@@ -256,13 +183,19 @@ export default function AdminRepairTypesPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <RefreshCw className="h-8 w-8 animate-spin text-primary" />
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
       </div>
     );
   }
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+      {/* Background refresh indicator */}
+      <BackgroundRefreshIndicator
+        isFetching={isFetching}
+        isLoading={isLoading}
+      />
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">

@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
@@ -93,6 +92,7 @@ export function ProfileSettingsCard() {
 
       loadData();
     } catch (error: any) {
+      // כאן השרת יחזיר שגיאה אם משתמש לא מורשה ינסה לעדכן
       toast({
         title: 'שגיאה',
         description: error.message || 'לא ניתן לשמור את הפרטים',
@@ -102,6 +102,9 @@ export function ProfileSettingsCard() {
       setIsLoading(false);
     }
   };
+
+  // בדיקה אם המשתמש הוא חנות או מעבדה
+  const isEditingDisabled = userData?.role === 'store' || userData?.role === 'lab';
 
   if (isLoading && !userData) {
     return (
@@ -122,8 +125,11 @@ export function ProfileSettingsCard() {
     <Card>
       <CardHeader>
         <CardTitle>פרטים אישיים</CardTitle>
+        {/* עדכון התיאור בהתאם להרשאות */}
         <CardDescription>
-          עדכן את הפרטים האישיים שלך.
+          {isEditingDisabled
+            ? 'באפשרותך לצפות בפרטים האישיים שלך. רק מנהל מערכת יכול לעדכן אותם.'
+            : 'עדכן את הפרטים האישיים שלך.'}
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit(onSubmit)}>
@@ -137,6 +143,7 @@ export function ProfileSettingsCard() {
                   id="full_name"
                   {...register('full_name')}
                   className="pr-10"
+                  disabled={isEditingDisabled} // נטרול שדה
                 />
               </div>
               {errors.full_name && (
@@ -152,6 +159,7 @@ export function ProfileSettingsCard() {
                   id="phone"
                   {...register('phone')}
                   className="pr-10"
+                  disabled={isEditingDisabled} // נטרול שדה
                 />
               </div>
               {errors.phone && (
@@ -171,7 +179,7 @@ export function ProfileSettingsCard() {
             </div>
           </div>
 
-          <Button type="submit" disabled={isLoading}>
+          <Button type="submit" disabled={isLoading || isEditingDisabled}> {/* נטרול כפתור */}
             <Save className="ms-2 h-4 w-4" />
             שמור שינויים
           </Button>

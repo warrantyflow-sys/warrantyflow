@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { useEffect, useState, useMemo } from 'react';
+import { useCurrentUser } from '@/hooks/queries/useCurrentUser';
+import { useLabCompletedRepairs, useLabPayments } from '@/hooks/queries/useLabPayments';
+import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
 import type { Tables } from '@/lib/supabase/database.types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -57,19 +59,24 @@ interface MonthlyReport {
 }
 
 export default function LabFinancialReportPage() {
+  // React Query hooks with Realtime
+  const { user: labData, isLoading: isUserLoading } = useCurrentUser();
+  const labId = labData?.id || null;
+  const { repairs: completedRepairs, isLoading: isRepairsLoading, isFetching: isRepairsFetching } = useLabCompletedRepairs(labId);
+  const { payments, isLoading: isPaymentsLoading, isFetching: isPaymentsFetching } = useLabPayments(labId);
+
+  const isLoading = isUserLoading || isRepairsLoading || isPaymentsLoading;
+  const isFetching = isRepairsFetching || isPaymentsFetching;
+
+  // Local state for UI
   const [monthlyReports, setMonthlyReports] = useState<MonthlyReport[]>([]);
   const [selectedMonth, setSelectedMonth] = useState<string>('');
-  const [labData, setLabData] = useState<Tables<'users'> | null>(null);
   const [totalStats, setTotalStats] = useState({
     totalRepairs: 0,
     totalRevenue: 0,
     totalPaid: 0,
     balance: 0
   });
-  const [isLoading, setIsLoading] = useState(true);
-  
-  const supabase = createClient();
-  const { toast } = useToast();
 
   // Legacy fault type labels for backwards compatibility
   const faultTypeLabels: Record<string, string> = {
@@ -91,127 +98,73 @@ export default function LabFinancialReportPage() {
     return 'אחר';
   };
 
-  const fetchData = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+  // Process repairs and payments into monthly reports
+  useEffect(() => {
+    if (!completedRepairs || !payments) return;
 
-      // Get lab info
-      const { data: userData } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', user.id)
-        .single<Tables<'users'>>();
+    // Process data by month
+    const reportsByMonth: Record<string, MonthlyReport> = {};
 
-      if (!userData) return;
-      setLabData(userData);
-      const labId = userData.id;
-
-      // Fetch all repairs
-      const { data: repairs } = await supabase
-        .from('repairs')
-        .select(`
-          *,
-          device:devices(imei, device_models(model_name)),
-          warranty:warranties(
-            customer_name,
-            store:users!warranties_store_id_fkey(full_name, email)
-          ),
-          repair_type:repair_types(id, name)
-        `)
-        .eq('lab_id', labId)
-        .eq('status', 'completed')
-        .order('completed_at', { ascending: false })
-        .returns<CompletedRepair[]>();
-
-      // Fetch all payments
-      const { data: payments } = await supabase
-        .from('payments')
-        .select('*')
-        .eq('lab_id', labId)
-        .order('payment_date', { ascending: false })
-        .returns<LabPayment[]>();
-
-      // Process data by month
-      const reportsByMonth: Record<string, MonthlyReport> = {};
-      
-      (repairs || []).forEach(repair => {
-        const completionDate = repair.completed_at || repair.created_at;
-        const month = completionDate.substring(0, 7);
-        if (!reportsByMonth[month]) {
-          reportsByMonth[month] = {
-            month: month.split('-')[1],
-            year: parseInt(month.split('-')[0]),
-            repairs: [],
-            totalRepairs: 0,
-            totalRevenue: 0,
-            byRepairType: {},
-            payments: []
-          };
-        }
-
-        reportsByMonth[month].repairs.push(repair);
-        reportsByMonth[month].totalRepairs++;
-        reportsByMonth[month].totalRevenue += repair.cost || 0;
-
-        // Group by repair type
-        const repairTypeName = getRepairTypeName(repair);
-        if (!reportsByMonth[month].byRepairType[repairTypeName]) {
-          reportsByMonth[month].byRepairType[repairTypeName] = { count: 0, revenue: 0 };
-        }
-        reportsByMonth[month].byRepairType[repairTypeName].count++;
-        reportsByMonth[month].byRepairType[repairTypeName].revenue += repair.cost || 0;
-      });
-
-      // Add payments to months
-      (payments || []).forEach(payment => {
-        const month = payment.payment_date.substring(0, 7);
-        if (reportsByMonth[month]) {
-          reportsByMonth[month].payments.push(payment);
-        }
-      });
-
-      const sortedReports = Object.values(reportsByMonth).sort((a, b) => {
-        const dateA = `${a.year}-${String(a.month).padStart(2, '0')}`;
-        const dateB = `${b.year}-${String(b.month).padStart(2, '0')}`;
-        return dateB.localeCompare(dateA);
-      });
-
-      setMonthlyReports(sortedReports);
-
-      if (sortedReports.length > 0) {
-        const mostRecentMonth = `${sortedReports[0].year}-${String(sortedReports[0].month).padStart(2, '0')}`;
-        setSelectedMonth(mostRecentMonth);
+    completedRepairs.forEach(repair => {
+      const completionDate = repair.completed_at || repair.created_at;
+      const month = completionDate.substring(0, 7);
+      if (!reportsByMonth[month]) {
+        reportsByMonth[month] = {
+          month: month.split('-')[1],
+          year: parseInt(month.split('-')[0]),
+          repairs: [],
+          totalRepairs: 0,
+          totalRevenue: 0,
+          byRepairType: {},
+          payments: []
+        };
       }
 
-      // Calculate totals
-      const totalRevenue = (repairs || []).reduce((sum, r) => sum + (r.cost || 0), 0);
-      const totalPaid = (payments || []).reduce((sum, p) => sum + (p.amount || 0), 0);
+      reportsByMonth[month].repairs.push(repair as any);
+      reportsByMonth[month].totalRepairs++;
+      reportsByMonth[month].totalRevenue += repair.cost || 0;
 
-      setTotalStats({
-        totalRepairs: repairs?.length || 0,
-        totalRevenue,
-        totalPaid,
-        balance: totalRevenue - totalPaid
-      });
+      // Group by repair type
+      const repairTypeName = getRepairTypeName(repair as any);
+      if (!reportsByMonth[month].byRepairType[repairTypeName]) {
+        reportsByMonth[month].byRepairType[repairTypeName] = { count: 0, revenue: 0 };
+      }
+      reportsByMonth[month].byRepairType[repairTypeName].count++;
+      reportsByMonth[month].byRepairType[repairTypeName].revenue += repair.cost || 0;
+    });
 
-    } catch (error) {
-      console.error('Error fetching data:', error);
-      toast({
-        title: 'שגיאה',
-        description: 'לא ניתן לטעון את הנתונים',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoading(false);
+    // Add payments to months
+    payments.forEach(payment => {
+      const month = payment.payment_date.substring(0, 7);
+      if (reportsByMonth[month]) {
+        reportsByMonth[month].payments.push(payment as any);
+      }
+    });
+
+    const sortedReports = Object.values(reportsByMonth).sort((a, b) => {
+      const dateA = `${a.year}-${String(a.month).padStart(2, '0')}`;
+      const dateB = `${b.year}-${String(b.month).padStart(2, '0')}`;
+      return dateB.localeCompare(dateA);
+    });
+
+    setMonthlyReports(sortedReports);
+
+    if (sortedReports.length > 0 && !selectedMonth) {
+      const mostRecentMonth = `${sortedReports[0].year}-${String(sortedReports[0].month).padStart(2, '0')}`;
+      setSelectedMonth(mostRecentMonth);
     }
-  }, [supabase, toast]);
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    // Calculate totals
+    const totalRevenue = completedRepairs.reduce((sum, r) => sum + (r.cost || 0), 0);
+    const totalPaid = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+
+    setTotalStats({
+      totalRepairs: completedRepairs.length,
+      totalRevenue,
+      totalPaid,
+      balance: totalRevenue - totalPaid
+    });
+  }, [completedRepairs, payments, selectedMonth]);
 
   const exportToCSV = () => {
     const selectedReport = monthlyReports.find(r => 
@@ -268,6 +221,12 @@ export default function LabFinancialReportPage() {
 
   return (
     <div className="space-y-6">
+      {/* Background refresh indicator */}
+      <BackgroundRefreshIndicator
+        isFetching={isFetching}
+        isLoading={isLoading}
+      />
+
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">דוח כספי</h1>

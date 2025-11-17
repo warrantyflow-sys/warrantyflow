@@ -159,7 +159,7 @@ export function AdminHeader({ isCollapsed, setIsCollapsed }: AdminHeaderProps = 
 
   return (
     <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-16 items-center justify-between px-4">
+      <div className="flex h-16 items-center justify-between px-4">
         {/* Logo and title */}
         <div className="flex items-center gap-3">
           <div className="hidden sm:flex items-center justify-center h-12 w-12 rounded-full bg-primary/10">

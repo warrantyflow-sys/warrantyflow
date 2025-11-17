@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { useAdminDashboardStats } from '@/hooks/queries/useAdminDashboard';
+import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { QuickLinkCard } from '@/components/admin/quick-link-card';
 import { SettingCard } from '@/components/admin/setting-card';
@@ -37,15 +39,9 @@ interface Stats {
 }
 
 export default function AdminDashboard() {
-  const [isLoading, setIsLoading] = useState(true);
-  const [stats, setStats] = useState<Stats>({
-    total: 0,
-    new: 0,
-    active: 0,
-    expired: 0,
-    replaced: 0,
-    inRepair: 0,
-  });
+  // React Query hook with Realtime subscriptions
+  const { stats, isLoading, isFetching } = useAdminDashboardStats();
+
   const [isModelsDialogOpen, setIsModelsDialogOpen] = useState(false);
   const [isRepairTypesDialogOpen, setIsRepairTypesDialogOpen] = useState(false);
   const [isLabPricesDialogOpen, setIsLabPricesDialogOpen] = useState(false);
@@ -63,7 +59,6 @@ export default function AdminDashboard() {
 
   const supabase = useMemo(() => createClient(), []);
   const { toast } = useToast();
-  const isMountedRef = useRef(true);
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -110,94 +105,6 @@ export default function AdminDashboard() {
     });
   };
 
-  const fetchDevices = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      const [devicesResult, repairsResult] = await Promise.all([
-        supabase.from('devices_with_status').select('warranty_status'),
-        supabase
-          .from('repairs')
-          .select('device_id', { count: 'exact', head: true })
-          .in('status', ['received', 'in_progress']),
-      ]);
-
-      if (!isMountedRef.current) return;
-      if (devicesResult.error) throw devicesResult.error;
-
-      const devices = devicesResult.data || [];
-      const stats = {
-        total: devices.length,
-        new: devices.filter(d => !d.warranty_status || d.warranty_status === 'new').length,
-        active: devices.filter(d => d.warranty_status === 'active').length,
-        expired: devices.filter(d => d.warranty_status === 'expired').length,
-        replaced: devices.filter(d => d.warranty_status === 'replaced').length,
-        inRepair: repairsResult.count || 0,
-      };
-      setStats(stats);
-    } catch (error) {
-      if (!isMountedRef.current) return;
-      console.error('Error fetching devices:', error);
-      toast({
-        title: 'שגיאה',
-        description: 'אירעה שגיאה בטעינת הנתונים',
-        variant: 'destructive',
-      });
-    } finally {
-      if (isMountedRef.current) {
-        setIsLoading(false);
-      }
-    }
-  }, [supabase, toast]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    isMountedRef.current = true;
-    let interval: NodeJS.Timeout | null = null;
-
-    if (!document.hidden) {
-      fetchDevices();
-    }
-
-    const startInterval = () => {
-      if (!interval && isMountedRef.current) {
-        interval = setInterval(() => {
-          if (isMountedRef.current) {
-            fetchDevices();
-          }
-        }, 60000);
-      }
-    };
-
-    const stopInterval = () => {
-      if (interval) {
-        clearInterval(interval);
-        interval = null;
-      }
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        stopInterval();
-      } else {
-        if (isMountedRef.current) {
-          fetchDevices();
-          startInterval();
-        }
-      }
-    };
-
-    if (!document.hidden) {
-      startInterval();
-    }
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      isMountedRef.current = false;
-      stopInterval();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [fetchDevices]);
 
   if (isLoading && !searchParams.get('dialog')) {
     return <DashboardSkeleton />;
@@ -205,6 +112,12 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Background refresh indicator */}
+      <BackgroundRefreshIndicator
+        isFetching={isFetching}
+        isLoading={isLoading}
+      />
+
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>

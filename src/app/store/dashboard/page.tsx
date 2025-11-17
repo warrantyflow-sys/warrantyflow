@@ -4,6 +4,9 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import type { Tables } from '@/lib/supabase/database.types';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useStoreDashboardStats } from '@/hooks/queries/useStoreDashboard';
+import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -69,19 +72,19 @@ type ReplacementRequestWithDevice = Tables<'replacement_requests'> & {
 };
 
 export default function StoreDashboard() {
-  const [stats, setStats] = useState({
-    activeWarranties: 0,
-    pendingReplacements: 0,
-    monthlyActivations: 0,
-    totalDevices: 0,
-  });
+  // Hooks for user and stats with Realtime
+  const { user: currentUser, isLoading: isUserLoading } = useCurrentUser();
+  const storeId = currentUser?.id || null;
+  const storeName = currentUser?.full_name || currentUser?.email || '';
+  const { stats, isLoading: isStatsLoading, isFetching: isStatsFetching } = useStoreDashboardStats(storeId);
+
+  // Local state for interactive features
   const [searchImei, setSearchImei] = useState('');
   const [searchResult, setSearchResult] = useState<DeviceWithWarranty | null>(null);
   const [isActivationDialogOpen, setIsActivationDialogOpen] = useState(false);
   const [isReplacementDialogOpen, setIsReplacementDialogOpen] = useState(false);
   const [activeDevices, setActiveDevices] = useState<DeviceWithWarranty[]>([]);
   const [replacementRequests, setReplacementRequests] = useState<ReplacementRequestWithDevice[]>([]);
-  const [storeName, setStoreName] = useState<string>('');
   const [activeTab, setActiveTab] = useState('search');
   const activationDateDisplay = formatDate(new Date());
 
@@ -98,88 +101,10 @@ export default function StoreDashboard() {
   const hasExistingWarranty = Boolean(searchResult?.warranties && searchResult.warranties.length > 0);
   const currentWarranty = hasExistingWarranty ? searchResult!.warranties![0]! : null;
 
-  const fetchUserData = useCallback(async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data: userData } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', user.id)
-        .single<Tables<'users'>>();
-
-      if (userData) {
-        setStoreName(userData.full_name || userData.email || '');
-      }
-    } catch (error) {
-      console.error('Error fetching user data:', error);
-    }
-  }, [supabase]);
-
-  const fetchDashboardData = useCallback(async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const storeId = user.id;
-
-      // Active warranties count
-      const { count: activeCount } = await supabase
-        .from('warranties')
-        .select('*', { count: 'exact' })
-        .eq('store_id', storeId)
-        .eq('is_active', true)
-        .gte('expiry_date', new Date().toISOString());
-
-      // Pending replacements
-      const { data: warranties } = await supabase
-        .from('warranties')
-        .select('device_id')
-        .eq('store_id', storeId)
-        .returns<Array<Pick<Tables<'warranties'>, 'device_id'>>>();
-
-      const deviceIds = (warranties || []).map(w => w.device_id).filter(Boolean) as string[];
-
-      const { count: pendingCount } = await supabase
-        .from('replacement_requests')
-        .select('*', { count: 'exact' })
-        .in('device_id', deviceIds)
-        .eq('status', 'pending');
-
-      // Monthly activations
-      const startOfMonth = new Date();
-      startOfMonth.setDate(1);
-      startOfMonth.setHours(0, 0, 0, 0);
-
-      const { count: monthlyCount } = await supabase
-        .from('warranties')
-        .select('*', { count: 'exact' })
-        .eq('store_id', storeId)
-        .gte('activation_date', startOfMonth.toISOString());
-
-      // Total devices - only devices this store has activated warranties for
-      const { data: deviceCountData } = await supabase
-        .rpc('get_store_device_count');
-
-      setStats({
-        activeWarranties: activeCount || 0,
-        pendingReplacements: pendingCount || 0,
-        monthlyActivations: monthlyCount || 0,
-        totalDevices: deviceCountData || 0,
-      });
-    } catch (error) {
-      console.error('Error fetching dashboard data:', error);
-    }
-  }, [supabase]);
-
   const fetchActiveDevices = useCallback(async () => {
+    if (!storeId) return;
+
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const storeId = user.id;
-
       // Fetch devices with active warranties for this store
       const { data, error } = await supabase
         .from('devices')
@@ -209,15 +134,12 @@ export default function StoreDashboard() {
     } catch (error) {
       console.error('Error fetching active devices:', error);
     }
-  }, [supabase]);
+  }, [storeId, supabase]);
 
   const fetchReplacementRequests = useCallback(async () => {
+    if (!storeId) return;
+
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const storeId = user.id;
-
       const { data: warranties } = await supabase
         .from('warranties')
         .select('device_id')
@@ -244,14 +166,65 @@ export default function StoreDashboard() {
     } catch (error) {
       console.error('Error fetching replacement requests:', error);
     }
-  }, [supabase]);
+  }, [storeId, supabase]);
 
+  // Fetch lists on mount and setup Realtime subscriptions
   useEffect(() => {
-    fetchUserData();
-    fetchDashboardData();
+    if (!storeId) return;
+
     fetchActiveDevices();
     fetchReplacementRequests();
-  }, [fetchUserData, fetchDashboardData, fetchActiveDevices, fetchReplacementRequests]);
+
+    // Realtime subscriptions for interactive lists
+    const devicesChannel = supabase
+      .channel(`store-devices-${storeId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'devices',
+        },
+        () => fetchActiveDevices()
+      )
+      .subscribe();
+
+    const warrantiesChannel = supabase
+      .channel(`store-warranties-${storeId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'warranties',
+          filter: `store_id=eq.${storeId}`,
+        },
+        () => {
+          fetchActiveDevices();
+          fetchReplacementRequests();
+        }
+      )
+      .subscribe();
+
+    const replacementsChannel = supabase
+      .channel(`store-replacements-${storeId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'replacement_requests',
+        },
+        () => fetchReplacementRequests()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(devicesChannel);
+      supabase.removeChannel(warrantiesChannel);
+      supabase.removeChannel(replacementsChannel);
+    };
+  }, [storeId, fetchActiveDevices, fetchReplacementRequests, supabase]);
 
   const handleSearch = async () => {
     const trimmedIMEI = searchImei.trim().replace(/[\s-]/g, '');
@@ -443,8 +416,7 @@ export default function StoreDashboard() {
       setSearchImei('');
       setSearchResult(null);
 
-      // Refresh data
-      fetchDashboardData();
+      // Refresh lists (stats refresh automatically via React Query + Realtime)
       fetchActiveDevices();
       fetchReplacementRequests();
 
@@ -481,8 +453,7 @@ export default function StoreDashboard() {
       setSearchResult(null);
       setSearchImei('');
 
-      // Refresh data
-      fetchDashboardData();
+      // Refresh lists (stats refresh automatically via React Query + Realtime)
       fetchActiveDevices();
       fetchReplacementRequests();
 
@@ -534,12 +505,32 @@ export default function StoreDashboard() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-3xl font-bold tracking-tight">ניהול מכשירים ואחריות</h2>
-        <p className="text-muted-foreground">
-          תצוגה מרכזית של כל המכשירים, אחריות ובקשות החלפה
-        </p>
+      {/* Background refresh indicator */}
+      <BackgroundRefreshIndicator
+        isFetching={isStatsFetching}
+        isLoading={isUserLoading || isStatsLoading}
+      />
+
+      {/* === שורות שהשתנו === */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">ניהול מכשירים ואחריות</h2>
+          <p className="text-muted-foreground">
+            תצוגה מרכזית של כל המכשירים, אחריות ובקשות החלפה
+          </p>
+        </div>
+        <Button onClick={() => {
+          setSearchResult(null); // נקה חיפוש קודם
+          setSearchImei('');    // נקה שדה IMEI
+          reset();              // אפס את הטופס
+          setIsActivationDialogOpen(true);
+        }}>
+          <Shield className="me-2 h-4 w-4" />
+          הפעל אחריות חדשה
+        </Button>
       </div>
+      {/* === סוף שורות שהשתנו === */}
+
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -613,8 +604,8 @@ export default function StoreDashboard() {
           </TabsTrigger>
         </TabsList>
 
-        {/* Active Warranties Tab */}
-        <TabsContent value="active-warranties" className="space-y-4">
+{/* Active Warranties Tab */}
+<TabsContent value="active-warranties" className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle>מכשירים עם אחריות פעילה</CardTitle>
@@ -629,60 +620,59 @@ export default function StoreDashboard() {
                   <p>אין מכשירים עם אחריות פעילה</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="border-b">
-                      <tr>
-                        <th className="h-12 px-4 text-start align-middle font-medium text-muted-foreground">דגם</th>
-                        <th className="h-12 px-4 text-start align-middle font-medium text-muted-foreground">IMEI</th>
-                        <th className="h-12 px-4 text-start align-middle font-medium text-muted-foreground">לקוח</th>
-                        <th className="h-12 px-4 text-start align-middle font-medium text-muted-foreground">טלפון</th>
-                        <th className="h-12 px-4 text-start align-middle font-medium text-muted-foreground">תאריך הפעלה</th>
-                        <th className="h-12 px-4 text-start align-middle font-medium text-muted-foreground">תוקף</th>
-                        <th className="h-12 px-4 text-start align-middle font-medium text-muted-foreground">סטטוס</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {activeDevices.map((device) => {
-                        const warranties = device.warranties as any;
-                        const warranty = warranties?.[0];
-                        if (!warranty) return null;
-                        const status = getWarrantyStatus(warranty);
+                // === קוד הטבלה שהשתנה ===
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>דגם</TableHead>
+                      <TableHead>IMEI</TableHead>
+                      <TableHead>לקוח</TableHead>
+                      <TableHead>טלפון</TableHead>
+                      <TableHead>תאריך הפעלה</TableHead>
+                      <TableHead>תוקף</TableHead>
+                      <TableHead>סטטוס</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {activeDevices.map((device) => {
+                      const warranties = device.warranties as any;
+                      const warranty = warranties?.[0];
+                      if (!warranty) return null;
+                      const status = getWarrantyStatus(warranty);
 
-                        return (
-                          <tr key={device.id} className="border-b transition-colors hover:bg-muted/50">
-                            <td className="p-4 align-middle font-medium">
-                              <div className="flex items-center gap-2">
-                                <Package className="h-4 w-4 text-muted-foreground" />
-                                {device.device_models?.model_name || 'לא ידוע'}
-                              </div>
-                            </td>
-                            <td className="p-4 align-middle font-mono text-sm">{device.imei}</td>
-                            <td className="p-4 align-middle">
-                              <div className="flex items-center gap-2">
-                                <User className="h-4 w-4 text-muted-foreground" />
-                                {warranty.customer_name}
-                              </div>
-                            </td>
-                            <td className="p-4 align-middle">
-                              <div className="flex items-center gap-2">
-                                <Phone className="h-4 w-4 text-muted-foreground" />
-                                {warranty.customer_phone}
-                              </div>
-                            </td>
-                            <td className="p-4 align-middle">{formatDate(warranty.activation_date)}</td>
-                            <td className="p-4 align-middle">{formatDate(warranty.expiry_date)}</td>
-                            <td className="p-4 align-middle">
-                              <Badge variant={status.variant}>
-                                {status.text}
-                              </Badge>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                      return (
+                        <TableRow key={device.id}>
+                          <TableCell className="font-medium">
+                            <div className="flex items-center gap-2">
+                              <Package className="h-4 w-4 text-muted-foreground" />
+                              {device.device_models?.model_name || 'לא ידוע'}
+                            </div>
+                          </TableCell>
+                          <TableCell className="font-mono text-sm">{device.imei}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <User className="h-4 w-4 text-muted-foreground" />
+                              {warranty.customer_name}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Phone className="h-4 w-4 text-muted-foreground" />
+                              {warranty.customer_phone}
+                            </div>
+                          </TableCell>
+                          <TableCell>{formatDate(warranty.activation_date)}</TableCell>
+                          <TableCell>{formatDate(warranty.expiry_date)}</TableCell>
+                          <TableCell>
+                            <Badge variant={status.variant}>
+                              {status.text}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
               )}
             </CardContent>
           </Card>
@@ -893,107 +883,160 @@ export default function StoreDashboard() {
         </TabsContent>
       </Tabs>
 
-      {/* Activation Dialog */}
-      <Dialog open={isActivationDialogOpen} onOpenChange={setIsActivationDialogOpen}>
+      {/* === דיאלוג הפעלה - קוד מעודכן === */}
+      <Dialog open={isActivationDialogOpen} onOpenChange={(isOpen) => {
+        setIsActivationDialogOpen(isOpen);
+        if (!isOpen) {
+          // אפס את המצב כשהדיאלוג נסגר
+          setSearchResult(null);
+          setSearchImei('');
+          reset();
+        }
+      }}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle>הפעלת אחריות</DialogTitle>
             <DialogDescription>
-              הזן את פרטי הלקוח להפעלת האחריות
+              {searchResult ? 'הזן את פרטי הלקוח להפעלת האחריות' : 'הזן מספר IMEI לחיפוש והפעלת אחריות'}
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleSubmit(onSubmitWarranty)} className="space-y-4">
-            {/* Display-only fields */}
-            <div className="space-y-4 p-4 bg-muted rounded-lg">
-              <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-muted-foreground" />
-                <Label className="text-sm font-medium">תאריך הפעלה:</Label>
-                <span className="text-sm">{activationDateDisplay}</span>
+          {/* === התניה חדשה: הצג חיפוש או טופס === */}
+          {!searchResult ? (
+            // שלב 1: ממשק חיפוש
+            <div className="space-y-4 pt-2">
+              <div className="flex gap-2" dir="rtl">
+                <Input
+                  placeholder="הזן מספר IMEI..."
+                  value={searchImei}
+                  onChange={(e) => setSearchImei(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                  className="flex-1"
+                  dir="rtl"
+                  id="imei-dialog-search"
+                />
+                <Button onClick={handleSearch}>
+                  <Search className="me-2 h-4 w-4" />
+                  חפש
+                </Button>
               </div>
+            </div>
+          ) : (
+            // שלב 2: טופס הפעלה
+            <form onSubmit={handleSubmit(onSubmitWarranty)} className="space-y-4">
+              {/* שדות תצוגה */}
+              <div className="space-y-4 p-4 bg-muted rounded-lg">
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <Label className="text-sm font-medium">תאריך הפעלה:</Label>
+                  <span className="text-sm">{activationDateDisplay}</span>
+                </div>
 
-              <div className="flex items-center gap-2">
-                <Store className="h-4 w-4 text-muted-foreground" />
-                <Label className="text-sm font-medium">מפעיל האחריות:</Label>
-                <span className="text-sm font-medium">{storeName || 'החנות שלך'}</span>
-              </div>
+                <div className="flex items-center gap-2">
+                  <Store className="h-4 w-4 text-muted-foreground" />
+                  <Label className="text-sm font-medium">מפעיל האחריות:</Label>
+                  <span className="text-sm font-medium">{storeName || 'החנות שלך'}</span>
+                </div>
 
-              {searchResult && (
-                <>
-                  <div className="flex items-center gap-2">
-                    <Package className="h-4 w-4 text-muted-foreground" />
-                    <Label className="text-sm font-medium">דגם:</Label>
-                    <span className="text-sm">{searchResult.device_models?.model_name || 'לא ידוע'}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Hash className="h-4 w-4 text-muted-foreground" />
-                    <Label className="text-sm font-medium">IMEI:</Label>
-                    <span className="text-sm font-mono">{searchResult.imei}</span>
-                  </div>
-                  {searchResult.imei2 && (
+                {searchResult && (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <Package className="h-4 w-4 text-muted-foreground" />
+                      <Label className="text-sm font-medium">דגם:</Label>
+                      <span className="text-sm">{searchResult.device_models?.model_name || 'לא ידוע'}</span>
+                    </div>
                     <div className="flex items-center gap-2">
                       <Hash className="h-4 w-4 text-muted-foreground" />
-                      <Label className="text-sm font-medium">IMEI 2:</Label>
-                      <span className="text-sm font-mono">{searchResult.imei2}</span>
+                      <Label className="text-sm font-medium">IMEI:</Label>
+                      <span className="text-sm font-mono">{searchResult.imei}</span>
                     </div>
-                  )}
-                  <div className="flex items-center gap-2">
-                    <Shield className="h-4 w-4 text-muted-foreground" />
-                    <Label className="text-sm font-medium">תקופת אחריות:</Label>
-                    <span className="text-sm">{searchResult.device_models?.warranty_months || 12} חודשים</span>
-                  </div>
-                </>
+                    {searchResult.imei2 && (
+                      <div className="flex items-center gap-2">
+                        <Hash className="h-4 w-4 text-muted-foreground" />
+                        <Label className="text-sm font-medium">IMEI 2:</Label>
+                        <span className="text-sm font-mono">{searchResult.imei2}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <Shield className="h-4 w-4 text-muted-foreground" />
+                      <Label className="text-sm font-medium">תקופת אחריות:</Label>
+                      <span className="text-sm">{searchResult.device_models?.warranty_months || 12} חודשים</span>
+                    </div>
+                  </>
+                )}
+              </div>
+              
+              {/* הצג התראות אם יש צורך */}
+              {searchResult.is_replaced && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    מכשיר זה הוחלף ולא ניתן להפעיל עליו אחריות.
+                  </AlertDescription>
+                </Alert>
               )}
-            </div>
+              {hasExistingWarranty && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    למכשיר זה כבר קיימת אחריות פעילה.
+                  </AlertDescription>
+                </Alert>
+              )}
 
-            {/* Editable fields */}
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="customer_name">שם הלקוח *</Label>
-                <Input
-                  id="customer_name"
-                  {...register('customer_name', { required: 'שם הלקוח הוא שדה חובה' })}
-                  placeholder="ישראל ישראלי"
-                />
-                {errors.customer_name && (
-                  <p className="text-sm text-red-500 mt-1">{errors.customer_name.message}</p>
-                )}
+              {/* שדות לעריכה */}
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="customer_name">שם הלקוח *</Label>
+                  <Input
+                    id="customer_name"
+                    {...register('customer_name', { required: 'שם הלקוח הוא שדה חובה' })}
+                    placeholder="ישראל ישראלי"
+                  />
+                  {errors.customer_name && (
+                    <p className="text-sm text-red-500 mt-1">{errors.customer_name.message}</p>
+                  )}
+                </div>
+
+                <div>
+                  <Label htmlFor="customer_phone">טלפון הלקוח *</Label>
+                  <Input
+                    id="customer_phone"
+                    {...register('customer_phone', {
+                      required: 'טלפון הלקוח הוא שדה חובה',
+                      pattern: {
+                        value: /^[0-9]{9,10}$/,
+                        message: 'מספר טלפון לא תקין'
+                      }
+                    })}
+                    placeholder="050-1234567"
+                  />
+                  {errors.customer_phone && (
+                    <p className="text-sm text-red-500 mt-1">{errors.customer_phone.message}</p>
+                  )}
+                </div>
               </div>
 
-              <div>
-                <Label htmlFor="customer_phone">טלפון הלקוח *</Label>
-                <Input
-                  id="customer_phone"
-                  {...register('customer_phone', {
-                    required: 'טלפון הלקוח הוא שדה חובה',
-                    pattern: {
-                      value: /^[0-9]{9,10}$/,
-                      message: 'מספר טלפון לא תקין'
-                    }
-                  })}
-                  placeholder="050-1234567"
-                />
-                {errors.customer_phone && (
-                  <p className="text-sm text-red-500 mt-1">{errors.customer_phone.message}</p>
-                )}
+              <div className="flex gap-3 justify-start pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsActivationDialogOpen(false)}
+                >
+                  ביטול
+                </Button>
+                <Button type="submit" disabled={hasExistingWarranty || searchResult.is_replaced}>
+                  {hasExistingWarranty ? 'אחריות כבר קיימת' :
+                   searchResult.is_replaced ? 'מכשיר הוחלף' :
+                   'הפעל אחריות'}
+                </Button>
               </div>
-            </div>
-
-            <div className="flex gap-3 justify-start pt-4">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsActivationDialogOpen(false)}
-              >
-                ביטול
-              </Button>
-              <Button type="submit">
-                הפעל אחריות
-              </Button>
-            </div>
-          </form>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
+      {/* === סוף דיאלוג הפעלה === */}
+
 
       {/* Replacement Request Dialog */}
       <Dialog open={isReplacementDialogOpen} onOpenChange={setIsReplacementDialogOpen}>

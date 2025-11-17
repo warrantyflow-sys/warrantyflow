@@ -87,18 +87,24 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
-          <div className="flex justify-center mb-4">
+          <div className="w-[90%] mx-auto mb-4 mt-2">
             <Image
               src="/logo.png"
-              alt="לוגו"
-              width={120}
-              height={120}
+              alt="לוגו אטלס"
+              width={799}
+              height={201}
+              style={{
+                width: '100%',
+                height: '100%'
+              }}
               priority
             />
           </div>
-          <CardTitle className="text-2xl font-bold text-center">התחברות למערכת</CardTitle>
+          <CardTitle className="text-2xl font-bold text-center">
+            מערכת שירות ואחריות
+          </CardTitle>
           <CardDescription className="text-center">
-            הזן את פרטי ההתחברות שלך
+            התחברות למערכת
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit(onSubmit)}>

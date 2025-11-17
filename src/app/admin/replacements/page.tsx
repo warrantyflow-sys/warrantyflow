@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { useAllReplacementRequests } from '@/hooks/queries/useReplacements';
+import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -47,9 +49,11 @@ import { ReplacementsPageSkeleton } from '@/components/ui/loading-skeletons';
 type RequestStatus = 'pending' | 'approved' | 'rejected';
 
 export default function ReplacementsPage() {
-  const [requests, setRequests] = useState<any[]>([]);
+  // React Query hook with Realtime
+  const { requests, isLoading, isFetching } = useAllReplacementRequests();
+
+  // Local state for filtering
   const [filteredRequests, setFilteredRequests] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | RequestStatus>('all');
   const [selectedRequest, setSelectedRequest] = useState<any>(null);
@@ -75,41 +79,6 @@ export default function ReplacementsPage() {
     if (!user) return '';
     return user.full_name?.trim() || user.email || '';
   }, []);
-
-  const fetchRequests = useCallback(async () => {
-    try {
-      const { data, error } = await supabase
-        .from('replacement_requests')
-        .select(`
-          *,
-          device:devices(
-            imei,
-            device_model:device_models(model_name)
-          ),
-          repair:repairs(
-            fault_type,
-            fault_description,
-            lab:users!repairs_lab_id_fkey(full_name, email)
-          ),
-          requester:users!replacement_requests_requester_id_fkey(full_name, role, email),
-          resolver:users!replacement_requests_resolved_by_fkey(full_name)
-        `)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setRequests(data || []);
-      setFilteredRequests(data || []);
-    } catch (error) {
-      console.error('Error fetching requests:', error);
-      toast({
-        title: 'שגיאה',
-        description: 'לא ניתן לטעון את הבקשות',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [supabase, toast]);
 
   const filterRequests = useCallback(() => {
     let filtered = requests;
@@ -164,10 +133,6 @@ export default function ReplacementsPage() {
     };
     loadUserId();
   }, [supabase]);
-
-  useEffect(() => {
-    fetchRequests();
-  }, [fetchRequests]);
 
   useEffect(() => {
     filterRequests();
@@ -253,7 +218,7 @@ export default function ReplacementsPage() {
 
       setIsDecisionDialogOpen(false);
       setAdminNotes('');
-      fetchRequests();
+      // React Query + Realtime will auto-refresh
     } catch (error) {
       console.error('Error processing decision:', error);
       toast({
@@ -307,6 +272,12 @@ export default function ReplacementsPage() {
 
   return (
     <div className="space-y-6" dir="rtl">
+      {/* Background refresh indicator */}
+      <BackgroundRefreshIndicator
+        isFetching={isFetching}
+        isLoading={isLoading}
+      />
+
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">בקשות החלפה</h1>

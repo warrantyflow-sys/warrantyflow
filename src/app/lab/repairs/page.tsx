@@ -7,6 +7,10 @@ export const dynamic = 'force-dynamic';
 import { createClient } from '@/lib/supabase/client';
 import { UserData } from '@/types/user';
 import { LabRepairsPageSkeleton } from '@/components/ui/loading-skeletons';
+import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
+import { useLabRepairs } from '@/hooks/queries/useRepairs';
+import { useLabRepairTypes } from '@/hooks/queries/useRepairTypes';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -75,11 +79,21 @@ const repairSchema = z.object({
 type RepairFormData = z.infer<typeof repairSchema>;
 
 export default function LabRepairsPage() {
-  const [repairs, setRepairs] = useState<any[]>([]);
+  // Load current user to get labId
+  const { user: currentUser, isLoading: isUserLoading } = useCurrentUser();
+  const labId = currentUser?.id || null;
+
+  // React Query hooks with Realtime subscriptions
+  const { repairs, isLoading: isRepairsLoading, isFetching: isRepairsFetching, refetch: refetchRepairs } = useLabRepairs(labId);
+  const { repairTypes: availableRepairTypes, isLoading: isRepairTypesLoading, isFetching: isRepairTypesFetching } = useLabRepairTypes(labId);
+
+  // Combined loading state
+  const isLoading = isUserLoading || isRepairsLoading || isRepairTypesLoading;
+  const isFetching = isRepairsFetching || isRepairTypesFetching;
+
   const [filteredRepairs, setFilteredRepairs] = useState<any[]>([]);
   const [paginatedRepairs, setPaginatedRepairs] = useState<any[]>([]);
   const [selectedRepair, setSelectedRepair] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [isNewRepairDialogOpen, setIsNewRepairDialogOpen] = useState(false);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
@@ -96,7 +110,6 @@ export default function LabRepairsPage() {
   const [isSearching, setIsSearching] = useState(false);
   const [repairCost, setRepairCost] = useState('');
   const [replacementReason, setReplacementReason] = useState('');
-  const [availableRepairTypes, setAvailableRepairTypes] = useState<RepairType[]>([]);
   const [selectedRepairTypeId, setSelectedRepairTypeId] = useState<string>('');
   const [customRepairDescription, setCustomRepairDescription] = useState('');
   const [customRepairPrice, setCustomRepairPrice] = useState('');
@@ -123,206 +136,12 @@ export default function LabRepairsPage() {
     resolver: zodResolver(repairSchema),
   });
 
-  const fetchData = useCallback(async () => {
-    try {
-      setIsLoading(true);
-
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        return;
-      }
-
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-
-      if (userError) {
-        throw userError;
-      }
-
-      const typedUserData = userData as UserData | null;
-
-      if (!typedUserData) {
-        return;
-      }
-      const labId = typedUserData.id;
-
-      // Fetch available repair types with prices for this lab
-
-      // First, get all repair types directly (without JOIN)
-      const { data: allRepairTypesData, error: allRepairTypesError } = await supabase
-        .from('repair_types')
-        .select('id, name, description, is_active')
-        .eq('is_active', true);
-
-
-      // Then get lab prices
-      const { data: labPricesData, error: labPricesError } = await supabase
-        .from('lab_repair_prices')
-        .select('id, price, repair_type_id, is_active')
-        .eq('lab_id', labId)
-        .eq('is_active', true);
-
-
-      // Manually join the data
-      const repairTypesData = (labPricesData || []).map((price: any) => {
-        const repairType = (allRepairTypesData || []).find((rt: any) => rt.id === price.repair_type_id);
-        return {
-          id: price.id,
-          price: price.price,
-          repair_type_id: price.repair_type_id,
-          repair_type: repairType || null
-        };
-      });
-
-      const repairTypesError = labPricesError || allRepairTypesError;
-
-
-      if (repairTypesError) {
-        toast({
-          title: 'שגיאה',
-          description: `לא ניתן לטעון סוגי תיקונים: ${repairTypesError.message}`,
-          variant: 'destructive',
-        });
-      } else {
-
-        // Count how many have null repair_type
-        const nullCount = (repairTypesData || []).filter((item: any) => !item.repair_type).length;
-        if (nullCount > 0) {
-        }
-
-        const formattedRepairTypes = (repairTypesData || [])
-          .filter((item: any) => {
-            if (!item.repair_type) {
-              return false;
-            }
-            return true;
-          })
-          .map((item: any) => ({
-            id: item.repair_type.id,
-            name: item.repair_type.name,
-            description: item.repair_type.description,
-            price: item.price,
-          }));
-        setAvailableRepairTypes(formattedRepairTypes);
-
-        if (formattedRepairTypes.length === 0) {
-
-          // Check if there are any repair types at all
-          const { data: allRepairTypes, error: allTypesError } = await supabase
-            .from('repair_types')
-            .select('id, name, is_active')
-            .eq('is_active', true);
-
-          if (!allTypesError && allRepairTypes) {
-
-            // Now check if the repair_type_ids in lab_repair_prices match these IDs
-            if (repairTypesData && repairTypesData.length > 0) {
-              repairTypesData.forEach((item: any) => {
-                const matchingType = allRepairTypes.find((rt: any) => rt.id === item.repair_type_id);
-              });
-            }
-          }
-
-          // Check if there are ANY prices for this lab (even inactive)
-          const { data: anyPrices, error: anyPricesError } = await supabase
-            .from('lab_repair_prices')
-            .select('id, price, is_active, repair_type:repair_types(name)')
-            .eq('lab_id', labId);
-
-          if (!anyPricesError) {
-            if (anyPrices && anyPrices.length > 0) {
-            } else {
-            }
-          }
-        }
-      }
-
-      // Fetch repairs
-      const { data: repairsData, error } = await supabase
-        .from('repairs')
-        .select(`
-          *,
-          device:devices(
-            id,
-            imei,
-            imei2,
-            device_models(model_name)
-          ),
-          warranty:warranties(
-            customer_name,
-            customer_phone,
-            activation_date,
-            expiry_date,
-            store:users!warranties_store_id_fkey(full_name, email)
-          ),
-          repair_type:repair_types(
-            id,
-            name,
-            description
-          ),
-          replacement_requests(
-            id,
-            status,
-            created_at
-          )
-        `)
-        .eq('lab_id', labId)
-        .order('created_at', { ascending: false }) as {
-          data: Array<{
-            id: string;
-            cost: number | null;
-            status: string;
-            fault_type: string;
-            custom_repair_description: string | null;
-            custom_repair_price: number | null;
-            repair_type: {
-              id: string;
-              name: string;
-              description: string | null;
-            } | null;
-            device: {
-              id: string;
-              imei: string;
-              imei2: string | null;
-              device_models: {
-                model_name: string;
-              } | null;
-            } | null;
-            warranty: Array<{
-              customer_name: string;
-              customer_phone: string;
-              activation_date: string;
-              expiry_date: string;
-              store: { full_name: string; email: string } | null;
-            }>;
-            replacement_requests: Array<{
-              id: string;
-              status: string;
-              created_at: string;
-            }>;
-          }> | null;
-          error: any;
-        };
-
-      if (error) {
-        throw error;
-      }
-
-      setRepairs(repairsData || []);
-      setFilteredRepairs(repairsData || []);
-    } catch (error) {
-      toast({
-        title: 'שגיאה',
-        description: 'לא ניתן לטעון את הנתונים',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoading(false);
+  // Update currentUserId from currentUser
+  useEffect(() => {
+    if (currentUser) {
+      setCurrentUserId(currentUser.id);
     }
-  }, [supabase, toast]);
+  }, [currentUser]);
 
   const filterData = useCallback(() => {
     let filtered = repairs;
@@ -347,11 +166,11 @@ export default function LabRepairsPage() {
     }
 
     if (filterDateFrom) {
-      filtered = filtered.filter(r => r.created_at >= filterDateFrom);
+      filtered = filtered.filter(r => r.created_at && r.created_at >= filterDateFrom);
     }
 
     if (filterDateTo) {
-      filtered = filtered.filter(r => r.created_at <= filterDateTo + 'T23:59:59');
+      filtered = filtered.filter(r => r.created_at && r.created_at <= filterDateTo + 'T23:59:59');
     }
 
     if (searchQuery) {
@@ -360,7 +179,7 @@ export default function LabRepairsPage() {
         (repair) =>
           repair.device?.imei?.toLowerCase().includes(query) ||
           repair.device?.device_models?.model_name?.toLowerCase().includes(query) ||
-          repair.warranty?.customer_name?.toLowerCase().includes(query) ||
+          repair.warranty?.[0]?.customer_name?.toLowerCase().includes(query) ||
           repair.customer_name?.toLowerCase().includes(query)
       );
     }
@@ -368,21 +187,6 @@ export default function LabRepairsPage() {
     setFilteredRepairs(filtered);
     setCurrentPage(1); // Reset to first page when filters change
   }, [repairs, searchQuery, filterStatus, filterRepairType, filterDeviceModel, filterDateFrom, filterDateTo]);
-
-  // אופטימיזציה: טעינת user ID פעם אחת בלבד
-  useEffect(() => {
-    const loadUserId = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setCurrentUserId(user.id);
-      }
-    };
-    loadUserId();
-  }, [supabase]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
 
   useEffect(() => {
     // Apply pagination to filtered repairs
@@ -474,7 +278,7 @@ export default function LabRepairsPage() {
       // Get warranty details for customer info
       const { data: warrantyData } = await supabase
         .from('warranties')
-        .select('id, customer_name, customer_phone')
+        .select('id, customer_name, customer_phone, activation_date, expiry_date')
         .eq('device_id', lookupData.id)
         .eq('is_active', true)
         .gte('expiry_date', new Date().toISOString().split('T')[0])
@@ -610,7 +414,7 @@ export default function LabRepairsPage() {
       setSearchIMEI('');
       setRepairCost('');
       setSelectedRepairTypeId('');
-      fetchData();
+      refetchRepairs();
     } catch (error: any) {
       toast({
         title: 'שגיאה',
@@ -749,7 +553,7 @@ export default function LabRepairsPage() {
       setUpdateRepairTypeId('');
       setCustomRepairDescription('');
       setCustomRepairPrice('');
-      fetchData();
+      refetchRepairs();
     } catch (error: any) {
       toast({
         title: 'שגיאה',
@@ -790,7 +594,7 @@ export default function LabRepairsPage() {
 
       setIsDetailsDialogOpen(false);
       setReplacementReason('');
-      fetchData();
+      refetchRepairs();
     } catch (error: any) {
       toast({
         title: 'שגיאה',
@@ -882,6 +686,12 @@ export default function LabRepairsPage() {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+      {/* Background refresh indicator */}
+      <BackgroundRefreshIndicator
+        isFetching={isFetching}
+        isLoading={isLoading}
+      />
+
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
@@ -893,12 +703,12 @@ export default function LabRepairsPage() {
         <div className="flex gap-2 w-full sm:w-auto">
           <Button
             variant="outline"
-            onClick={() => fetchData()}
-            disabled={isLoading}
+            onClick={() => refetchRepairs()}
+            disabled={isFetching}
             className="flex-1 sm:flex-none"
           >
             רענן
-            <RefreshCw className={cn("h-4 w-4 me-2", isLoading && "animate-spin")} />
+            <RefreshCw className={cn("h-4 w-4 me-2", isFetching && "animate-spin")} />
           </Button>
           <Button
             onClick={() => setIsNewRepairDialogOpen(true)}
@@ -1227,6 +1037,12 @@ export default function LabRepairsPage() {
                     <CheckCircle className="h-5 w-5" />
                     <span className="font-semibold">מכשיר נמצא - {searchedDevice.model}</span>
                   </div>
+                  {searchedDevice.warranty && searchedDevice.warranty[0] && (
+                    <div className="text-sm text-green-800 dark:text-green-200" dir="rtl">
+                      <p><strong>הופעלה:</strong> {formatDate(searchedDevice.warranty[0].activation_date)}</p>
+                      <p><strong>בתוקף עד:</strong> {formatDate(searchedDevice.warranty[0].expiry_date)}</p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1355,6 +1171,22 @@ export default function LabRepairsPage() {
                   <Label>תאריך קבלה</Label>
                   <p>{formatDate(selectedRepair.created_at)}</p>
                 </div>
+                <div>
+                <Label>תאריך הפעלת אחריות</Label>
+                <p>
+                  {selectedRepair.warranty?.activation_date
+                    ? formatDate(selectedRepair.warranty.activation_date)
+                    : 'לא זמין'}
+                </p>
+                </div>
+              <div>
+                <Label>תאריך סיום אחריות</Label>
+                <p>
+                  {selectedRepair.warranty?.expiry_date
+                    ? formatDate(selectedRepair.warranty.expiry_date)
+                    : 'לא זמין'}
+                </p>
+              </div>
               </div>
 
               {selectedRepair.fault_description && (

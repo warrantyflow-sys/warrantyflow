@@ -10,7 +10,8 @@
       "WebFetch(domain:github.com)",
       "WebSearch",
       "Bash(npx tsc:*)",
-      "Bash(npx next lint:*)"
+      "Bash(npx next lint:*)",
+      "Bash(git checkout:*)"
     ],
     "deny": [],
     "ask": []

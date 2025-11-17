@@ -351,6 +351,195 @@ CREATE TABLE IF NOT EXISTS public.settings (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+
+
+
+-- ================================================================================================
+-- REPAIRS TABLE INDEXES
+-- ================================================================================================
+
+-- Index for lab repairs queries (most common query pattern)
+-- Used by: fetchLabRepairs(), useLabRepairs hook
+-- Impact: Optimizes "SELECT * FROM repairs WHERE lab_id = ? ORDER BY created_at DESC"
+CREATE INDEX IF NOT EXISTS idx_repairs_lab_created
+  ON repairs(lab_id, created_at DESC)
+  WHERE lab_id IS NOT NULL;
+
+-- Index for repair status queries
+-- Used by: Dashboard stats, urgent repairs, pending repairs
+-- Impact: Optimizes status-based filtering
+CREATE INDEX IF NOT EXISTS idx_repairs_status_created
+  ON repairs(status, created_at DESC);
+
+-- Index for completed repairs with lab_id (financial tracking)
+-- Used by: useLabCompletedRepairs, useAllLabsBalances
+-- Impact: Optimizes payment/financial queries
+CREATE INDEX IF NOT EXISTS idx_repairs_lab_status_completed
+  ON repairs(lab_id, status, completed_at DESC)
+  WHERE status = 'completed';
+
+-- Index for device lookup in repairs
+-- Used by: Repair details, warranty repair history
+CREATE INDEX IF NOT EXISTS idx_repairs_device_id
+  ON repairs(device_id)
+  WHERE device_id IS NOT NULL;
+
+-- ================================================================================================
+-- WARRANTIES TABLE INDEXES
+-- ================================================================================================
+
+-- Index for store warranties with pagination (most critical)
+-- Used by: fetchStoreWarranties(), useStoreWarranties hook
+-- Impact: Optimizes paginated warranty lists
+CREATE INDEX IF NOT EXISTS idx_warranties_store_created
+  ON warranties(store_id, created_at DESC)
+  WHERE store_id IS NOT NULL;
+
+-- Index for active warranties lookup
+-- Used by: Dashboard stats, active warranty counts
+-- Impact: Optimizes "is_active = true" queries
+CREATE INDEX IF NOT EXISTS idx_warranties_active_expiry
+  ON warranties(is_active, expiry_date DESC)
+  WHERE is_active = true;
+
+-- Index for store active warranties
+-- Used by: useStoreDashboardStats
+CREATE INDEX IF NOT EXISTS idx_warranties_store_active
+  ON warranties(store_id, is_active, expiry_date)
+  WHERE is_active = true;
+
+-- Index for monthly activations (dashboard stats)
+-- Used by: useStoreDashboardStats monthly activations
+CREATE INDEX IF NOT EXISTS idx_warranties_store_activation
+  ON warranties(store_id, activation_date DESC);
+
+-- Index for device warranty lookup
+-- Used by: Device details, warranty status checks
+CREATE INDEX IF NOT EXISTS idx_warranties_device_id
+  ON warranties(device_id)
+  WHERE device_id IS NOT NULL;
+
+-- ================================================================================================
+-- DEVICES TABLE INDEXES
+-- ================================================================================================
+
+-- Index for device model lookup (included columns for covering index)
+-- Used by: Device listings, repair details, warranty displays
+-- Impact: Covering index reduces table lookups
+CREATE INDEX IF NOT EXISTS idx_devices_model_lookup
+  ON devices(model_id)
+  INCLUDE (imei, imei2, created_at);
+
+-- Index for IMEI search
+-- Used by: Device search, IMEI validation
+CREATE INDEX IF NOT EXISTS idx_devices_imei
+  ON devices(imei);
+
+-- Index for devices without warranty (composite)
+-- Used by: useDevicesWithoutWarranty
+CREATE INDEX IF NOT EXISTS idx_devices_created
+  ON devices(created_at DESC);
+
+-- ================================================================================================
+-- REPLACEMENT_REQUESTS TABLE INDEXES
+-- ================================================================================================
+
+-- Index for pending replacement requests
+-- Used by: Admin pending requests, dashboard stats
+CREATE INDEX IF NOT EXISTS idx_replacements_status_created
+  ON replacement_requests(status, created_at DESC);
+
+-- Index for store replacement requests
+-- Used by: useStoreReplacementRequests
+CREATE INDEX IF NOT EXISTS idx_replacements_requester
+  ON replacement_requests(requester_id, created_at DESC);
+
+-- Index for device replacement lookup
+CREATE INDEX IF NOT EXISTS idx_replacements_device
+  ON replacement_requests(device_id);
+
+-- ================================================================================================
+-- LAB_REPAIR_PRICES TABLE INDEXES
+-- ================================================================================================
+
+-- Composite index for lab prices lookup (optimized query)
+-- Used by: fetchLabRepairTypes() - CRITICAL for N+1 fix
+-- Impact: Enables efficient JOIN in fetchLabRepairTypes
+CREATE INDEX IF NOT EXISTS idx_lab_prices_lab_type_active
+  ON lab_repair_prices(lab_id, repair_type_id, is_active)
+  WHERE is_active = true;
+
+-- Index for repair type prices lookup
+CREATE INDEX IF NOT EXISTS idx_lab_prices_type_active
+  ON lab_repair_prices(repair_type_id, is_active)
+  WHERE is_active = true;
+
+-- ================================================================================================
+-- PAYMENTS TABLE INDEXES
+-- ================================================================================================
+
+-- Index for lab payments lookup
+-- Used by: useLabPayments, financial tracking
+CREATE INDEX IF NOT EXISTS idx_payments_lab_date
+  ON payments(lab_id, payment_date DESC);
+
+-- Index for payment date range queries
+CREATE INDEX IF NOT EXISTS idx_payments_date
+  ON payments(payment_date DESC);
+
+-- ================================================================================================
+-- USERS TABLE INDEXES
+-- ================================================================================================
+
+-- Index for role-based user lookup
+-- Used by: useActiveLabs, user lists by role
+CREATE INDEX IF NOT EXISTS idx_users_role_active
+  ON users(role, is_active, full_name)
+  WHERE is_active = true;
+
+-- Index for email lookup (login, auth)
+CREATE INDEX IF NOT EXISTS idx_users_email
+  ON users(email);
+
+-- ================================================================================================
+-- NOTIFICATIONS TABLE INDEXES
+-- ================================================================================================
+
+-- Index for user notifications
+-- Used by: Notifications dropdown, notification counts
+CREATE INDEX IF NOT EXISTS idx_notifications_user_created
+  ON notifications(user_id, created_at DESC);
+
+-- Index for unread notifications
+CREATE INDEX IF NOT EXISTS idx_notifications_user_unread
+  ON notifications(user_id, is_read, created_at DESC)
+  WHERE is_read = false;
+
+-- ================================================================================================
+-- REPAIR_TYPES TABLE INDEXES
+-- ================================================================================================
+
+-- Index for active repair types
+-- Used by: Repair type dropdowns, lab pricing
+CREATE INDEX IF NOT EXISTS idx_repair_types_active_name
+  ON repair_types(is_active, name)
+  WHERE is_active = true;
+
+-- ================================================================================================
+-- PARTIAL INDEX ANALYSIS & STATISTICS
+-- ================================================================================================
+
+-- Analyze tables to update statistics after index creation
+ANALYZE repairs;
+ANALYZE warranties;
+ANALYZE devices;
+ANALYZE replacement_requests;
+ANALYZE lab_repair_prices;
+ANALYZE payments;
+ANALYZE users;
+ANALYZE notifications;
+ANALYZE repair_types;
+
 -- ===============================================
 -- SECTION 4: HELPER FUNCTIONS
 -- ===============================================
@@ -1228,24 +1417,11 @@ LANGUAGE plpgsql
 AS $$
 DECLARE
   v_price NUMERIC(10,2);
-  v_is_insert BOOLEAN;
-  v_repair_type_changed BOOLEAN;
 BEGIN
-  -- Determine if this is an INSERT or UPDATE
-  v_is_insert := (TG_OP = 'INSERT');
-
-  -- Check if repair_type_id changed (only relevant for UPDATE)
-  IF v_is_insert THEN
-    v_repair_type_changed := TRUE;
-  ELSE
-    v_repair_type_changed := (OLD.repair_type_id IS DISTINCT FROM NEW.repair_type_id);
-  END IF;
-
-  -- Handle PREDEFINED REPAIR TYPES
-  -- Update cost only if repair_type_id and lab_id are set
-  IF NEW.repair_type_id IS NOT NULL AND NEW.lab_id IS NOT NULL THEN
-    -- Only update if cost is not already set or repair_type_id changed
-    IF NEW.cost IS NULL OR v_repair_type_changed THEN
+  
+  IF NEW.status = 'completed' THEN
+    
+    IF NEW.repair_type_id IS NOT NULL AND NEW.lab_id IS NOT NULL THEN
       SELECT price INTO v_price
       FROM public.lab_repair_prices
       WHERE lab_id = NEW.lab_id
@@ -1254,14 +1430,30 @@ BEGIN
 
       IF FOUND THEN
         NEW.cost = v_price;
-        RAISE NOTICE 'Auto-set cost to % for predefined repair_type_id %', v_price, NEW.repair_type_id;
+        RAISE NOTICE 'Status completed: Auto-set cost to % for predefined repair_type_id %', v_price, NEW.repair_type_id;
       ELSE
-        RAISE WARNING 'No price found for repair_type_id % at lab_id %', NEW.repair_type_id, NEW.lab_id;
-        -- Keep cost as NULL if no price is found
+        RAISE WARNING 'Status completed: No price found for repair_type_id % at lab_id %', NEW.repair_type_id, NEW.lab_id;
         NEW.cost = NULL;
       END IF;
+    
+    ELSIF NEW.custom_repair_description IS NOT NULL THEN
+      NEW.cost = NEW.custom_repair_price; 
+      RAISE NOTICE 'Status completed: Set cost to custom price % for custom repair "%"', NEW.custom_repair_price, NEW.custom_repair_description;
+    
+    ELSE
+
+      NEW.cost = NULL;
+      RAISE WARNING 'Status completed: No repair_type_id or custom_description set. Cost set to NULL.';
     END IF;
+
+  ELSE
+    NEW.cost = NULL;
+    RAISE NOTICE 'Status not completed (%): Cost set to NULL.', NEW.status;
   END IF;
+
+  RETURN NEW;
+END;
+$$;
 
   -- Handle CUSTOM REPAIRS
   -- If custom repair is specified, use custom_repair_price as cost
@@ -1550,6 +1742,41 @@ BEGIN
 END;
 $$;
 
+
+--
+-- TRIGGER FUNCTION: handle_user_profile_update
+--
+DO $$
+BEGIN
+  RAISE NOTICE '   -> Creating trigger function handle_user_profile_update()';
+END $$;
+
+CREATE OR REPLACE FUNCTION public.handle_user_profile_update()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  user_role TEXT;
+BEGIN
+  SELECT auth.role() INTO user_role;
+
+  IF user_role = 'admin' THEN
+    RETURN NEW;
+  END IF;
+
+  IF user_role = 'store' OR user_role = 'lab' THEN
+    IF NEW.full_name IS DISTINCT FROM OLD.full_name OR NEW.phone IS DISTINCT FROM OLD.phone THEN
+      RAISE EXCEPTION 'PERMISSION_DENIED: Only admins can update full_name or phone.';
+    ELSE
+      RETURN NEW;
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
 -- Audit replacement request creation
 CREATE OR REPLACE FUNCTION public.audit_replacement_request_creation()
 RETURNS TRIGGER
@@ -1679,6 +1906,14 @@ CREATE TRIGGER on_replacement_request_created
   AFTER INSERT ON public.replacement_requests
   FOR EACH ROW
   EXECUTE FUNCTION public.audit_replacement_request_creation();
+
+DROP TRIGGER IF EXISTS on_user_profile_update ON public.users;
+CREATE TRIGGER on_user_profile_update
+  BEFORE UPDATE ON public.users
+  FOR EACH ROW
+  EXECUTE FUNCTION public.handle_user_profile_update();
+
+
 
 -- ===============================================
 -- SECTION 9: VIEWS

@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { useAllUsers } from '@/hooks/queries/useUsers';
+import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -73,7 +75,11 @@ interface LabStats {
 }
 
 export default function LabsPage() {
-  const [labs, setLabs] = useState<LabUser[]>([]);
+  // React Query hook with Realtime - filter for labs only
+  const { users: allUsers, isLoading, isFetching } = useAllUsers();
+  const labs = useMemo(() => allUsers.filter(u => u.role === 'lab'), [allUsers]);
+
+  // Local state
   const [filteredLabs, setFilteredLabs] = useState<LabUser[]>([]);
   const [selectedLab, setSelectedLab] = useState<LabUser | null>(null);
 
@@ -117,32 +123,6 @@ export default function LabsPage() {
     active: labs.filter(l => l.is_active).length,
     inactive: labs.filter(l => !l.is_active).length,
   };
-
-  const fetchData = useCallback(async () => {
-    try {
-      const labsResponse = await supabase
-        .from('users')
-        .select('*')
-        .eq('role', 'lab')
-        .order('created_at', { ascending: false });
-
-      if (labsResponse.error) throw labsResponse.error;
-
-      setLabs(labsResponse.data || []);
-      setFilteredLabs(labsResponse.data || []);
-    } catch (error: any) {
-      console.error('Error fetching data:', error);
-      toast({
-        title: 'שגיאה',
-        description: 'אירעה שגיאה בטעינת הנתונים',
-        variant: 'destructive',
-      });
-    }
-  }, [supabase, toast]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
 
   useEffect(() => {
     let filtered = labs;
@@ -225,7 +205,7 @@ export default function LabsPage() {
 
       setIsCreateDialogOpen(false);
       createForm.reset();
-      fetchData();
+      // React Query + Realtime will auto-refresh
     } catch (error: any) {
       console.error('Error creating lab:', error);
       toast({
@@ -261,7 +241,7 @@ export default function LabsPage() {
       });
 
       setIsEditDialogOpen(false);
-      fetchData();
+      // React Query + Realtime will auto-refresh
     } catch (error: any) {
       console.error('Error updating lab:', error);
       toast({
@@ -323,7 +303,7 @@ export default function LabsPage() {
         description: `המעבדה ${!currentStatus ? 'הופעלה' : 'הושעתה'} בהצלחה`,
       });
 
-      fetchData();
+      // React Query + Realtime will auto-refresh
     } catch (error: any) {
       console.error('Error toggling lab status:', error);
       toast({
@@ -352,7 +332,7 @@ export default function LabsPage() {
         description: 'המעבדה נמחקה בהצלחה',
       });
 
-      fetchData();
+      // React Query + Realtime will auto-refresh
     } catch (error: any) {
       console.error('Error deleting lab:', error);
       toast({
@@ -389,6 +369,12 @@ export default function LabsPage() {
 
   return (
     <div className="space-y-6" dir="rtl">
+      {/* Background refresh indicator */}
+      <BackgroundRefreshIndicator
+        isFetching={isFetching}
+        isLoading={isLoading}
+      />
+
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">ניהול מעבדות</h2>

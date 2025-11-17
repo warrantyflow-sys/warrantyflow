@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import type { User } from '@/types';
+import { useAllUsers, useUserStats } from '@/hooks/queries/useUsers';
+import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -85,11 +87,13 @@ interface UserStats {
 }
 
 export default function UsersPage() {
-  const [users, setUsers] = useState<ManagedUser[]>([]);
+  // React Query hook with Realtime
+  const { users, isLoading, isFetching } = useAllUsers();
+
+  // Local state for filtering/pagination
   const [filteredUsers, setFilteredUsers] = useState<ManagedUser[]>([]);
   const [paginatedUsers, setPaginatedUsers] = useState<ManagedUser[]>([]);
   const [selectedUser, setSelectedUser] = useState<ManagedUser | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
 
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -237,38 +241,12 @@ export default function UsersPage() {
     }
   }, [supabase]);
 
-  const fetchData = useCallback(async (refreshStats = false) => {
-    try {
-      setIsLoading(true);
-      const usersResponse = await supabase
-        .from('users')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (usersResponse.error) throw usersResponse.error;
-
-      setUsers(usersResponse.data || []);
-      setFilteredUsers(usersResponse.data || []);
-
-      // טעינת סטטיסטיקות בפעם הראשונה או כשמבקשים רענון
-      if (!statsLoaded || refreshStats) {
-        fetchAllStats();
-      }
-    } catch (error: any) {
-      console.error('Error fetching data:', error);
-      toast({
-        title: 'שגיאה',
-        description: 'אירעה שגיאה בטעינת הנתונים',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [supabase, toast, statsLoaded, fetchAllStats]);
-
+  // Load stats on mount
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (!statsLoaded && users.length > 0) {
+      fetchAllStats();
+    }
+  }, [statsLoaded, users.length]);
 
   useEffect(() => {
     let filtered = users;
@@ -383,7 +361,7 @@ export default function UsersPage() {
 
       setIsCreateDialogOpen(false);
       createForm.reset();
-      fetchData();
+      // React Query + Realtime will auto-refresh
     } catch (error: any) {
       console.error('Error creating user:', error);
       toast({
@@ -420,7 +398,7 @@ export default function UsersPage() {
       });
 
       setIsEditDialogOpen(false);
-      fetchData();
+      // React Query + Realtime will auto-refresh
     } catch (error: any) {
       console.error('Error updating user:', error);
       toast({
@@ -481,8 +459,7 @@ export default function UsersPage() {
         title: 'הצלחה',
         description: `המשתמש ${!currentStatus ? 'הופעל' : 'הושעה'} בהצלחה`,
       });
-
-      fetchData();
+      // React Query + Realtime will auto-refresh
     } catch (error: any) {
       console.error('Error toggling user status:', error);
       toast({
@@ -510,8 +487,7 @@ export default function UsersPage() {
         title: 'הצלחה',
         description: 'המשתמש נמחק בהצלחה',
       });
-
-      fetchData();
+      // React Query + Realtime will auto-refresh
     } catch (error: any) {
       console.error('Error deleting user:', error);
       toast({
@@ -569,6 +545,12 @@ export default function UsersPage() {
 
   return (
     <div className="space-y-6">
+      {/* Background refresh indicator */}
+      <BackgroundRefreshIndicator
+        isFetching={isFetching}
+        isLoading={isLoading}
+      />
+
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">ניהול משתמשים</h2>

@@ -1,137 +1,40 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { createClient } from '@/lib/supabase/client';
-import { UserData } from '@/types/user';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useLabDashboardStats, useLabRecentRepairs, useLabUrgentRepairs } from '@/hooks/queries/useLabDashboard';
+import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
 import { LabDashboardSkeleton } from '@/components/ui/loading-skeletons';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import ShekelIcon from '@/components/ui/shekel-icon';
-import { 
+import {
   Wrench,
   Clock,
   CheckCircle,
   AlertCircle,
-  Package,
   TrendingUp,
-  Users,
-  BarChart3,
-  Calendar,
-  RefreshCw,
   LayoutDashboard
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
 
-interface LabStats {
-  pendingRepairs: number;
-  inProgressRepairs: number;
-  completedToday: number;
-  monthlyCompleted: number;
-  monthlyRevenue: number;
-  averageRepairTime: number;
-  topFaultType: string;
-  completionRate: number;
-}
-
 export default function LabDashboardPage() {
-  const [stats, setStats] = useState<LabStats>({
-    pendingRepairs: 0,
-    inProgressRepairs: 0,
-    completedToday: 0,
-    monthlyCompleted: 0,
-    monthlyRevenue: 0,
-    averageRepairTime: 0,
-    topFaultType: '',
-    completionRate: 0,
-  });
-  const [recentRepairs, setRecentRepairs] = useState<any[]>([]);
-  const [urgentRepairs, setUrgentRepairs] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  
-  const supabase = createClient();
+  // Get current user (lab)
+  const { user: currentUser, isLoading: isUserLoading } = useCurrentUser();
+  const labId = currentUser?.id || null;
+
+  // React Query hooks with Realtime subscriptions
+  const { stats, isLoading: isStatsLoading, isFetching: isStatsFetching } = useLabDashboardStats();
+  const { repairs: recentRepairs, isLoading: isRecentLoading, isFetching: isRecentFetching } = useLabRecentRepairs(labId);
+  const { repairs: urgentRepairs, isLoading: isUrgentLoading, isFetching: isUrgentFetching } = useLabUrgentRepairs(labId);
+
+  const isLoading = isUserLoading || isStatsLoading || isRecentLoading || isUrgentLoading;
+  const isFetching = isStatsFetching || isRecentFetching || isUrgentFetching;
+
   const router = useRouter();
-
-  const fetchStats = useCallback(async () => {
-    try {
-      const { data, error } = await supabase.rpc('get_lab_dashboard_stats');
-
-      if (error) {
-        console.error('Error fetching dashboard stats:', error);
-        return;
-      }
-
-      if (data) {
-        setStats(data as unknown as LabStats);
-      }
-
-    } catch (error) {
-      console.error('Error in fetchStats:', error);
-    }
-  }, [supabase]);
-
-  const fetchLists = useCallback(async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      // Fetch recent repairs
-      const { data: recent } = await supabase
-        .from('repairs')
-        .select('*, device:devices(imei, device_models(model_name)), warranty:warranties(customer_name, customer_phone)')
-        .eq('lab_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(5);
-
-      setRecentRepairs(recent || []);
-
-      // Fetch urgent repairs (over 48 hours)
-      const twoDaysAgo = new Date();
-      twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-
-      const { data: urgent } = await supabase
-        .from('repairs')
-        .select('*, device:devices(imei, device_models(model_name)), warranty:warranties(customer_name, customer_phone)')
-        .eq('lab_id', user.id)
-        .in('status', ['received', 'in_progress'])
-        .lt('created_at', twoDaysAgo.toISOString())
-        .order('created_at', { ascending: true })
-        .limit(5);
-
-      setUrgentRepairs(urgent || []);
-
-    } catch (error) {
-      console.error('Error fetching lists:', error);
-    }
-  }, [supabase]);
-
-
-  useEffect(() => {
-    const fetchAllData = async () => {
-      setIsLoading(true);
-      await Promise.all([
-        fetchStats(),
-        fetchLists()
-      ]);
-      setIsLoading(false);
-    };
-
-    fetchAllData();
-    const interval = setInterval(fetchStats, 60000); // Refresh stats every minute
-    return () => clearInterval(interval);
-  }, [fetchStats, fetchLists]);
 
   const getStatusBadge = (status: string) => {
     const statusConfig = {
@@ -162,6 +65,12 @@ export default function LabDashboardPage() {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6" dir="rtl">
+      {/* Background refresh indicator */}
+      <BackgroundRefreshIndicator
+        isFetching={isFetching}
+        isLoading={isLoading}
+      />
+
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
@@ -170,18 +79,6 @@ export default function LabDashboardPage() {
           </h1>
           <p className="text-muted-foreground mt-1">סקירה כללית של תיקונים ופעילות</p>
         </div>
-        <Button 
-          onClick={() => {
-            fetchStats();
-            fetchLists();
-          }} 
-          variant="outline"
-          disabled={isLoading}
-          dir="rtl"
-        >
-          רענן
-          <RefreshCw className={cn("h-4 w-4 me-2", isLoading && "animate-spin")} />
-        </Button>
       </div>
 
       {/* Stats Cards */}

@@ -95,14 +95,22 @@ export function LabSidebar() {
       >
         <div className="flex flex-col h-full">
           {/* Logo */}
-          <div className="flex items-center justify-center h-16 px-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-l from-primary/10 to-transparent">
-            <Image
-              src="/logo.png"
-              alt="לוגו"
-              width={80}
-              height={80}
-              priority
-            />
+          <div className="flex items-center justify-center h-16 px-3 border-b border-border bg-gradient-to-l from-primary/10 to-transparent">
+            <div className="flex flex-col items-center gap-0.5">
+              <div className="w-full h-11 overflow-hidden flex items-center justify-center">
+                <Image
+                  src="/logo.png"
+                  alt="ATLAS"
+                  width={180}
+                  height={26}
+                  className="w-full h-auto scale-125 origin-center"
+                  priority
+                />
+              </div>
+              <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">
+                מערכת שירות ואחריות
+              </span>
+            </div>
           </div>
 
           {/* Navigation */}

@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { useAllLabsBalances } from '@/hooks/queries/useLabPayments';
+import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -23,91 +23,11 @@ import {
   Users
 } from 'lucide-react';
 import { formatCurrency, cn } from '@/lib/utils';
-import { useToast } from '@/components/ui/use-toast';
-
-interface LabBalance {
-  lab_id: string;
-  lab_name: string;
-  lab_email: string;
-  total_earned: number;
-  total_paid: number;
-  balance: number;
-  repairs_count: number;
-  payments_count: number;
-}
 
 export default function AdminPaymentsPage() {
-  const [labBalances, setLabBalances] = useState<LabBalance[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // React Query hook with Realtime
+  const { labBalances, isLoading, isFetching } = useAllLabsBalances();
   const router = useRouter();
-  const supabase = createClient();
-  const { toast } = useToast();
-
-  const fetchData = useCallback(async () => {
-    try {
-      setIsLoading(true);
-
-      // Fetch all labs
-      const { data: labs } = await supabase
-        .from('users')
-        .select('id, full_name, email')
-        .eq('role', 'lab')
-        .eq('is_active', true)
-        .order('full_name');
-
-      if (!labs) return;
-
-      // For each lab, calculate balance
-      const balancesPromises = labs.map(async (lab: any) => {
-        // Get all completed repairs
-        const { data: repairs } = await supabase
-          .from('repairs')
-          .select('id, cost')
-          .eq('lab_id', lab.id)
-          .eq('status', 'completed');
-
-        // Get all payments
-        const { data: payments } = await supabase
-          .from('payments')
-          .select('amount')
-          .eq('lab_id', lab.id);
-
-        const totalEarned = (repairs as any)?.reduce((sum: number, r: any) => sum + (r.cost || 0), 0) || 0;
-        const totalPaid = (payments as any)?.reduce((sum: number, p: any) => sum + (p.amount || 0), 0) || 0;
-
-        return {
-          lab_id: lab.id,
-          lab_name: lab.full_name || lab.email || '',
-          lab_email: lab.email || '',
-          total_earned: totalEarned,
-          total_paid: totalPaid,
-          balance: totalEarned - totalPaid,
-          repairs_count: repairs?.length || 0,
-          payments_count: payments?.length || 0,
-        };
-      });
-
-      const balances = await Promise.all(balancesPromises);
-
-      // Sort by balance (highest first)
-      balances.sort((a, b) => b.balance - a.balance);
-      setLabBalances(balances);
-
-    } catch (error) {
-      console.error('Error fetching data:', error);
-      toast({
-        title: 'שגיאה',
-        description: 'לא ניתן לטעון את נתוני התשלומים',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [supabase, toast]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
 
   if (isLoading) {
     return (
@@ -124,6 +44,12 @@ export default function AdminPaymentsPage() {
 
   return (
     <div className="space-y-6 p-6">
+      {/* Background refresh indicator */}
+      <BackgroundRefreshIndicator
+        isFetching={isFetching}
+        isLoading={isLoading}
+      />
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">ניהול תשלומים</h1>

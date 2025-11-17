@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { useAllUsers } from '@/hooks/queries/useUsers';
+import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -72,7 +74,11 @@ interface StoreStats {
 }
 
 export default function StoresPage() {
-  const [stores, setStores] = useState<StoreUser[]>([]);
+  // React Query hook with Realtime - filter for stores only
+  const { users: allUsers, isLoading, isFetching } = useAllUsers();
+  const stores = useMemo(() => allUsers.filter(u => u.role === 'store'), [allUsers]);
+
+  // Local state
   const [filteredStores, setFilteredStores] = useState<StoreUser[]>([]);
   const [paginatedStores, setPaginatedStores] = useState<StoreUser[]>([]);
   const [selectedStore, setSelectedStore] = useState<StoreUser | null>(null);
@@ -120,32 +126,6 @@ export default function StoresPage() {
     active: stores.filter(s => s.is_active).length,
     inactive: stores.filter(s => !s.is_active).length,
   };
-
-  const fetchData = useCallback(async () => {
-    try {
-      const storesResponse = await supabase
-        .from('users')
-        .select('*')
-        .eq('role', 'store')
-        .order('created_at', { ascending: false });
-
-      if (storesResponse.error) throw storesResponse.error;
-
-      setStores(storesResponse.data || []);
-      setFilteredStores(storesResponse.data || []);
-    } catch (error: any) {
-      console.error('Error fetching data:', error);
-      toast({
-        title: 'שגיאה',
-        description: 'אירעה שגיאה בטעינת הנתונים',
-        variant: 'destructive',
-      });
-    }
-  }, [supabase, toast]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
 
   useEffect(() => {
     let filtered = stores;
@@ -236,7 +216,7 @@ export default function StoresPage() {
 
       setIsCreateDialogOpen(false);
       createForm.reset();
-      fetchData();
+      // React Query + Realtime will auto-refresh
     } catch (error: any) {
       console.error('Error creating store:', error);
       toast({
@@ -272,7 +252,7 @@ export default function StoresPage() {
       });
 
       setIsEditDialogOpen(false);
-      fetchData();
+      // React Query + Realtime will auto-refresh
     } catch (error: any) {
       console.error('Error updating store:', error);
       toast({
@@ -334,7 +314,7 @@ export default function StoresPage() {
         description: `החנות ${!currentStatus ? 'הופעלה' : 'הושעתה'} בהצלחה`,
       });
 
-      fetchData();
+      // React Query + Realtime will auto-refresh
     } catch (error: any) {
       console.error('Error toggling store status:', error);
       toast({
@@ -363,7 +343,7 @@ export default function StoresPage() {
         description: 'החנות נמחקה בהצלחה',
       });
 
-      fetchData();
+      // React Query + Realtime will auto-refresh
     } catch (error: any) {
       console.error('Error deleting store:', error);
       toast({
@@ -400,6 +380,12 @@ export default function StoresPage() {
 
   return (
     <div className="space-y-6" dir="rtl">
+      {/* Background refresh indicator */}
+      <BackgroundRefreshIndicator
+        isFetching={isFetching}
+        isLoading={isLoading}
+      />
+
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">ניהול חנויות</h2>
