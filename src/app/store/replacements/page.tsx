@@ -3,10 +3,10 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useStoreReplacementRequests } from '@/hooks/queries/useReplacements';
-import { useCurrentUser } from '@/hooks/useCurrentUser'; // <-- תיקון 1: נתיב הייבוא
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
 import { ReplacementsPageSkeleton } from '@/components/ui/loading-skeletons';
-import type { Tables, TablesInsert } from '@/lib/supabase/database.types';
+import type { User as UserType, Device, DeviceModel, Warranty, Repair, ReplacementRequest, FaultType } from '@/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -41,7 +41,7 @@ import {
   AlertCircle,
   Package,
   Calendar,
-  User,
+  User as UserIcon,
   Phone,
   FileText,
   MessageSquare
@@ -60,21 +60,23 @@ const replacementRequestSchema = z.object({
 
 type ReplacementRequestData = z.infer<typeof replacementRequestSchema>;
 
-type ReplacementRequestRow = Tables<'replacement_requests'> & {
-  device: (Tables<'devices'> & {
-    device_models?: Tables<'device_models'> | null;
-    warranty: Tables<'warranties'>[];
+type ReplacementRequestRow = ReplacementRequest & {
+  device: (Device & {
+    device_model?: { model_name: string } | null;
+    warranty?: Warranty[];
   }) | null;
-  repair: (Tables<'repairs'> & {
-    lab?: Pick<Tables<'users'>, 'full_name' | 'email'> | null;
-  }) | null;
-  resolver: Pick<Tables<'users'>, 'full_name'> | null;
+  repair: {
+    fault_type: FaultType | null;
+    fault_description: string | null;
+    lab?: Pick<UserType, 'full_name' | 'email'> | null;
+  } | null;
+  resolver: Pick<UserType, 'full_name'> | null;
 };
 
-type DeviceSearchResult = Tables<'devices'> & {
-  device_models?: Tables<'device_models'> | null;
-  warranty: Tables<'warranties'>[];
-  repairs: Tables<'repairs'>[];
+type DeviceSearchResult = Device & {
+  device_models?: DeviceModel | null;
+  warranty: Warranty[];
+  repairs: Repair[];
 };
 
 export default function StoreReplacementsPage() {
@@ -118,7 +120,7 @@ export default function StoreReplacementsPage() {
       filtered = filtered.filter(request =>
         request.device?.imei?.includes(searchQuery) ||
         request.device?.imei2?.includes(searchQuery) ||
-        request.device?.device_models?.model_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        request.device?.device_model?.model_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         request.customer_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         request.customer_phone?.includes(searchQuery) ||
         request.device?.warranty?.[0]?.customer_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -165,7 +167,7 @@ export default function StoreReplacementsPage() {
         .from('users')
         .select('*')
         .eq('id', user.id)
-        .single<Tables<'users'>>();
+        .single<UserType>();
 
       // Search for device with warranty
       const { data: devices, error } = await supabase
@@ -259,7 +261,7 @@ export default function StoreReplacementsPage() {
       // Create replacement request
       const normalizedPhone = data.customer_phone.replace(/\D/g, '');
 
-      const payload: TablesInsert<'replacement_requests'> = {
+      const payload: Partial<ReplacementRequest> = {
         device_id: searchedDevice.id,
         warranty_id: searchedDevice.warranty?.[0]?.id || null,
         repair_id: searchedDevice.repairs?.[0]?.id || null,
@@ -410,6 +412,7 @@ export default function StoreReplacementsPage() {
           </div>
 
           <select
+            title="בחר סטטוס"
             className="px-3 py-2 border rounded-md text-sm"
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value as 'all' | 'pending' | 'approved' | 'rejected')}
@@ -440,7 +443,7 @@ export default function StoreReplacementsPage() {
                 <TableRow key={request.id}>
                   <TableCell>
                     <div className="space-y-1">
-                      <div className="font-medium">{request.device?.device_models?.model_name || 'לא ידוע'}</div>
+                      <div className="font-medium">{request.device?.device_model?.model_name || 'לא ידוע'}</div>
                       <div className="text-sm text-muted-foreground">
                         IMEI: {request.device?.imei || request.device?.imei2}
                       </div>
@@ -449,7 +452,7 @@ export default function StoreReplacementsPage() {
                   <TableCell>
                     <div className="space-y-1">
                       <div className="flex items-center gap-1">
-                        <User className="h-3 w-3" />
+                        <UserIcon className="h-3 w-3" />
                         {request.customer_name || request.device?.warranty?.[0]?.customer_name}
                       </div>
                       <div className="flex items-center gap-1 text-sm text-muted-foreground">
@@ -620,7 +623,7 @@ export default function StoreReplacementsPage() {
                 <div>
                   <Label className="text-muted-foreground">מכשיר</Label>
                   <div className="font-medium space-y-1">
-                    <div>{selectedRequest.device?.device_models?.model_name || 'לא ידוע'}</div>
+                    <div>{selectedRequest.device?.device_model?.model_name || 'לא ידוע'}</div>
                     <div className="text-sm text-muted-foreground font-mono">
                       IMEI: {selectedRequest.device?.imei}
                       {selectedRequest.device?.imei2 && ` | IMEI 2: ${selectedRequest.device?.imei2}`}

@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import type { Tables } from '@/lib/supabase/database.types';
+import type { Device, DeviceModel, Warranty, ReplacementRequest } from '@/types';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useStoreDashboardStats } from '@/hooks/queries/useStoreDashboard';
 import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
@@ -54,8 +54,8 @@ interface WarrantyFormData {
   customer_phone: string;
 }
 
-type DeviceWithWarranty = Tables<'devices'> & {
-  device_models?: Tables<'device_models'> | null;
+type DeviceWithWarranty = Device & {
+  device_models?: DeviceModel | null;
   warranties?: {
     id: string;
     store_id: string;
@@ -67,7 +67,7 @@ type DeviceWithWarranty = Tables<'devices'> & {
   }[] | null;
 };
 
-type ReplacementRequestWithDevice = Tables<'replacement_requests'> & {
+type ReplacementRequestWithDevice = ReplacementRequest & {
   device?: DeviceWithWarranty | null;
 };
 
@@ -144,7 +144,7 @@ export default function StoreDashboard() {
         .from('warranties')
         .select('device_id')
         .eq('store_id', storeId)
-        .returns<Array<Pick<Tables<'warranties'>, 'device_id'>>>();
+        .returns<Array<Pick<Warranty, 'device_id'>>>();
 
       const deviceIds = (warranties || []).map(w => w.device_id).filter(Boolean) as string[];
 
@@ -467,7 +467,7 @@ export default function StoreDashboard() {
     }
   };
 
-  const getWarrantyStatus = (warranty: Tables<'warranties'>) => {
+  const getWarrantyStatus = (warranty: Warranty) => {
     const now = new Date();
     const expiryDate = new Date(warranty.expiry_date);
 

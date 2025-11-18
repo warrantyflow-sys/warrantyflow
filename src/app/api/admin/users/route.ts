@@ -1,5 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/server';
-import type { TablesInsert } from '@/lib/supabase/database.types';
+import type { User } from '@/types';
 import { NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/auth/jwt-helper';
 

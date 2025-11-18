@@ -30,7 +30,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { Wrench, Plus, Edit } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import ShekelIcon from '@/components/ui/shekel-icon';
-import type { RepairType } from '@/lib/api/repairs';
+import type { RepairType } from '@/types';
 import type { Lab, LabRepairPrice } from '@/hooks/queries/useRepairTypes';
 
 export default function AdminRepairTypesPage() {

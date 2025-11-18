@@ -184,6 +184,7 @@ export function AlertsPanel() {
               <span>{alert.title}</span>
               {alert.dismissible && (
                 <button
+                  title="הסתר הודעה"
                   onClick={() => dismissAlert(alert.id)}
                   className="ms-auto hover:opacity-70 transition-opacity"
                 >

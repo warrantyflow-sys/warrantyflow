@@ -392,6 +392,7 @@ export default function RepairsPage() {
             <div>
               <Label>מעבדה</Label>
               <select
+                title="בחר מעבדה"
                 className="w-full px-3 py-2 border rounded-md text-sm mt-1"
                 value={filterLab}
                 onChange={(e) => setFilterLab(e.target.value)}
@@ -408,6 +409,7 @@ export default function RepairsPage() {
             <div>
               <Label>סטטוס</Label>
               <select
+                title="בחר סטטוס"
                 className="w-full px-3 py-2 border rounded-md text-sm mt-1"
                 value={filterStatus}
                 onChange={(e) => setFilterStatus(e.target.value as any)}
@@ -423,6 +425,7 @@ export default function RepairsPage() {
             <div>
               <Label>סוג תיקון</Label>
               <select
+                title="בחר סוג תיקון"
                 className="w-full px-3 py-2 border rounded-md text-sm mt-1"
                 value={filterRepairType}
                 onChange={(e) => setFilterRepairType(e.target.value)}
@@ -450,6 +453,7 @@ export default function RepairsPage() {
             <div>
               <Label>דגם מכשיר</Label>
               <select
+                title="בחר דגם מכשיר"
                 className="w-full px-3 py-2 border rounded-md text-sm mt-1"
                 value={filterDeviceModel}
                 onChange={(e) => setFilterDeviceModel(e.target.value)}

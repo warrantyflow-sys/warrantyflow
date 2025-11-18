@@ -122,7 +122,7 @@ export default function LabRepairsPage() {
   
   // --- [תיקון 1: הוספת useMemo עבור רשימות סינון ייחודיות] ---
   const uniqueFilterRepairTypes = useMemo(() => {
-    const allRepairTypes = repairs.map(r => r.repair_type).filter(Boolean);
+    const allRepairTypes = repairs.map(r => r.repair_type).filter((rt): rt is NonNullable<typeof rt> => rt !== null && rt !== undefined);
     const uniqueMap = new Map();
     allRepairTypes.forEach(rt => {
       if (!uniqueMap.has(rt.id)) {
@@ -723,8 +723,9 @@ export default function LabRepairsPage() {
     );
   };
 
-  const getFaultTypeLabel = (type: FaultType) => {
-    const labels: Record<FaultType, string> = {
+  const getFaultTypeLabel = (type?: FaultType | string | null) => {
+    if (!type) return 'לא צוין';
+    const labels: Record<string, string> = {
       screen: 'מסך',
       charging_port: 'שקע טעינה',
       flash: 'פנס',
@@ -732,7 +733,7 @@ export default function LabRepairsPage() {
       board: 'לוח אם',
       other: 'אחר',
     };
-    return labels[type];
+    return labels[type] || type;
   };
 
   if (isLoading) {
@@ -1003,7 +1004,7 @@ export default function LabRepairsPage() {
                     >
                       <TableCell className="font-mono text-sm">{repair.device?.imei}</TableCell>
                       <TableCell className="font-medium">{repair.device?.device_models?.model_name || 'לא ידוע'}</TableCell>
-                      <TableCell>{repair.warranty?.customer_name || repair.customer_name}</TableCell>
+                      <TableCell>{repair.warranty?.[0]?.customer_name || repair.customer_name}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className="font-normal">
                           {repair.repair_type?.name || repair.custom_repair_description || getFaultTypeLabel(repair.fault_type)}
@@ -1011,7 +1012,7 @@ export default function LabRepairsPage() {
                       </TableCell>
                       <TableCell>{getRepairStatusBadge(repair)}</TableCell>
                       <TableCell className="font-semibold">{formatCurrency(repair.cost || 0)}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{formatDate(repair.created_at)}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{repair.created_at ? formatDate(repair.created_at) : 'לא ידוע'}</TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <div className="flex gap-1 justify-center">
                           <Button
@@ -1338,6 +1339,7 @@ export default function LabRepairsPage() {
             <div>
               <Label htmlFor="update-repair-type">סוג תיקון חדש</Label>
               <select
+                title="בחר סוג תיקון"
                 id="update-repair-type"
                 className="w-full px-3 py-2 border rounded-md mt-1"
                 value={updateRepairTypeId}

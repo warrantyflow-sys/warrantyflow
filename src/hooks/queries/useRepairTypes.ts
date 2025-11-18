@@ -3,7 +3,8 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { fetchLabRepairTypes, type RepairType } from '@/lib/api/repairs';
+import { fetchLabRepairTypes } from '@/lib/api/repairs';
+import type { RepairType } from '@/types';
 
 export interface Lab {
   id: string;

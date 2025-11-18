@@ -2,13 +2,13 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import type { Tables, TablesUpdate } from '@/lib/supabase/database.types';
+import type { User } from '@/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
-import { Save, User, Phone, Mail } from 'lucide-react';
+import { Save, User as UserIcon, Phone, Mail } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -22,7 +22,7 @@ type ProfileSettingsFormData = z.infer<typeof profileSettingsSchema>;
 
 export function ProfileSettingsCard() {
   const [isLoading, setIsLoading] = useState(false);
-  const [userData, setUserData] = useState<Tables<'users'> | null>(null);
+  const [userData, setUserData] = useState<User | null>(null);
   const supabase = createClient();
   const { toast } = useToast();
 
@@ -45,7 +45,7 @@ export function ProfileSettingsCard() {
         .from('users')
         .select('*')
         .eq('id', user.id)
-        .single() as { data: Tables<'users'> | null };
+        .single() as { data: User | null };
 
       if (userRecord) {
         setUserData(userRecord);
@@ -73,7 +73,7 @@ export function ProfileSettingsCard() {
 
     setIsLoading(true);
     try {
-      const updates: TablesUpdate<'users'> = {
+      const updates: Partial<User> = {
         full_name: data.full_name,
         phone: data.phone,
         updated_at: new Date().toISOString(),
@@ -138,7 +138,7 @@ export function ProfileSettingsCard() {
             <div className="space-y-2">
               <Label htmlFor="full_name">שם מלא</Label>
               <div className="relative">
-                <User className="absolute right-3 top-3 h-4 w-4 text-muted-foreground" />
+                <UserIcon className="absolute right-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
                   id="full_name"
                   {...register('full_name')}

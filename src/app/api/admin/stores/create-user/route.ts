@@ -1,5 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/server';
-import type { TablesInsert } from '@/lib/supabase/database.types';
+import type { User } from '@/types';
 import { NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/auth/jwt-helper';
 
@@ -30,7 +30,7 @@ export async function POST(request: Request) {
 
     // צור רשומת משתמש בטבלה שלנו
     // הטריגר אמור לעשות זאת, אבל נעשה זאת גם ידנית כדי להיות בטוחים
-    const payload: TablesInsert<'users'> = {
+    const payload: Partial<User> = {
       id: authData.user!.id,
       email: data.email,
       full_name: data.full_name,

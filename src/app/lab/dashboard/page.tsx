@@ -47,7 +47,8 @@ export default function LabDashboardPage() {
     return <Badge variant={config.variant}>{config.label}</Badge>;
   };
 
-  const getFaultTypeLabel = (type: string) => {
+  const getFaultTypeLabel = (type?: string | null) => {
+    if (!type) return 'לא צוין';
     const labels: Record<string, string> = {
       screen: 'מסך',
       charging_port: 'שקע טעינה',
@@ -272,7 +273,7 @@ export default function LabDashboardPage() {
                     <div className="flex-1">
                       <div className="font-medium">{repair.device?.device_models?.model_name || 'מכשיר לא ידוע'}</div>
                       <div className="text-sm text-muted-foreground">
-                        {getFaultTypeLabel(repair.fault_type)} • {formatDate(repair.created_at)}
+                        {getFaultTypeLabel(repair.fault_type)} • {repair.created_at ? formatDate(repair.created_at) : 'לא ידוע'}
                       </div>
                     </div>
                     {getStatusBadge(repair.status)}
@@ -311,7 +312,7 @@ export default function LabDashboardPage() {
             ) : (
               <div className="space-y-3">
                 {urgentRepairs.map((repair) => {
-                  const hoursWaiting = Math.floor((Date.now() - new Date(repair.created_at).getTime()) / (1000 * 60 * 60));
+                  const hoursWaiting = repair.created_at ? Math.floor((Date.now() - new Date(repair.created_at).getTime()) / (1000 * 60 * 60)) : 0;
                   return (
                     <div 
                       key={repair.id} 

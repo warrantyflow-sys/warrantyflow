@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import * as Papa from 'papaparse';
 import { createClient } from '@/lib/supabase/client';
-import type { Tables, TablesInsert, TablesUpdate } from '@/lib/supabase/database.types';
+import type { Device, DeviceModel, Warranty, Repair } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -89,12 +89,12 @@ const deviceSchema = z.object({
 
 type DeviceFormData = z.infer<typeof deviceSchema>;
 
-type DeviceRow = Tables<'devices'> & {
-  device_models?: Tables<'device_models'> | null;
-  warranties?: (Tables<'warranties'> & {
-    store?: Pick<Tables<'users'>, 'full_name' | 'email'> | null;
+type DeviceRow = Device & {
+  device_models?: DeviceModel | null;
+  warranties?: (Warranty & {
+    store?: Pick<{ id: string; email: string; full_name: string | null }, 'full_name' | 'email'> | null;
   })[] | null;
-  repairs?: Tables<'repairs'>[] | null;
+  repairs?: Repair[] | null;
   // Fields from devices_with_status view
   model_name?: string;
   warranty_months?: number;
@@ -513,7 +513,7 @@ export default function DevicesPage() {
         model_id: modelId,
         import_batch: data.import_batch || null,
         warranty_months: data.warranty_months,  // שמירת משך אחריות ספציפי למכשיר
-      } as TablesInsert<'devices'>;
+      } as Partial<Device>;
 
       const { data: newDevice, error } = await (supabase.from('devices') as any)
         .insert([payload])
@@ -604,7 +604,7 @@ export default function DevicesPage() {
         model_id: modelId,
         import_batch: data.import_batch || null,
         warranty_months: data.warranty_months,  // עדכון משך אחריות ספציפי למכשיר
-      } as TablesUpdate<'devices'>;
+      } as Partial<Device>;
 
       const { error } = await (supabase.from('devices') as any)
         .update(updates)
@@ -845,7 +845,7 @@ export default function DevicesPage() {
       errors: []
     };
 
-    const devicesToInsert: TablesInsert<'devices'>[] = [];
+    const devicesToInsert: Partial<Device>[] = [];
     const modelCache = new Map<string, string>(); // model_name -> model_id
     let firstDuplicate: { imei: string; device: DeviceRow; row: number } | null = null;
 
@@ -945,7 +945,7 @@ export default function DevicesPage() {
         imei2: imei1 && imei2 ? imei2 : null, // רק אם יש גם IMEI1
         import_batch: `IMPORT-${new Date().toISOString().split('T')[0]}`,
         warranty_months: 12  // ברירת מחדל לייבוא - ניתן להרחבה בעתיד לקרוא מהקובץ
-      } as TablesInsert<'devices'>);
+      } as Partial<Device>);
 
       result.success++;
     }
@@ -1694,6 +1694,8 @@ export default function DevicesPage() {
             <FileSpreadsheet className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
             <div className="space-y-2">
               <input
+                title="בחר קובץ CSV"
+                placeholder="בחר קובץ CSV"
                 id="csv-upload"
                 type="file"
                 accept=".csv"

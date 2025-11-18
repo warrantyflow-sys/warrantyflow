@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Tables, TablesUpdate } from '@/lib/supabase/database.types';
+import { Device, DeviceModel, Warranty } from '@/types';
 import {
   Dialog,
   DialogContent,
@@ -21,9 +21,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import { Loader2 } from 'lucide-react';
-
-type Device = Tables<'devices'>;
-type DeviceModel = Tables<'device_models'>;
 
 interface DeviceDetailsModalProps {
   deviceId: string | null;
@@ -44,7 +41,7 @@ type DeviceFormData = z.infer<typeof deviceSchema>;
 export function DeviceDetailsModal({ deviceId, open, onOpenChange, onDeviceUpdate }: DeviceDetailsModalProps) {
   const [device, setDevice] = useState<Device | null>(null);
   const [deviceModels, setDeviceModels] = useState<Pick<DeviceModel, 'id' | 'model_name'>[]>([]);
-  const [activeWarranty, setActiveWarranty] = useState<Tables<'warranties'> | null>(null);
+  const [activeWarranty, setActiveWarranty] = useState<Warranty | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 

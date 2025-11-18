@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
-import type { Tables } from '@/lib/supabase/database.types';
+import type { User, Device, DeviceModel, Warranty, Repair, RepairType } from '@/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -73,23 +73,23 @@ export default function AdminRepairsReportPage() {
     totalRepairs: 0,
     totalRevenue: 0
   });
-  type AdminRepair = Tables<'repairs'> & {
-    device?: (Pick<Tables<'devices'>, 'imei'> & {
-      device_models?: Pick<Tables<'device_models'>, 'model_name'> | null;
+  type AdminRepair = Repair & {
+    device?: (Pick<Device, 'imei'> & {
+      device_models?: Pick<DeviceModel, 'model_name'> | null;
     }) | null;
-    lab?: Pick<Tables<'users'>, 'full_name' | 'email'> | null;
-    warranty?: (Tables<'warranties'> & {
-      store?: Pick<Tables<'users'>, 'full_name' | 'email'> | null;
+    lab?: Pick<User, 'full_name' | 'email'> | null;
+    warranty?: (Warranty & {
+      store?: Pick<User, 'full_name' | 'email'> | null;
     }) | null;
-    repair_type?: Pick<Tables<'repair_types'>, 'id' | 'name'> | null;
+    repair_type?: Pick<RepairType, 'id' | 'name'> | null;
   };
 
-  type LabRow = Pick<Tables<'users'>, 'id' | 'full_name' | 'email' | 'phone'>;
-  type RepairType = Pick<Tables<'repair_types'>, 'id' | 'name' | 'is_active'>;
+  type LabRow = Pick<User, 'id' | 'full_name' | 'email' | 'phone'>;
+  type RepairTypeRow = Pick<RepairType, 'id' | 'name' | 'is_active'>;
 
   const [allRepairs, setAllRepairs] = useState<AdminRepair[]>([]);
   const [labs, setLabs] = useState<LabRow[]>([]);
-  const [repairTypes, setRepairTypes] = useState<RepairType[]>([]);
+  const [repairTypes, setRepairTypes] = useState<RepairTypeRow[]>([]);
   const [filterLab, setFilterLab] = useState<string>('all');
   const [filterRepairType, setFilterRepairType] = useState<string>('all');
   const [filterMonth, setFilterMonth] = useState<string>('all');
@@ -119,7 +119,7 @@ export default function AdminRepairsReportPage() {
         .select('id, name, is_active')
         .eq('is_active', true)
         .order('name')
-        .returns<RepairType[]>();
+        .returns<RepairTypeRow[]>();
 
       setRepairTypes(repairTypesData || []);
 

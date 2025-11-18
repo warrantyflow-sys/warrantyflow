@@ -1,132 +1,127 @@
+// Import database types
+import { Json, Tables } from '@/lib/supabase/database.types';
+
+// Export Json type for use across the app
+export type { Json };
+
 // User Types
 export type UserRole = 'admin' | 'store' | 'lab';
 
-export interface User {
-  id: string;
-  email: string;
-  full_name: string | null;
-  phone: string | null;
-  role: UserRole;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-}
+// Base User type from database
+export type User = Tables<'users'>;
+
+// User type aliases for specific roles
+export type LabUser = User;
+export type StoreUser = User;
+export type AdminUser = User;
 
 // Device Types
 export type WarrantyStatus = 'new' | 'active' | 'expired' | 'replaced';
 
-export interface Device {
-  id: string;
-  imei: string;
-  model: string;
-  import_batch: string | null;
-  warranty_status: WarrantyStatus;
-  warranty_months: number;
-  imported_by: string | null;
-  created_at: string;
-  updated_at: string;
+// Base Device type from database
+export type Device = Tables<'devices'>;
+
+// Device with relations
+export interface DeviceWithRelations extends Device {
   warranty?: Warranty;
   repairs?: Repair[];
+  model?: DeviceModel;
 }
 
+// Device Model type
+export type DeviceModel = Tables<'device_models'>;
+
 // Warranty Types
-export interface Warranty {
-  id: string;
-  device_id: string;
-  store_id: string | null;
-  customer_name: string;
-  customer_phone: string;
-  activation_date: string;
-  expiry_date: string;
-  is_active: boolean;
-  activated_by: string | null;
-  created_at: string;
-  updated_at: string;
-  device?: Device;
-  store?: User;
+export type Warranty = Tables<'warranties'>;
+
+// Warranty with relations
+export interface WarrantyWithRelations extends Warranty {
+  device?: {
+    id: string;
+    imei: string;
+    imei2?: string | null;
+    device_models?: {
+      model_name: string;
+    } | null;
+    device_model?: {
+      model_name: string;
+    } | null;
+  } | null;
+  store?: {
+    full_name?: string | null;
+    email?: string | null;
+  } | null;
+  repairs?: Array<{
+    id: string;
+    status: string;
+    fault_type?: string;
+    lab_id?: string | null;
+    created_at?: string;
+    completed_at?: string | null;
+  }>;
 }
 
 // Repair Types
-export type RepairStatus = 'received' | 'in_progress' | 'completed' | 'replacement_requested';
+export type RepairStatus = 'received' | 'in_progress' | 'completed' | 'replacement_requested' | 'cancelled';
 export type FaultType = 'screen' | 'charging_port' | 'flash' | 'speaker' | 'board' | 'other';
 
-export interface Repair {
-  id: string;
-  device_id: string;
-  lab_id: string | null;
-  warranty_id: string | null;
-  repair_type_id: string | null;
-  customer_name: string;
-  customer_phone: string;
-  fault_type: FaultType;
-  fault_description: string | null;
-  status: RepairStatus;
-  cost: number | null;
-  created_by: string | null;
-  completed_at: string | null;
-  notes: string | null;
-  custom_repair_description: string | null;
-  custom_repair_price: number | null;
-  created_at: string;
-  updated_at: string;
+// Base Repair type from database
+export type Repair = Tables<'repairs'>;
+
+// Repair with relations
+export interface RepairWithRelations extends Repair {
   device?: Device;
   lab?: User;
   warranty?: Warranty;
+  repair_type?: RepairType;
 }
+
+// Repair Type
+export type RepairType = Tables<'repair_types'>;
+
+// Lab Repair Price
+export type LabRepairPrice = Tables<'lab_repair_prices'>;
 
 // Replacement Request Types
 export type RequestStatus = 'pending' | 'approved' | 'rejected';
 
-export interface ReplacementRequest {
-  id: string;
-  device_id: string;
-  repair_id: string | null;
-  requester_id: string | null;
-  reason: string;
-  status: RequestStatus;
-  admin_notes: string | null;
-  resolved_by: string | null;
-  resolved_at: string | null;
-  created_at: string;
-  updated_at: string;
+// Base ReplacementRequest type from database
+export type ReplacementRequest = Tables<'replacement_requests'>;
+
+// ReplacementRequest with relations
+export interface ReplacementRequestWithRelations extends ReplacementRequest {
   device?: Device;
   repair?: Repair;
   requester?: User;
   resolver?: User;
+  warranty?: Warranty;
 }
 
 // Payment Types
 export type PaymentStatus = 'pending' | 'paid';
 
-export interface Payment {
-  id: string;
-  lab_id: string | null;
-  amount: number;
-  payment_date: string;
-  reference: string | null;
-  status: PaymentStatus;
-  created_by: string | null;
-  notes: string | null;
-  created_at: string;
-  updated_at: string;
+// Base Payment type from database
+export type Payment = Tables<'payments'>;
+
+// Payment with relations
+export interface PaymentWithRelations extends Payment {
   lab?: User;
   creator?: User;
 }
 
 // Audit Log Types
-export interface AuditLog {
-  id: string;
-  user_id: string | null;
-  action: string;
-  table_name: string;
-  record_id: string | null;
-  old_data: Record<string, any> | null;
-  new_data: Record<string, any> | null;
-  ip_address: string | null;
-  user_agent: string | null;
-  created_at: string;
+export type AuditLog = Tables<'audit_log'>;
+
+// Audit Log with relations
+export interface AuditLogWithRelations extends AuditLog {
   user?: User;
 }
+
+// Notification Types
+export type Notification = Tables<'notifications'>;
+
+// Settings Types
+export type Setting = Tables<'settings'>;
 
 // Form Types
 export interface LoginForm {

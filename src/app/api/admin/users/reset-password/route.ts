@@ -1,5 +1,5 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server';
-import type { TablesUpdate } from '@/lib/supabase/database.types';
+import type { User } from '@/types';
 import { NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/auth/jwt-helper';
 
@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     const { error: updateError } = await (supabaseClient.from('users') as any)
       .update({
         updated_at: new Date().toISOString()
-      } satisfies TablesUpdate<'users'>)
+      } satisfies Partial<User>)
       .eq('id', userId);
 
     if (updateError) {

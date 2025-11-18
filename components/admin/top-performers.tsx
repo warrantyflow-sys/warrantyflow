@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import type { Tables } from '@/lib/supabase/database.types';
+import type { User, Warranty, Repair } from '@/types';
 import { Trophy, TrendingUp, Store, Wrench } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -47,13 +47,13 @@ export function TopPerformers() {
           .select('id, full_name, email')
           .eq('role', 'store')
           .limit(5)
-          .returns<Pick<Tables<'users'>, 'id' | 'full_name' | 'email'>[]>();
+          .returns<Pick<User, 'id' | 'full_name' | 'email'>[]>();
 
         const { data: warrantyCounts } = await supabase
           .from('warranties')
           .select('store_id, id')
           .not('store_id', 'is', null)
-          .returns<Array<Pick<Tables<'warranties'>, 'store_id' | 'id'>>>();
+          .returns<Array<Pick<Warranty, 'store_id' | 'id'>>>();
 
         // Count warranties per store
         const storeCounts = (warrantyCounts || []).reduce((acc, w) => {
@@ -85,14 +85,14 @@ export function TopPerformers() {
           .select('id, full_name, email')
           .eq('role', 'lab')
           .limit(5)
-          .returns<Pick<Tables<'users'>, 'id' | 'full_name' | 'email'>[]>();
+          .returns<Pick<User, 'id' | 'full_name' | 'email'>[]>();
 
         const { data: repairCounts } = await supabase
           .from('repairs')
           .select('lab_id, id, status')
           .eq('status', 'completed')
           .not('lab_id', 'is', null)
-          .returns<Array<Pick<Tables<'repairs'>, 'lab_id' | 'id' | 'status'>>>();
+          .returns<Array<Pick<Repair, 'lab_id' | 'id' | 'status'>>>();
 
         // Count completed repairs per lab
         const labCounts = (repairCounts || []).reduce((acc, r) => {

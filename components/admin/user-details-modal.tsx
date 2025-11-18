@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Tables } from '@/lib/supabase/database.types';
+import { User } from '@/types';
 import {
   Dialog,
   DialogContent,
@@ -21,8 +21,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/components/ui/use-toast';
 import { Loader2 } from 'lucide-react';
-
-type User = Tables<'users'>;
 
 interface UserDetailsModalProps {
   userId: string | null;

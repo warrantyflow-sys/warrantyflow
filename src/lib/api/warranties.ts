@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/client';
+import type { WarrantyWithRelations } from '@/types';
 
 /**
  * API Functions for Warranties
@@ -6,33 +7,7 @@ import { createClient } from '@/lib/supabase/client';
  * שכבת API לניהול אחריות - שליפה עם pagination
  */
 
-export interface Warranty {
-  id: string;
-  customer_name: string;
-  customer_phone: string;
-  activation_date: string;
-  expiry_date: string;
-  is_active: boolean;
-  created_at?: string;
-  store_id?: string;
-  device_id?: string;
-  device?: {
-    id: string;
-    imei: string;
-    imei2?: string | null;
-    device_models?: {
-      model_name: string;
-    } | null;
-  } | null;
-  repairs?: Array<{
-    id: string;
-    status: string;
-    fault_type?: string;
-    lab_id?: string | null;
-    created_at?: string;
-    completed_at?: string | null;
-  }>;
-}
+export type Warranty = WarrantyWithRelations;
 
 export interface WarrantiesResponse {
   warranties: Warranty[];

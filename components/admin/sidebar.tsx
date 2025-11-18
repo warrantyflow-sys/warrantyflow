@@ -52,10 +52,12 @@ const navigationSections = [
   },
 ];
 
-// כרגע אין שימוש ב־props, אבל משאירים למקרה הצורך בהמשך
-interface SidebarProps {}
+interface SidebarProps {
+  isCollapsed?: boolean;
+  setIsCollapsed?: React.Dispatch<React.SetStateAction<boolean>>;
+}
 
-export function Sidebar({}: SidebarProps) {
+export function Sidebar({ isCollapsed, setIsCollapsed }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);

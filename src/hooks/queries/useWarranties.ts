@@ -3,7 +3,8 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { fetchStoreWarranties, fetchAllWarranties, type Warranty } from '@/lib/api/warranties';
+import { fetchStoreWarranties, fetchAllWarranties } from '@/lib/api/warranties';
+import type { WarrantyWithRelations as Warranty } from '@/types';
 
 /**
  * Hook לשליפת אחריות של חנות עם server-side pagination ו-Realtime updates

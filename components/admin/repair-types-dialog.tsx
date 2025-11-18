@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { Tables } from '@/lib/supabase/database.types';
+import { RepairType } from '@/types';
 import {
   Dialog,
   DialogContent,
@@ -26,8 +26,6 @@ import {
 } from '@/components/ui/table';
 import { TableSkeleton } from '@/components/admin/table-skeleton';
 import { Checkbox } from '../../components/ui/checkbox';
-
-type RepairType = Tables<'repair_types'>;
 
 interface RepairTypesDialogProps {
   open: boolean;

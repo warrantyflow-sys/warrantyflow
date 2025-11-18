@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useLabCompletedRepairs, useLabPayments } from '@/hooks/queries/useLabPayments';
 import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
-import type { Tables } from '@/lib/supabase/database.types';
+import type { User, Device, DeviceModel, Warranty, Repair, RepairType, Payment } from '@/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -36,17 +36,17 @@ import {
 } from 'lucide-react';
 import ShekelIcon from '@/components/ui/shekel-icon';
 
-type CompletedRepair = Tables<'repairs'> & {
-  device?: (Pick<Tables<'devices'>, 'imei'> & {
-    device_models?: Pick<Tables<'device_models'>, 'model_name'> | null;
+type CompletedRepair = Repair & {
+  device?: (Pick<Device, 'imei'> & {
+    device_models?: Pick<DeviceModel, 'model_name'> | null;
   }) | null;
-  warranty?: (Tables<'warranties'> & {
-    store?: Pick<Tables<'users'>, 'full_name' | 'email'> | null;
+  warranty?: (Warranty & {
+    store?: Pick<User, 'full_name' | 'email'> | null;
   }) | null;
-  repair_type?: Pick<Tables<'repair_types'>, 'id' | 'name'> | null;
+  repair_type?: Pick<RepairType, 'id' | 'name'> | null;
 };
 
-type LabPayment = Tables<'payments'>;
+type LabPayment = Payment;
 
 interface MonthlyReport {
   month: string;
@@ -103,6 +103,7 @@ export default function LabFinancialReportPage() {
 
     completedRepairs.forEach(repair => {
       const completionDate = repair.completed_at || repair.created_at;
+      if (!completionDate) return;
       const month = completionDate.substring(0, 7);
       if (!reportsByMonth[month]) {
         reportsByMonth[month] = {

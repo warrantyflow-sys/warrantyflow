@@ -309,6 +309,7 @@ export default function AdminLabRepairPricingPage() {
               <div>
                 <Label>סוג תיקון</Label>
                 <select
+                  title="בחר סוג תיקון"
                   className="w-full mt-1 p-2 border rounded-md"
                   value={formData.repair_type_id}
                   onChange={(e) => setFormData({ ...formData, repair_type_id: e.target.value })}

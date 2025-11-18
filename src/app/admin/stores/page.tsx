@@ -7,7 +7,7 @@ import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-i
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Tables } from '@/lib/supabase/database.types';
+import { StoreUser } from '@/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,7 +35,7 @@ import {
 } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 
-type StoreUser = Tables<'users'>;
+// StoreUser is now imported from @/types
 
 const editStoreSchema = z.object({
   email: z.string().email('כתובת אימייל לא תקינה'),

@@ -8,6 +8,7 @@ export interface LabRepair {
   id: string;
   cost: number;
   completed_at: string;
+  created_at?: string;
   device?: {
     imei: string;
     device_models?: {

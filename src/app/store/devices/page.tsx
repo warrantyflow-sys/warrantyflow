@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import type { Tables } from '@/lib/supabase/database.types';
+import type { Device, DeviceModel, Warranty, Repair } from '@/types';
 import { useStoreWarranties } from '@/hooks/queries/useWarranties';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
@@ -57,12 +57,12 @@ import { useRouter } from 'next/navigation';
 
 type WarrantyStatus = 'new' | 'active' | 'expired' | 'replaced';
 
-type StoreWarranty = Tables<'warranties'> & {
-  device: (Pick<Tables<'devices'>, 'id' | 'imei' | 'imei2'> & {
-    device_models: Pick<Tables<'device_models'>, 'model_name'> | null;
+type StoreWarranty = Warranty & {
+  device: (Pick<Device, 'id' | 'imei' | 'imei2'> & {
+    device_models: Pick<DeviceModel, 'model_name'> | null;
   }) | null;
   repairs: Array<
-    Pick<Tables<'repairs'>, 'id' | 'status' | 'fault_type' | 'lab_id' | 'created_at' | 'completed_at'>
+    Pick<Repair, 'id' | 'status' | 'fault_type' | 'lab_id' | 'created_at' | 'completed_at'>
   > | null;
 };
 

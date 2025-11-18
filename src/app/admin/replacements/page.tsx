@@ -119,7 +119,7 @@ export default function ReplacementsPage() {
     if (processedRequests.length > 0) {
       const totalTime = processedRequests.reduce((sum, r) => {
         const created = new Date(r.created_at).getTime();
-        const resolved = new Date(r.resolved_at).getTime();
+        const resolved = new Date(r.resolved_at!).getTime();
         return sum + (resolved - created);
       }, 0);
       statsData.avgProcessTime = totalTime / processedRequests.length / (1000 * 60 * 60);
@@ -348,6 +348,7 @@ export default function ReplacementsPage() {
           </div>
           <div className="flex gap-4 mt-4">
             <select
+              title="בחר סטטוס"
               className="px-3 py-2 border rounded-md"
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value as any)}

@@ -7,7 +7,7 @@ import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-i
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Tables } from '@/lib/supabase/database.types';
+import { LabUser } from '@/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -36,7 +36,7 @@ import {
 import { useRouter } from 'next/navigation';
 import { formatDate } from '@/lib/utils';
 
-type LabUser = Tables<'users'>;
+// LabUser is now imported from @/types
 
 const editLabSchema = z.object({
   email: z.string().email('כתובת אימייל לא תקינה'),

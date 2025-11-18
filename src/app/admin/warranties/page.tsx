@@ -92,7 +92,7 @@ export default function WarrantiesPage() {
     resolver: zodResolver(warrantySchema),
   });
 
-  const getUserDisplayName = useCallback((user?: { full_name?: string | null; email?: string | null }) => {
+  const getUserDisplayName = useCallback((user?: { full_name?: string | null; email?: string | null } | null) => {
     if (!user) return '';
     return user.full_name?.trim() || user.email || '';
   }, []);
@@ -132,7 +132,7 @@ export default function WarrantiesPage() {
       filtered = filtered.filter(
         (warranty) =>
           warranty.device?.imei?.toLowerCase().includes(query) ||
-          warranty.device?.device_model?.model_name?.toLowerCase().includes(query) ||
+          warranty.device?.device_models?.model_name?.toLowerCase().includes(query) ||
           warranty.customer_name?.toLowerCase().includes(query) ||
           warranty.customer_phone?.includes(query) ||
           getUserDisplayName(warranty.store)?.toLowerCase().includes(query)

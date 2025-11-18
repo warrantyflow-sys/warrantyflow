@@ -15,8 +15,9 @@ async function fetchAllReplacementRequests() {
     .select(`
       *,
       device:devices(
-        imei,
-        device_model:device_models(model_name)
+        *,
+        device_model:device_models(model_name),
+        warranty:warranties(*)
       ),
       repair:repairs(
         fault_type,
@@ -46,8 +47,9 @@ async function fetchStoreReplacementRequests(storeId: string) {
     .select(`
       *,
       device:devices(
-        imei,
-        device_model:device_models(model_name)
+        *,
+        device_model:device_models(model_name),
+        warranty:warranties(*)
       ),
       repair:repairs(
         fault_type,
