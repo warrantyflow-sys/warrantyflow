@@ -145,8 +145,8 @@ export default function RepairsPage() {
     const completedRepairs = filteredRepairs.filter(r => r.completed_at);
     if (completedRepairs.length > 0) {
       const totalHours = completedRepairs.reduce((sum, r) => {
-        const start = new Date(r.created_at);
-        const end = new Date(r.completed_at);
+        const start = new Date(r.created_at || '');
+        const end = new Date(r.completed_at || '');
         return sum + (end.getTime() - start.getTime()) / (1000 * 60 * 60);
       }, 0);
       currentStats.avgRepairTime = totalHours / completedRepairs.length;
@@ -560,17 +560,17 @@ export default function RepairsPage() {
                       </Button>
                     )}
                   </TableCell>
-                  <TableCell>{getStatusBadge(repair.status)}</TableCell>
+                  <TableCell>{getStatusBadge(repair.status as RepairStatus)}</TableCell>
                   <TableCell>
                     <div className="text-sm">
-                      {formatDate(repair.created_at)}
+                      {formatDate(repair.created_at || '')}
                     </div>
                   </TableCell>
                   <TableCell>
                     {repair.cost ? formatCurrency(repair.cost) : '-'}
                   </TableCell>
                   <TableCell>
-                    {getUrgencyBadge(repair.created_at, repair.status)}
+                    {getUrgencyBadge(repair.created_at || '', repair.status as RepairStatus)}
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-1">
