@@ -7,7 +7,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    // אופטימיזציה: שימוש ב-JWT claims - אפס קריאות נוספות!
+
     const auth = await requireAdmin();
     if (!auth.success) return auth.response;
 
@@ -44,7 +44,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    // אופטימיזציה: שימוש ב-JWT claims - אפס קריאות נוספות!
+
     const auth = await requireAdmin();
     if (!auth.success) return auth.response;
 
@@ -83,7 +83,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    // אופטימיזציה: שימוש ב-JWT claims - אפס קריאות נוספות!
+
     const auth = await requireAdmin();
     if (!auth.success) return auth.response;
 
@@ -118,7 +118,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    // אופטימיזציה: שימוש ב-JWT claims - אפס קריאות נוספות!
+
     const auth = await requireAdmin();
     if (!auth.success) return auth.response;
 

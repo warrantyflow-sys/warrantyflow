@@ -5,7 +5,7 @@ import { requireAdmin } from '@/lib/auth/jwt-helper';
 
 export async function POST(request: Request) {
   try {
-    // אופטימיזציה: שימוש ב-JWT claims - אפס קריאות נוספות!
+
     const auth = await requireAdmin();
     if (!auth.success) return auth.response;
 
@@ -18,18 +18,16 @@ export async function POST(request: Request) {
     const { data: authData, error: authError2 } = await supabaseService.auth.admin.createUser({
       email: data.email,
       password: data.password,
-      email_confirm: true, // אישור אוטומטי של האימייל
+      email_confirm: true,
       user_metadata: {
         full_name: data.full_name,
         phone: data.phone,
-        role: data.role, // חשוב! הטריגר קורא את זה
+        role: data.role,
       }
     });
 
     if (authError2) throw authError2;
 
-    // צור רשומת משתמש בטבלה שלנו
-    // הטריגר אמור לעשות זאת, אבל נעשה זאת גם ידנית כדי להיות בטוחים
     const payload: Partial<User> = {
       id: authData.user!.id,
       email: data.email,
@@ -41,7 +39,7 @@ export async function POST(request: Request) {
 
     const { error: profileError } = await (supabaseService.from('users') as any)
       .upsert([payload], {
-        onConflict: 'id', // אם המשתמש כבר קיים (מהטריגר), עדכן
+        onConflict: 'id',
         ignoreDuplicates: false
       });
 

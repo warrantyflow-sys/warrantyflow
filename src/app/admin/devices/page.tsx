@@ -3,10 +3,11 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import * as Papa from 'papaparse';
 import { createClient } from '@/lib/supabase/client';
+import { useDevices } from '@/hooks/queries/useDevices'; // ✅ Hook חדש
 import type { Device, DeviceModel, Warranty, Repair } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -45,31 +46,32 @@ import {
   CheckCircle,
   XCircle,
   AlertCircle,
-  Calendar,
-  Hash,
   Smartphone,
   FileSpreadsheet,
   Download,
-  Filter,
-  BarChart3,
   Wrench,
-  RefreshCw
+  RefreshCw,
+  Loader2,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { formatDate, validateIMEI } from '@/lib/utils';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { DevicesPageSkeleton } from '@/components/ui/loading-skeletons';
+import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
 
 type WarrantyStatus = 'new' | 'active' | 'expired' | 'replaced';
 
 // פונקציה לחישוב סטטוס אחריות
 const calculateWarrantyStatus = (device: DeviceRow): WarrantyStatus => {
-  // קודם בודקים אם המכשיר הוחלף - זה הסטטוס החשוב ביותר
   if (device.is_replaced) return 'replaced';
 
-  const activeWarranty = device.warranties?.find(w => w.is_active);
+  // אם המידע כבר קיים מה-view, נשתמש בו
+  if (device.warranty_status) return device.warranty_status;
 
+  const activeWarranty = device.warranties?.find(w => w.is_active);
   if (activeWarranty) {
     const expiryDate = new Date(activeWarranty.expiry_date);
     const now = new Date();
@@ -95,10 +97,10 @@ type DeviceRow = Device & {
     store?: Pick<{ id: string; email: string; full_name: string | null }, 'full_name' | 'email'> | null;
   })[] | null;
   repairs?: Repair[] | null;
-  // Fields from devices_with_status view
   model_name?: string;
   warranty_months?: number;
   warranty_status?: WarrantyStatus;
+  _computed?: any; // להוספת שדות מחושבים לתצוגה
 };
 
 interface ImportResult {
@@ -109,28 +111,30 @@ interface ImportResult {
 }
 
 export default function DevicesPage() {
-  const [devices, setDevices] = useState<DeviceRow[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchInput, setSearchInput] = useState(''); // Input field value
+  // --- State ניהול ---
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(50);
+  
+  // ניהול חיפוש עם Debounce
+  const [searchInput, setSearchInput] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  
   const [filterStatus, setFilterStatus] = useState<'all' | WarrantyStatus>('all');
   const [filterModel, setFilterModel] = useState<string>('all');
+  
   const [selectedDevice, setSelectedDevice] = useState<DeviceRow | null>(null);
-
-  // Pagination state
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(50);
-
+  const [uniqueModels, setUniqueModels] = useState<string[]>(['all']);
+  
+  // Dialogs State
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
-
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [preview, setPreview] = useState<Record<string, any>[]>([]);
-
-  // Duplicate IMEI handling
+  
+  // Duplicate Handling
   const [isDuplicateDialogOpen, setIsDuplicateDialogOpen] = useState(false);
   const [duplicateInfo, setDuplicateInfo] = useState<{
     imei: string;
@@ -156,6 +160,44 @@ export default function DevicesPage() {
     },
   });
 
+  // --- React Query Hook Integration ---
+  // שליפת נתונים חכמה מהשרת
+  const { 
+    data: devicesData, 
+    isLoading: isDevicesLoading, 
+    isFetching,
+    refetch 
+  } = useDevices({
+    page,
+    pageSize,
+    search: debouncedSearch,
+    model: filterModel,
+    warrantyStatus: filterStatus
+  });
+
+  const devices = devicesData?.data || [];
+  const totalCount = devicesData?.count || 0;
+  const totalPages = Math.ceil(totalCount / pageSize);
+
+  // --- Debounce Effect ---
+  // עדכון החיפוש רק אחרי שהמשתמש הפסיק להקליד ל-500ms
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchInput);
+      if (searchInput !== debouncedSearch) {
+        setPage(1); // חזרה לעמוד ראשון בחיפוש חדש
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  // איפוס עמוד בעת שינוי פילטרים
+  useEffect(() => {
+    setPage(1);
+  }, [filterStatus, filterModel]);
+
+  // --- Stats Fetching (נשאר נפרד כי הוא קל) ---
   const [stats, setStats] = useState({
     total: 0,
     new: 0,
@@ -163,12 +205,9 @@ export default function DevicesPage() {
     expired: 0,
     replaced: 0,
   });
-  const [uniqueModels, setUniqueModels] = useState<string[]>(['all']);
-  const [totalCount, setTotalCount] = useState(0);
 
   const fetchStats = useCallback(async () => {
     try {
-      // משתמשים ב-view devices_with_status לחישוב מדויק
       const [
         { count: totalCount },
         { count: newCount },
@@ -176,25 +215,11 @@ export default function DevicesPage() {
         { count: expiredCount },
         { count: replacedCount },
       ] = await Promise.all([
-        supabase
-          .from('devices_with_status')
-          .select('*', { count: 'exact', head: true }),
-        supabase
-          .from('devices_with_status')
-          .select('*', { count: 'exact', head: true })
-          .eq('warranty_status', 'new'),
-        supabase
-          .from('devices_with_status')
-          .select('*', { count: 'exact', head: true })
-          .eq('warranty_status', 'active'),
-        supabase
-          .from('devices_with_status')
-          .select('*', { count: 'exact', head: true })
-          .eq('warranty_status', 'expired'),
-        supabase
-          .from('devices_with_status')
-          .select('*', { count: 'exact', head: true })
-          .eq('warranty_status', 'replaced'),
+        supabase.from('devices_with_status').select('*', { count: 'exact', head: true }),
+        supabase.from('devices_with_status').select('*', { count: 'exact', head: true }).eq('warranty_status', 'new'),
+        supabase.from('devices_with_status').select('*', { count: 'exact', head: true }).eq('warranty_status', 'active'),
+        supabase.from('devices_with_status').select('*', { count: 'exact', head: true }).eq('warranty_status', 'expired'),
+        supabase.from('devices_with_status').select('*', { count: 'exact', head: true }).eq('warranty_status', 'replaced'),
       ]);
 
       setStats({
@@ -209,212 +234,28 @@ export default function DevicesPage() {
     }
   }, [supabase]);
 
+  // משיכת רשימת דגמים ל-Select
   const fetchModels = useCallback(async () => {
     try {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('device_models')
         .select('model_name')
         .eq('is_active', true)
-        .order('model_name')
-        .returns<{ model_name: string }[]>();
+        .order('model_name');
 
-      if (error) throw error;
-
-      const models = ['all', ...(data?.map(m => m.model_name) || [])];
+      const models = ['all', ...(data?.map((m: any) => m.model_name) || [])];
       setUniqueModels(models);
     } catch (error) {
       console.error('Error fetching models:', error);
     }
   }, [supabase]);
 
-  const fetchDevices = useCallback(async () => {
-    try {
-      setIsLoading(true);
-
-      // אסטרטגיה: רק "all" ו-"replaced" עושים pagination בשרת
-      // "active", "expired", "new" צריכים סינון בצד הלקוח
-      const needsClientSideFiltering = filterStatus === 'active' || filterStatus === 'expired' || filterStatus === 'new';
-
-      // Build query - use devices_with_status view for optimized queries
-      let query = supabase
-        .from('devices_with_status')
-        .select('*', { count: needsClientSideFiltering ? undefined : 'exact' });
-
-      // Apply filters
-      if (searchQuery) {
-        query = query.or(`imei.ilike.%${searchQuery}%,imei2.ilike.%${searchQuery}%,import_batch.ilike.%${searchQuery}%`);
-      }
-
-      // סינון לפי סטטוס בשרת - השתמש ב-warranty_status מה-view
-      if (filterStatus === 'replaced') {
-        query = query.eq('warranty_status', 'replaced');
-      } else if (filterStatus === 'active') {
-        query = query.eq('warranty_status', 'active');
-      } else if (filterStatus === 'expired') {
-        query = query.eq('warranty_status', 'expired');
-      } else if (filterStatus === 'new') {
-        query = query.eq('warranty_status', 'new');
-      }
-
-      if (filterModel !== 'all') {
-        const { data: modelData } = await supabase
-          .from('device_models')
-          .select('id')
-          .eq('model_name', filterModel)
-          .single() as { data: { id: string } | null };
-
-        if (modelData) {
-          query = query.eq('model_id', modelData.id);
-        }
-      }
-
-      if (needsClientSideFiltering) {
-        // טוען את כל הנתונים לסינון בצד הלקוח
-        const { data, error } = await query
-          .select('*, device_models(*), warranties(*, store:users(full_name, email))')
-          .order('created_at', { ascending: false })
-          .returns<DeviceRow[]>();
-
-        if (error) throw error;
-
-        // Fetch repairs count for each device separately
-        if (data && data.length > 0) {
-          const deviceIds = data.map(d => d.id);
-          console.log('Fetching repairs for device IDs:', deviceIds.slice(0, 3));
-
-          const { data: repairsData, error: repairsError } = await supabase
-            .from('repairs')
-            .select('device_id, id, status, fault_type')
-            .in('device_id', deviceIds);
-
-          console.log('Repairs query result:', {
-            error: repairsError,
-            count: repairsData?.length,
-            sample: repairsData?.slice(0, 3)
-          });
-
-          if (!repairsError && repairsData) {
-            // Add repairs array to each device
-            data.forEach(device => {
-              const deviceRepairs = (repairsData as any[]).filter((r: any) => r.device_id === device.id);
-              (device as any).repairs = deviceRepairs;
-            });
-
-            console.log('Devices with repairs:', data.slice(0, 3).map(d => ({
-              imei: d.imei,
-              device_id: d.id,
-              repairs_count: (d as any).repairs?.length || 0
-            })));
-          }
-        }
-
-        // סינון בצד הלקוח לפי סטטוס מחושב
-        let filteredData = (data || []).filter(d => {
-          const status = calculateWarrantyStatus(d);
-          return status === filterStatus;
-        });
-
-        // החל pagination
-        const totalFiltered = filteredData.length;
-        const from = (currentPage - 1) * itemsPerPage;
-        const to = from + itemsPerPage;
-        const paginatedData = filteredData.slice(from, to);
-
-        setDevices(paginatedData);
-        setTotalCount(totalFiltered);
-      } else {
-        // pagination בשרת (all או replaced)
-        const from = (currentPage - 1) * itemsPerPage;
-        const to = from + itemsPerPage - 1;
-
-        const { data, error, count } = await query
-          .select('*, device_models(*), warranties(*, store:users(full_name, email))')
-          .order('created_at', { ascending: false })
-          .range(from, to)
-          .returns<DeviceRow[]>();
-
-        if (error) throw error;
-
-        // Fetch repairs count for each device separately
-        if (data && data.length > 0) {
-          const deviceIds = data.map(d => d.id);
-          console.log('Fetching repairs for device IDs (server pagination):', deviceIds.slice(0, 3));
-
-          const { data: repairsData, error: repairsError } = await supabase
-            .from('repairs')
-            .select('device_id, id, status, fault_type')
-            .in('device_id', deviceIds);
-
-          console.log('Repairs query result (server pagination):', {
-            error: repairsError,
-            count: repairsData?.length,
-            sample: repairsData?.slice(0, 3)
-          });
-
-          if (!repairsError && repairsData) {
-            // Count repairs per device
-            const repairsCounts: Record<string, number> = {};
-            (repairsData as any[]).forEach((repair: any) => {
-              repairsCounts[repair.device_id] = (repairsCounts[repair.device_id] || 0) + 1;
-            });
-
-            console.log('Repairs counts:', repairsCounts);
-
-            // Add repairs array to each device
-            data.forEach(device => {
-              const deviceRepairs = (repairsData as any[]).filter((r: any) => r.device_id === device.id);
-              (device as any).repairs = deviceRepairs;
-            });
-
-            console.log('Devices with repairs (server pagination):', data.slice(0, 3).map(d => ({
-              imei: d.imei,
-              device_id: d.id,
-              repairs_count: (d as any).repairs?.length || 0
-            })));
-          }
-        }
-
-        setDevices(data || []);
-        setTotalCount(count || 0);
-      }
-    } catch (error) {
-      console.error('Error fetching devices:', error);
-      toast({
-        title: 'שגיאה',
-        description: 'אירעה שגיאה בטעינת המכשירים',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [currentPage, searchQuery, filterStatus, filterModel, itemsPerPage, supabase, toast]);
-
-  useEffect(() => {
-    fetchDevices();
-  }, [fetchDevices]);
-
   useEffect(() => {
     fetchStats();
     fetchModels();
+  }, [fetchStats, fetchModels]);
 
-    // רענון אוטומטי כל דקה
-    const interval = setInterval(() => {
-      fetchDevices();
-      fetchStats();
-    }, 60000);
-
-    return () => clearInterval(interval);
-  }, [fetchDevices, fetchStats, fetchModels]);
-
-  // Handle search on Enter key
-  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      setSearchQuery(searchInput);
-      setCurrentPage(1); // Reset to first page on new search
-    }
-  };
-
-  const totalPages = Math.ceil(totalCount / itemsPerPage);
+  // --- Helpers ---
 
   const getStatusBadge = (status: WarrantyStatus) => {
     const variants = {
@@ -426,13 +267,14 @@ export default function DevicesPage() {
     return variants[status] || variants.new;
   };
 
-  // אופטימיזציה: חישוב סטטוס אחריות פעם אחת לכל מכשיר
-  // במקום לחשב מחדש בכל רינדור של כל שורה בטבלה
+  // אופטימיזציה: הכנת הנתונים לתצוגה (Badge וכו')
+  // ה-mapping הזה זול כי הוא רץ רק על 50 שורות
   const devicesWithStatus = useMemo(() => {
-    return devices.map(device => {
+    return devices.map((device: any) => {
       const warrantyStatus = calculateWarrantyStatus(device);
       const statusBadge = getStatusBadge(warrantyStatus);
-      const activeWarranty = device.warranties?.find(w => w.is_active);
+      // תמיכה במבנה שה-Hook מחזיר (מערך warranties)
+      const activeWarranty = device.warranty?.[0] || device.warranties?.find((w: any) => w.is_active);
 
       return {
         ...device,
@@ -445,7 +287,15 @@ export default function DevicesPage() {
     });
   }, [devices]);
 
-  // Check if IMEI already exists
+  // --- Actions ---
+
+  const handleRefresh = () => {
+    refetch();
+    fetchStats();
+    toast({ title: 'הנתונים עודכנו' });
+  };
+
+  // Check Duplicate IMEI
   const checkDuplicateIMEI = async (imei: string, imei2?: string): Promise<DeviceRow | null> => {
     try {
       const { data, error } = await supabase
@@ -458,14 +308,13 @@ export default function DevicesPage() {
       if (error) throw error;
       return data && data.length > 0 ? data[0] : null;
     } catch (error) {
-      console.error('Error checking duplicate IMEI:', error);
+      console.error('Error checking duplicate:', error);
       return null;
     }
   };
 
   const addDeviceToDatabase = async (data: DeviceFormData, forceAdd: boolean = false) => {
     try {
-      // Check for duplicate IMEI unless forced
       if (!forceAdd) {
         const existingDevice = await checkDuplicateIMEI(data.imei, data.imei2);
         if (existingDevice) {
@@ -482,8 +331,7 @@ export default function DevicesPage() {
 
       // חיפוש או יצירת דגם
       let modelId: string;
-
-      const { data: existingModel, error: searchError } = await (supabase as any)
+      const { data: existingModel } = await (supabase as any)
         .from('device_models')
         .select('id')
         .eq('model_name', data.model.trim())
@@ -492,7 +340,6 @@ export default function DevicesPage() {
       if (existingModel) {
         modelId = existingModel.id;
       } else {
-        // יצירת דגם חדש - משתמשים ב-warranty_months של המכשיר כברירת מחדל לדגם
         const { data: newModel, error: createError } = await (supabase as any)
           .from('device_models')
           .insert({
@@ -512,7 +359,7 @@ export default function DevicesPage() {
         imei2: data.imei2 || null,
         model_id: modelId,
         import_batch: data.import_batch || null,
-        warranty_months: data.warranty_months,  // שמירת משך אחריות ספציפי למכשיר
+        warranty_months: data.warranty_months,
       } as Partial<Device>;
 
       const { data: newDevice, error } = await (supabase.from('devices') as any)
@@ -522,7 +369,7 @@ export default function DevicesPage() {
 
       if (error) throw error;
 
-      // --- Audit Log ---
+      // Audit Log
       const { data: { user } } = await supabase.auth.getUser();
       if (user && newDevice) {
         supabase.from('audit_log').insert({
@@ -535,11 +382,8 @@ export default function DevicesPage() {
             model: data.model,
             source: 'manual'
           }
-        }).then(({ error: logError }) => {
-          if (logError) console.error('Audit log failed:', logError);
         });
       }
-      // --- End Audit Log ---
 
       toast({
         title: 'הצלחה',
@@ -550,7 +394,9 @@ export default function DevicesPage() {
       setIsAddDialogOpen(false);
       setIsDuplicateDialogOpen(false);
       setDuplicateInfo(null);
-      fetchDevices();
+      
+      // רענון נתונים
+      refetch();
       fetchStats();
     } catch (error: any) {
       console.error('Error adding device:', error);
@@ -570,10 +416,9 @@ export default function DevicesPage() {
     if (!selectedDevice) return;
 
     try {
-      // חיפוש או יצירת דגם
+      // טיפול בדגם
       let modelId: string;
-
-      const { data: existingModel, error: searchError } = await (supabase as any)
+      const { data: existingModel } = await (supabase as any)
         .from('device_models')
         .select('id')
         .eq('model_name', data.model.trim())
@@ -582,7 +427,6 @@ export default function DevicesPage() {
       if (existingModel) {
         modelId = existingModel.id;
       } else {
-        // יצירת דגם חדש - משתמשים ב-warranty_months של המכשיר כברירת מחדל לדגם
         const { data: newModel, error: createError } = await (supabase as any)
           .from('device_models')
           .insert({
@@ -597,13 +441,12 @@ export default function DevicesPage() {
         modelId = newModel.id;
       }
 
-      // עדכון המכשיר - כולל warranty_months ברמת המכשיר
       const updates = {
         imei: data.imei,
         imei2: data.imei2 || null,
         model_id: modelId,
         import_batch: data.import_batch || null,
-        warranty_months: data.warranty_months,  // עדכון משך אחריות ספציפי למכשיר
+        warranty_months: data.warranty_months,
       } as Partial<Device>;
 
       const { error } = await (supabase.from('devices') as any)
@@ -612,27 +455,24 @@ export default function DevicesPage() {
 
       if (error) throw error;
 
-      // אם שינינו את משך האחריות ויש אחריות פעילה, נעדכן את תאריך התפוגה
+      // עדכון תאריך תפוגה אם שונה משך האחריות
       if (data.warranty_months !== selectedDevice.warranty_months) {
-        const { data: activeWarranty, error: warrantyError } = await supabase
+        const { data: activeWarranty } = await supabase
           .from('warranties')
           .select('id, activation_date')
           .eq('device_id', selectedDevice.id)
           .eq('is_active', true)
           .maybeSingle();
 
-        if (activeWarranty && !warrantyError) {
-          // חישוב תאריך תפוגה חדש
+        if (activeWarranty) {
           const activationDate = new Date(activeWarranty.activation_date);
           const newExpiryDate = new Date(activationDate);
           newExpiryDate.setMonth(newExpiryDate.getMonth() + data.warranty_months);
 
-          const { error: updateWarrantyError } = await supabase
+          await supabase
             .from('warranties')
             .update({ expiry_date: newExpiryDate.toISOString().split('T')[0] })
             .eq('id', activeWarranty.id);
-
-          if (updateWarrantyError) throw updateWarrantyError;
 
           toast({
             title: 'שים לב',
@@ -641,7 +481,7 @@ export default function DevicesPage() {
         }
       }
 
-      // --- Audit Log ---
+      // Audit Log
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         supabase.from('audit_log').insert({
@@ -650,29 +490,22 @@ export default function DevicesPage() {
           entity_type: 'device',
           entity_id: selectedDevice.id,
           meta: { updates: updates }
-        }).then(({ error: logError }) => {
-          if (logError) console.error('Audit log failed:', logError);
         });
       }
-      // --- End Audit Log ---
 
-      toast({
-        title: 'הצלחה',
-        description: 'המכשיר עודכן בהצלחה',
-      });
+      toast({ title: 'הצלחה', description: 'המכשיר עודכן בהצלחה' });
 
       reset();
       setIsEditDialogOpen(false);
       setSelectedDevice(null);
-
-      // רענון מפורש של הנתונים אחרי עדכון
-      await fetchDevices();
-      await fetchStats();
+      
+      refetch();
+      fetchStats();
     } catch (error: any) {
-      console.error('Error updating device:', error);
+      console.error('Error updating:', error);
       toast({
         title: 'שגיאה',
-        description: error.message || 'אירעה שגיאה בעדכון המכשיר',
+        description: error.message || 'שגיאה בעדכון',
         variant: 'destructive',
       });
     }
@@ -682,16 +515,12 @@ export default function DevicesPage() {
     if (!confirm('האם אתה בטוח שברצונך למחוק מכשיר זה?')) return;
 
     try {
-      const deviceToDelete = devices.find(d => d.id === id);
+      const deviceToDelete = devices.find((d: any) => d.id === id);
 
-      const { error } = await supabase
-        .from('devices')
-        .delete()
-        .eq('id', id);
-
+      const { error } = await supabase.from('devices').delete().eq('id', id);
       if (error) throw error;
 
-      // --- Audit Log ---
+      // Audit Log
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         supabase.from('audit_log').insert({
@@ -700,79 +529,63 @@ export default function DevicesPage() {
           entity_type: 'device',
           entity_id: id,
           meta: { deleted_device: deviceToDelete || { id: id } }
-        }).then(({ error: logError }) => {
-          if (logError) console.error('Audit log failed:', logError);
         });
       }
-      // --- End Audit Log ---
 
-      toast({
-        title: 'הצלחה',
-        description: 'המכשיר נמחק בהצלחה',
-      });
-
-      fetchDevices();
+      toast({ title: 'הצלחה', description: 'המכשיר נמחק בהצלחה' });
+      refetch();
       fetchStats();
     } catch (error) {
-      console.error('Error deleting device:', error);
+      console.error('Delete error:', error);
       toast({
         title: 'שגיאה',
-        description: 'אירעה שגיאה במחיקת המכשיר',
+        description: 'שגיאה במחיקת המכשיר',
         variant: 'destructive',
       });
     }
   };
 
-  // ייצוא CSV בפורמט החדש - טוען את כל המכשירים רק לייצוא
+  // Export to CSV - Optimized to fetch filtered data from server
   const exportToCSV = async () => {
     try {
-      // טעינת כל המכשירים לייצוא
-      let query = supabase
-        .from('devices')
-        .select(`
-          *,
-          device_models(*)
-        `);
+      toast({ title: 'מכין קובץ לייצוא...', description: 'אנא המתן' });
+      
+      // בניית שאילתה זהה ל-Hook אך ללא Pagination
+      let query = supabase.from('devices_with_status').select('*');
 
-      // החל סינונים
-      if (searchQuery) {
-        query = query.or(`imei.ilike.%${searchQuery}%,imei2.ilike.%${searchQuery}%,import_batch.ilike.%${searchQuery}%`);
+      if (debouncedSearch) {
+        query = query.or(`imei.ilike.%${debouncedSearch}%,imei2.ilike.%${debouncedSearch}%,import_batch.ilike.%${debouncedSearch}%`);
+      }
+
+      if (filterStatus !== 'all') {
+        query = query.eq('warranty_status', filterStatus);
       }
 
       if (filterModel !== 'all') {
+        // צריך את ה-ID של המודל
         const { data: modelData } = await supabase
           .from('device_models')
           .select('id')
           .eq('model_name', filterModel)
-          .single() as { data: { id: string } | null };
-
+          .single();
+        
         if (modelData) {
           query = query.eq('model_id', modelData.id);
         }
       }
 
-      const { data, error } = await query
-        .select(`
-          *,
-          device_models(*),
-          warranties(*)
-        `)
-        .returns<DeviceRow[]>();
+      const { data, error } = await query.order('created_at', { ascending: false });
 
       if (error) throw error;
 
-      // סינון לפי סטטוס בצד הלקוח
-      let filteredData = data || [];
-      if (filterStatus !== 'all') {
-        filteredData = filteredData.filter(d => calculateWarrantyStatus(d) === filterStatus);
-      }
-
       const csvContent = [
-        ['דגם', 'IMEI1', 'IMEI2'],
-        ...filteredData.map(device => [
+        ['דגם', 'IMEI1', 'IMEI2', 'סטטוס', 'אצווה'],
+        ...(data || []).map((device: any) => [
           device.model_name || '',
           device.imei,
           device.imei2 || '',
+          device.warranty_status || 'new',
+          device.import_batch || ''
         ]),
       ]
         .map(row => row.join(','))
@@ -793,7 +606,6 @@ export default function DevicesPage() {
     }
   };
 
-  // הורדת טמפלייט בפורמט החדש
   const downloadTemplate = () => {
     const template = 'דגם,IMEI1,IMEI2\nATLAS,123456789012345,987654321098765\nATLAS 10,123456789012346,';
     const blob = new Blob(['\ufeff' + template], { type: 'text/csv;charset=utf-8;' });
@@ -803,7 +615,6 @@ export default function DevicesPage() {
     link.click();
   };
 
-  // פרסור CSV והעלאה
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -816,11 +627,7 @@ export default function DevicesPage() {
       skipEmptyLines: true,
       complete: async (results) => {
         const data = results.data as any[];
-
-        // תצוגה מקדימה של 5 שורות ראשונות
         setPreview(data.slice(0, 5));
-
-        // ייבוא הנתונים
         if (data.length > 0) {
           await importDevices(data);
         }
@@ -831,7 +638,6 @@ export default function DevicesPage() {
           description: 'אירעה שגיאה בקריאת הקובץ',
           variant: 'destructive',
         });
-        console.error('CSV parse error:', error);
       }
     });
   };
@@ -846,45 +652,33 @@ export default function DevicesPage() {
     };
 
     const devicesToInsert: Partial<Device>[] = [];
-    const modelCache = new Map<string, string>(); // model_name -> model_id
+    const modelCache = new Map<string, string>();
     let firstDuplicate: { imei: string; device: DeviceRow; row: number } | null = null;
 
     for (let i = 0; i < data.length; i++) {
       const row = data[i];
-
-      // חיפוש עמודות לפי שמות גמישים
       const modelName = row['דגם'] || row['model'] || row['Model'] || '';
       const imei1 = row['IMEI1'] || row['imei1'] || row['IMEI'] || row['imei'] || '';
       const imei2 = row['IMEI2'] || row['imei2'] || '';
 
-      // בדיקת שדות חובה
       if (!modelName || !modelName.trim()) {
         result.failed++;
         result.errors.push(`שורה ${i + 2}: דגם חסר`);
         continue;
       }
 
-      // לפחות IMEI אחד חייב להיות
       if (!imei1 && !imei2) {
         result.failed++;
         result.errors.push(`שורה ${i + 2}: חייב לפחות IMEI אחד`);
         continue;
       }
 
-      // בדיקת תקינות IMEI
       if (imei1 && !validateIMEI(imei1)) {
         result.failed++;
         result.errors.push(`שורה ${i + 2}: IMEI1 לא תקין`);
         continue;
       }
 
-      if (imei2 && !validateIMEI(imei2)) {
-        result.failed++;
-        result.errors.push(`שורה ${i + 2}: IMEI2 לא תקין`);
-        continue;
-      }
-
-      // Check for duplicate IMEI unless forced
       if (!forceAdd) {
         const existingDevice = await checkDuplicateIMEI(imei1, imei2);
         if (existingDevice) {
@@ -896,18 +690,15 @@ export default function DevicesPage() {
             };
           }
           result.failed++;
-          result.errors.push(`שורה ${i + 2}: IMEI ${imei1 || imei2} כבר קיים במערכת`);
+          result.errors.push(`שורה ${i + 2}: IMEI ${imei1 || imei2} כבר קיים`);
           continue;
         }
       }
 
-      // חיפוש או יצירת דגם
       let modelId = modelCache.get(modelName.trim());
-
       if (!modelId) {
         try {
-          // חיפוש דגם קיים
-          const { data: existingModel, error: searchError } = await (supabase as any)
+          const { data: existingModel } = await (supabase as any)
             .from('device_models')
             .select('id')
             .eq('model_name', modelName.trim())
@@ -916,7 +707,6 @@ export default function DevicesPage() {
           if (existingModel) {
             modelId = existingModel.id;
           } else {
-            // יצירת דגם חדש
             const { data: newModel, error: createError } = await (supabase as any)
               .from('device_models')
               .insert({
@@ -930,27 +720,25 @@ export default function DevicesPage() {
             if (createError) throw createError;
             modelId = newModel!.id;
           }
-
           modelCache.set(modelName.trim(), modelId!);
         } catch (error: any) {
           result.failed++;
-          result.errors.push(`שורה ${i + 2}: שגיאה ביצירת דגם - ${error.message}`);
+          result.errors.push(`שורה ${i + 2}: שגיאה ביצירת דגם`);
           continue;
         }
       }
 
       devicesToInsert.push({
         model_id: modelId,
-        imei: imei1 || imei2, // אם אין IMEI1, השתמש ב-IMEI2
-        imei2: imei1 && imei2 ? imei2 : null, // רק אם יש גם IMEI1
+        imei: imei1 || imei2,
+        imei2: imei1 && imei2 ? imei2 : null,
         import_batch: `IMPORT-${new Date().toISOString().split('T')[0]}`,
-        warranty_months: 12  // ברירת מחדל לייבוא - ניתן להרחבה בעתיד לקרוא מהקובץ
+        warranty_months: 12
       } as Partial<Device>);
 
       result.success++;
     }
 
-    // If duplicates found and not forced, show dialog
     if (firstDuplicate && !forceAdd) {
       setDuplicateInfo({
         imei: firstDuplicate.imei,
@@ -965,7 +753,6 @@ export default function DevicesPage() {
       return;
     }
 
-    // ייבוא לבסיס הנתונים
     if (devicesToInsert.length > 0) {
       try {
         const { data: newDevices, error } = await (supabase.from('devices') as any)
@@ -974,43 +761,32 @@ export default function DevicesPage() {
 
         if (error) throw error;
 
-        // --- Audit Log for Bulk Import ---
+        // Audit Log
         const { data: { user } } = await supabase.auth.getUser();
         if (user && newDevices) {
-          const auditLogs = newDevices.map((device: { id: string; imei: string; }) => ({
+          const auditLogs = newDevices.map((device: any) => ({
             actor_user_id: user.id,
             action: 'device.import',
             entity_type: 'device',
             entity_id: device.id,
-            meta: { 
-              imei: device.imei,
-              source: 'csv'
-            }
+            meta: { imei: device.imei, source: 'csv' }
           }));
-          supabase.from('audit_log').insert(auditLogs).then(({ error: logError }) => {
-            if (logError) console.error('Bulk audit log failed:', logError);
-          });
+          supabase.from('audit_log').insert(auditLogs);
         }
-        // --- End Audit Log ---
 
         toast({
           title: 'הצלחה',
           description: `${result.success} מכשירים יובאו בהצלחה`,
         });
 
-        fetchDevices();
+        refetch();
         fetchStats();
       } catch (error: any) {
         console.error('Import error:', error);
         result.failed = result.total;
         result.success = 0;
-        result.errors = [error.message || 'שגיאה בייבוא לבסיס הנתונים'];
-
-        toast({
-          title: 'שגיאה',
-          description: 'אירעה שגיאה בייבוא המכשירים',
-          variant: 'destructive',
-        });
+        result.errors = [error.message || 'שגיאה בייבוא'];
+        toast({ title: 'שגיאה', description: 'שגיאה בייבוא', variant: 'destructive' });
       }
     }
 
@@ -1028,12 +804,17 @@ export default function DevicesPage() {
     }
   };
 
-  if (isLoading) {
+  // --- Render ---
+
+  if (isDevicesLoading) {
     return <DevicesPageSkeleton />;
   }
 
   return (
     <div className="space-y-6" dir="rtl">
+      {/* אינדיקטור טעינה ברקע */}
+      <BackgroundRefreshIndicator isFetching={isFetching} isLoading={isDevicesLoading} />
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -1043,12 +824,7 @@ export default function DevicesPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          {/* create a button to refresh the data with text "רענן" */}
-          <Button onClick={() => {
-            fetchDevices();
-            fetchStats();
-            toast({ title: 'הנתונים עודכנו' });
-          }} variant="outline">
+          <Button onClick={handleRefresh} variant="outline">
             רענן
             <RefreshCw className="ms-2 h-4 w-4" />
           </Button>
@@ -1144,25 +920,24 @@ export default function DevicesPage() {
                   placeholder="חיפוש לפי IMEI, דגם או אצווה..."
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
-                  onKeyDown={handleSearchKeyDown}
                   className="pl-10"
                 />
               </div>
               <Button
                 onClick={() => {
-                  setSearchQuery(searchInput);
-                  setCurrentPage(1);
+                  setDebouncedSearch(searchInput);
+                  setPage(1);
                 }}
                 variant="secondary"
               >
                 חפש
               </Button>
-              {searchQuery && (
+              {searchInput && (
                 <Button
                   onClick={() => {
                     setSearchInput('');
-                    setSearchQuery('');
-                    setCurrentPage(1);
+                    setDebouncedSearch('');
+                    setPage(1);
                   }}
                   variant="outline"
                 >
@@ -1199,173 +974,190 @@ export default function DevicesPage() {
       </Card>
 
       {/* Pagination - Above Table */}
-      {totalPages > 1 && (
-        <Card>
-          <CardContent className="py-4">
-            <div className="flex items-center justify-between">
-              <div className="text-sm text-muted-foreground">
-                מציג {((currentPage - 1) * itemsPerPage) + 1}-{Math.min(currentPage * itemsPerPage, totalCount)} מתוך {totalCount} מכשירים
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(1)}
-                  disabled={currentPage === 1}
-                >
-                  ראשון
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={currentPage === 1}
-                >
-                  הקודם
-                </Button>
-                <div className="text-sm">
-                  עמוד {currentPage} מתוך {totalPages}
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  disabled={currentPage === totalPages}
-                >
-                  הבא
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(totalPages)}
-                  disabled={currentPage === totalPages}
-                >
-                  אחרון
-                </Button>
-              </div>
+      <Card>
+        <CardContent className="py-4">
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-muted-foreground">
+              מציג {totalCount > 0 ? ((page - 1) * pageSize) + 1 : 0}-
+              {Math.min(page * pageSize, totalCount)} מתוך {totalCount} מכשירים
             </div>
-          </CardContent>
-        </Card>
-      )}
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage(1)}
+                disabled={page === 1 || isFetching}
+              >
+                <span className="sr-only">ראשון</span>
+                «
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage(prev => Math.max(1, prev - 1))}
+                disabled={page === 1 || isFetching}
+              >
+                <ChevronRight className="h-4 w-4" />
+                הקודם
+              </Button>
+              <div className="text-sm px-2">
+                עמוד {page} מתוך {Math.max(1, totalPages)}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={page >= totalPages || isFetching}
+              >
+                הבא
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage(totalPages)}
+                disabled={page >= totalPages || isFetching}
+              >
+                <span className="sr-only">אחרון</span>
+                »
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Table */}
       <Card>
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>דגם</TableHead>
-                <TableHead>IMEI 1</TableHead>
-                <TableHead>IMEI 2</TableHead>
-                <TableHead>חודשי אחריות</TableHead>
-                <TableHead>סטטוס</TableHead>
-                <TableHead>לקוח</TableHead>
-                <TableHead>תוקף אחריות</TableHead>
-                <TableHead>תיקונים</TableHead>
-                <TableHead>אצווה</TableHead>
-                <TableHead>תאריך</TableHead>
-                <TableHead>פעולות</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {devicesWithStatus.map((device) => {
-                // שימוש בערכים מחושבים מראש - ללא חישובים חוזרים
-                const { warrantyStatus, statusBadge, activeWarranty } = device._computed;
-                return (
-                  <TableRow key={device.id}>
-                    <TableCell className="font-medium">{device.model_name || '-'}</TableCell>
-                    <TableCell>{device.imei}</TableCell>
-                    <TableCell>{device.imei2 || '-'}</TableCell>
-                    <TableCell>{device.warranty_months || '-'}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-2 items-center">
-                        <Badge variant={statusBadge.variant}>{statusBadge.label}</Badge>
-                        {device.is_replaced && warrantyStatus !== 'replaced' && (
-                          <Badge variant="destructive" className="text-xs">הוחלף</Badge>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {activeWarranty ? (
-                        <div className="text-sm">
-                          <div className="font-medium">{activeWarranty.customer_name}</div>
-                          <div className="text-muted-foreground">{activeWarranty.customer_phone}</div>
-                        </div>
-                      ) : '-'}
-                    </TableCell>
-                    <TableCell>
-                      {activeWarranty ? (
-                        <div className="text-sm">
-                          <div>עד: {formatDate(activeWarranty.expiry_date)}</div>
-                          {activeWarranty.store && (
-                            <div className="text-muted-foreground">
-                              {activeWarranty.store.full_name}
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground">
-                          {device.warranty_months || '-'} חודשים
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1">
-                        {device.repairs && device.repairs.length > 0 ? (
-                          <>
-                            <Wrench className="h-3 w-3 text-muted-foreground" />
-                            <Badge variant="outline" className="font-mono">
-                              {device.repairs.length}
-                            </Badge>
-                          </>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>{device.import_batch || '-'}</TableCell>
-                    <TableCell>{formatDate(device.created_at)}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            setSelectedDevice(device);
-                            setIsDetailsDialogOpen(true);
-                          }}
-                        >
-                          <Smartphone className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            setSelectedDevice(device);
-                            setValue('imei', device.imei);
-                            setValue('imei2', device.imei2 || '');
-                            setValue('model', device.model_name || '');
-                            setValue('import_batch', device.import_batch || '');
-                            setValue('warranty_months', device.warranty_months || 12);
-                            setIsEditDialogOpen(true);
-                          }}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleDelete(device.id)}
-                        >
-                          <Trash className="h-4 w-4" />
-                        </Button>
-                      </div>
+          <div className="relative">
+            {isFetching && (
+              <div className="absolute inset-0 bg-white/50 dark:bg-black/50 z-10 flex items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            )}
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>דגם</TableHead>
+                  <TableHead>IMEI 1</TableHead>
+                  <TableHead>IMEI 2</TableHead>
+                  <TableHead>חודשי אחריות</TableHead>
+                  <TableHead>סטטוס</TableHead>
+                  <TableHead>לקוח</TableHead>
+                  <TableHead>תוקף אחריות</TableHead>
+                  <TableHead>תיקונים</TableHead>
+                  <TableHead>אצווה</TableHead>
+                  <TableHead>תאריך</TableHead>
+                  <TableHead>פעולות</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {devicesWithStatus.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={11} className="h-24 text-center text-muted-foreground">
+                      לא נמצאו מכשירים
                     </TableCell>
                   </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+                ) : (
+                  devicesWithStatus.map((device: any) => {
+                    const { warrantyStatus, statusBadge, activeWarranty } = device._computed;
+                    return (
+                      <TableRow key={device.id}>
+                        <TableCell className="font-medium">{device.model_name || '-'}</TableCell>
+                        <TableCell>{device.imei}</TableCell>
+                        <TableCell>{device.imei2 || '-'}</TableCell>
+                        <TableCell>{device.warranty_months || '-'}</TableCell>
+                        <TableCell>
+                          <div className="flex gap-2 items-center">
+                            <Badge variant={statusBadge.variant}>{statusBadge.label}</Badge>
+                            {device.is_replaced && warrantyStatus !== 'replaced' && (
+                              <Badge variant="destructive" className="text-xs">הוחלף</Badge>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {activeWarranty ? (
+                            <div className="text-sm">
+                              <div className="font-medium">{activeWarranty.customer_name}</div>
+                              <div className="text-muted-foreground">{activeWarranty.customer_phone}</div>
+                            </div>
+                          ) : '-'}
+                        </TableCell>
+                        <TableCell>
+                          {activeWarranty ? (
+                            <div className="text-sm">
+                              <div>עד: {formatDate(activeWarranty.expiry_date)}</div>
+                              {activeWarranty.store && (
+                                <div className="text-muted-foreground">
+                                  {activeWarranty.store.full_name}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">
+                              {device.warranty_months || '-'} חודשים
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            {device.repairs && device.repairs.length > 0 ? (
+                              <>
+                                <Wrench className="h-3 w-3 text-muted-foreground" />
+                                <Badge variant="outline" className="font-mono">
+                                  {device.repairs.length}
+                                </Badge>
+                              </>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>{device.import_batch || '-'}</TableCell>
+                        <TableCell>{formatDate(device.created_at)}</TableCell>
+                        <TableCell>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                setSelectedDevice(device);
+                                setIsDetailsDialogOpen(true);
+                              }}
+                            >
+                              <Smartphone className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                setSelectedDevice(device);
+                                setValue('imei', device.imei);
+                                setValue('imei2', device.imei2 || '');
+                                setValue('model', device.model_name || '');
+                                setValue('import_batch', device.import_batch || '');
+                                setValue('warranty_months', device.warranty_months || 12);
+                                setIsEditDialogOpen(true);
+                              }}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleDelete(device.id)}
+                            >
+                              <Trash className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 
@@ -1503,8 +1295,11 @@ export default function DevicesPage() {
                   <Label>סטטוס</Label>
                   <p>
                   {(() => {
-                    const deviceStatus = getStatusBadge(calculateWarrantyStatus(selectedDevice));
-                    return <Badge variant={deviceStatus.variant}>{deviceStatus.label}</Badge>;
+                    // תיקון: שימוש ב-getStatusBadge במקום חיפוש בתוך ה-device ישירות ב-Dialog
+                    // במקרה שה-computed לא קיים ב-selectedDevice שאינו חלק מהטבלה הראשית
+                    const status = calculateWarrantyStatus(selectedDevice);
+                    const badge = getStatusBadge(status);
+                    return <Badge variant={badge.variant}>{badge.label}</Badge>;
                   })()}
                   </p>
                 </div>
@@ -1667,10 +1462,8 @@ export default function DevicesPage() {
               variant="default"
               onClick={() => {
                 if (duplicateInfo?.isImport && duplicateInfo.importData) {
-                  // Continue with import
                   importDevices(duplicateInfo.importData, true);
                 } else if (duplicateInfo?.pendingData) {
-                  // Continue with manual add
                   addDeviceToDatabase(duplicateInfo.pendingData, true);
                 }
               }}

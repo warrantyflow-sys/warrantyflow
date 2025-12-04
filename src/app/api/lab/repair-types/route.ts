@@ -4,7 +4,6 @@ import { requireLab } from '@/lib/auth/jwt-helper';
 
 export async function GET() {
   try {
-    // אופטימיזציה: שימוש ב-JWT claims - אפס קריאות נוספות!
     const auth = await requireLab();
     if (!auth.success) return auth.response;
 

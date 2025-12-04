@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAllRepairs } from '@/hooks/queries/useRepairs';
 import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -29,17 +29,12 @@ import { useToast } from '@/components/ui/use-toast';
 import {
   Wrench,
   Search,
-  Filter,
   Building2,
   Clock,
   CheckCircle,
-  AlertCircle,
-  XCircle,
   Phone,
   User,
-  Calendar,
   FileText,
-  TrendingUp,
   Package
 } from 'lucide-react';
 import ShekelIcon from '@/components/ui/shekel-icon';
@@ -50,10 +45,10 @@ type FaultType = 'screen' | 'charging_port' | 'flash' | 'speaker' | 'board' | 'o
 
 export default function RepairsPage() {
   // React Query hooks with Realtime subscriptions
-  const { repairs, isLoading: isRepairsLoading, isFetching, refetch: refetchRepairs } = useAllRepairs();
+  const { repairs, isLoading: isRepairsLoading, isFetching } = useAllRepairs();
   const isLoading = isRepairsLoading;
 
-  const [filteredRepairs, setFilteredRepairs] = useState<any[]>([]);
+  // Filter States
   const [labs, setLabs] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | RepairStatus>('all');
@@ -62,19 +57,12 @@ export default function RepairsPage() {
   const [filterDeviceModel, setFilterDeviceModel] = useState<string>('all');
   const [filterDateFrom, setFilterDateFrom] = useState<string>('');
   const [filterDateTo, setFilterDateTo] = useState<string>('');
+
+  // Dialog States
   const [selectedRepair, setSelectedRepair] = useState<any>(null);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
   const [selectedLabId, setSelectedLabId] = useState('');
-  const [stats, setStats] = useState({
-    total: 0,
-    received: 0,
-    in_progress: 0,
-    completed: 0,
-    replacement_requested: 0,
-    avgRepairTime: 0,
-    totalCost: 0,
-  });
 
   const supabase = createClient();
   const { toast } = useToast();
@@ -89,10 +77,11 @@ export default function RepairsPage() {
       setLabs(labsData || []);
     };
     fetchLabs();
-  }, [supabase]);
+  }, []); // Empty dependency array is fine here as supabase client is stable
 
-  const filterRepairs = useCallback(() => {
-    let filtered = repairs;
+  // Optimized Filtering Logic using useMemo
+  const filteredRepairs = useMemo(() => {
+    let filtered = repairs || [];
 
     // Filter by status
     if (filterStatus !== 'all') {
@@ -137,11 +126,12 @@ export default function RepairsPage() {
       );
     }
 
-    setFilteredRepairs(filtered);
+    return filtered;
   }, [repairs, searchQuery, filterStatus, filterLab, filterRepairType, filterDeviceModel, filterDateFrom, filterDateTo]);
 
-  const calculateStats = useCallback(() => {
-    const stats = {
+  // Optimized Stats Calculation using useMemo
+  const stats = useMemo(() => {
+    const currentStats = {
       total: filteredRepairs.length,
       received: filteredRepairs.filter(r => r.status === 'received').length,
       in_progress: filteredRepairs.filter(r => r.status === 'in_progress').length,
@@ -159,23 +149,15 @@ export default function RepairsPage() {
         const end = new Date(r.completed_at);
         return sum + (end.getTime() - start.getTime()) / (1000 * 60 * 60);
       }, 0);
-      stats.avgRepairTime = totalHours / completedRepairs.length;
+      currentStats.avgRepairTime = totalHours / completedRepairs.length;
     }
 
-    setStats(stats);
+    return currentStats;
   }, [filteredRepairs]);
-
-  useEffect(() => {
-    filterRepairs();
-  }, [filterRepairs]);
-
-  useEffect(() => {
-    calculateStats();
-  }, [calculateStats]);
 
   const handleAssignLab = async () => {
     if (!selectedRepair || !selectedLabId) return;
-
+  
     try {
       const { error } = await (supabase as any)
         .from('repairs')
@@ -184,18 +166,20 @@ export default function RepairsPage() {
           status: 'received'
         } as any)
         .eq('id', selectedRepair.id);
-
+  
       if (error) throw error;
-
+  
       toast({
         title: 'הצלחה',
         description: 'התיקון הוקצה למעבדה בהצלחה',
       });
-
+  
       setIsAssignDialogOpen(false);
       setSelectedRepair(null);
       setSelectedLabId('');
-      refetchRepairs();
+      
+      // Removed refetchRepairs() - Realtime subscription handles updates
+
     } catch (error: any) {
       toast({
         title: 'שגיאה',
@@ -208,24 +192,25 @@ export default function RepairsPage() {
   const handleUpdateStatus = async (repairId: string, newStatus: RepairStatus) => {
     try {
       const updateData: any = { status: newStatus };
-
+  
       if (newStatus === 'completed') {
         updateData.completed_at = new Date().toISOString();
       }
-
+  
       const { error } = await (supabase as any)
         .from('repairs')
         .update(updateData as any)
         .eq('id', repairId);
-
+  
       if (error) throw error;
-
+  
       toast({
         title: 'הצלחה',
         description: 'הסטטוס עודכן בהצלחה',
       });
+  
+      // Removed refetchRepairs() - Realtime subscription handles updates
 
-      refetchRepairs();
     } catch (error: any) {
       toast({
         title: 'שגיאה',

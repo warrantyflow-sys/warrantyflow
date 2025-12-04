@@ -9,8 +9,10 @@ interface QuickLinkCardProps {
   title: string;
   description: string;
   icon: LucideIcon;
-  href: string;
+  href?: string;
+  onClick?: () => void;
   iconColor?: string;
+  color?: string; 
   className?: string;
 }
 
@@ -19,47 +21,79 @@ export function QuickLinkCard({
   description,
   icon: Icon,
   href,
+  onClick,
   iconColor = 'text-primary',
+  color, // תמיכה לאחור
   className,
 }: QuickLinkCardProps) {
-  return (
-    <Link 
-      href={href} 
-      className="block h-full focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded-lg"
-      aria-label={`נווט ל${title}: ${description}`}
-      dir="rtl"
+  
+  // אם הועבר color במקום iconColor, נשתמש בו
+  const finalIconColor = color ? `text-${color}-600` : iconColor;
+
+  // התוכן הפנימי של הכרטיסייה (זהה לשני המקרים)
+  const CardContent = (
+    <Card
+      className={cn(
+        'h-full p-6 cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-[1.02] group',
+        className
+      )}
+      role="article"
     >
-      <Card
-        className={cn(
-          'h-full p-6 cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-[1.02] group',
-          className
-        )}
-        role="article"
-      >
-        <div className="grid grid-cols-[auto_1fr_auto] items-start gap-4 h-full" dir="rtl">
-          {/* Icon on the right (RTL) */}
-          <div className="flex-shrink-0" aria-hidden="true">
-            <div className="p-3 rounded-full bg-primary/10 group-hover:bg-primary/20 group-hover:scale-110 transition-all duration-200">
-              <Icon className={cn('h-6 w-6', iconColor)} />
-            </div>
-          </div>
-
-          {/* Content */}
-          <div className="text-right min-w-0">
-            <h3 className="text-lg font-semibold mb-1 group-hover:text-primary transition-colors duration-200">
-              {title}
-            </h3>
-            <p className="text-sm text-muted-foreground line-clamp-2">
-              {description}
-            </p>
-          </div>
-
-          {/* Arrow on the left (RTL) */}
-          <div className="flex-shrink-0 self-center" aria-hidden="true">
-            <ChevronLeft className="h-5 w-5 text-muted-foreground group-hover:text-primary group-hover:-translate-x-1 transition-all duration-200" />
+      <div className="grid grid-cols-[auto_1fr_auto] items-start gap-4 h-full" dir="rtl">
+        {/* Icon on the right (RTL) */}
+        <div className="flex-shrink-0" aria-hidden="true">
+          <div className="p-3 rounded-full bg-primary/10 group-hover:bg-primary/20 group-hover:scale-110 transition-all duration-200">
+            <Icon className={cn('h-6 w-6', finalIconColor)} />
           </div>
         </div>
-      </Card>
-    </Link>
+
+        {/* Content */}
+        <div className="text-right min-w-0">
+          <h3 className="text-lg font-semibold mb-1 group-hover:text-primary transition-colors duration-200">
+            {title}
+          </h3>
+          <p className="text-sm text-muted-foreground line-clamp-2">
+            {description}
+          </p>
+        </div>
+
+        {/* Arrow on the left (RTL) */}
+        <div className="flex-shrink-0 mt-1 opacity-0 group-hover:opacity-100 transition-all duration-200 -translate-x-2 group-hover:translate-x-0" aria-hidden="true">
+          <ChevronLeft className="h-5 w-5 text-muted-foreground" />
+        </div>
+      </div>
+    </Card>
+  );
+
+  if (href) {
+    return (
+      <Link 
+        href={href} 
+        className="block h-full focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded-lg"
+        aria-label={`נווט ל${title}: ${description}`}
+        dir="rtl"
+      >
+        {CardContent}
+      </Link>
+    );
+  }
+
+  return (
+    <div 
+      onClick={onClick}
+      className="block h-full focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded-lg cursor-pointer"
+      aria-label={`${title}: ${description}`}
+      role="button"
+      tabIndex={0}
+      dir="rtl"
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick?.();
+        }
+      }}
+    >
+      {CardContent}
+    </div>
   );
 }

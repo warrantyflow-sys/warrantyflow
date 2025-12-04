@@ -90,7 +90,7 @@ const config = {
         '3xl': ['1.875rem', { lineHeight: '2.25rem' }],
         '4xl': ['2.25rem', { lineHeight: '2.5rem' }],
       },
-      spacing: { // <-- כאן התיקון
+      spacing: {
         '0': '0',
         '1': '0.25rem',  // 4px / 16
         '2': '0.5rem',   // 8px / 16
@@ -104,13 +104,13 @@ const config = {
         '16': '4rem',    // 64px / 16
         '20': '5rem',    // 80px / 16
         },
-        borderRadius: { // <-- כאן התיקון
+        borderRadius: {
         sm: '0.25rem', // 4px / 16
         md: '0.375rem',// 6px / 16
         lg: '0.5rem',  // 8px / 16
         xl: '0.75rem', // 12px / 16
         '2xl': '1rem', // 16px / 16
-        full: '9999px', // זה נשאר
+        full: '9999px',
         },
       boxShadow: {
         sm: '0 1px 2px 0 rgb(0 0 0 / 0.05)',

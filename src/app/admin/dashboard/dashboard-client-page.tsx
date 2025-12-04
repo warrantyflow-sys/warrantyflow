@@ -1,17 +1,15 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { useState } from 'react';
 import { useAdminDashboardStats } from '@/hooks/queries/useAdminDashboard';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { QuickLinkCard } from '@/components/admin/quick-link-card';
 import { SettingCard } from '@/components/admin/setting-card';
 import { DeviceModelsDialog } from '@/components/admin/device-models-dialog';
 import { RepairTypesDialog } from '@/components/admin/repair-types-dialog';
 import { LabRepairPricesDialog } from '@/components/admin/lab-repair-prices-dialog';
-import { ComingSoonDialog } from '@/components/admin/coming-soon-dialog';
+import { QuickLinkCard } from '@/components/admin/quick-link-card';
 import ShekelIcon from '@/components/ui/shekel-icon';
 import {
   Package,
@@ -20,259 +18,151 @@ import {
   RefreshCw,
   XCircle,
   Users,
-  Store,
-  BarChart3,
   Smartphone,
+  Store,
+  FileBarChart
 } from 'lucide-react';
-import { useToast } from '@/components/ui/use-toast';
-import { DashboardSkeleton } from '@/components/ui/loading-skeletons';
-
-type DeviceStatus = 'new' | 'active' | 'expired' | 'replaced';
-
-interface Stats {
-  total: number;
-  new: number;
-  active: number;
-  expired: number;
-  replaced: number;
-  inRepair: number;
-}
 
 export default function AdminDashboard() {
-  // React Query hook with Realtime subscriptions
-  const { stats, isLoading, isFetching } = useAdminDashboardStats();
+  // 1. שליפת נתונים
+  const { stats, isFetching } = useAdminDashboardStats();
+  const { user } = useCurrentUser(); // כדי להציג "שלום ישראל"
 
+  // 2. ניהול מצבי Dialog
   const [isModelsDialogOpen, setIsModelsDialogOpen] = useState(false);
   const [isRepairTypesDialogOpen, setIsRepairTypesDialogOpen] = useState(false);
   const [isLabPricesDialogOpen, setIsLabPricesDialogOpen] = useState(false);
-  const [comingSoonDialog, setComingSoonDialog] = useState<{
-    open: boolean;
-    title: string;
-    description: string;
-    features: string[];
-  }>({
-    open: false,
-    title: '',
-    description: '',
-    features: [],
-  });
-
-  const supabase = useMemo(() => createClient(), []);
-  const { toast } = useToast();
-  const searchParams = useSearchParams();
-  const router = useRouter();
-
-  useEffect(() => {
-    const dialog = searchParams.get('dialog');
-    if (dialog) {
-      if (dialog === 'models') setIsModelsDialogOpen(true);
-      else if (dialog === 'repair-types') setIsRepairTypesDialogOpen(true);
-      else if (dialog === 'lab-prices') setIsLabPricesDialogOpen(true);
-    }
-  }, [searchParams]);
-
-  const handleModelsOpenChange = (open: boolean) => {
-    setIsModelsDialogOpen(open);
-    if (!open) {
-      router.push('/admin/dashboard', { scroll: false });
-    }
-  };
-
-  const handleRepairTypesOpenChange = (open: boolean) => {
-    setIsRepairTypesDialogOpen(open);
-    if (!open) {
-      router.push('/admin/dashboard', { scroll: false });
-    }
-  };
-
-  const handleLabPricesOpenChange = (open: boolean) => {
-    setIsLabPricesDialogOpen(open);
-    if (!open) {
-      router.push('/admin/dashboard', { scroll: false });
-    }
-  };
-
-  const showComingSoon = (
-    title: string,
-    description: string,
-    features: string[] = []
-  ) => {
-    setComingSoonDialog({
-      open: true,
-      title,
-      description,
-      features,
-    });
-  };
-
-
-  if (isLoading && !searchParams.get('dialog')) {
-    return <DashboardSkeleton />;
-  }
 
   return (
-    <div className="space-y-6">
-      {/* Background refresh indicator */}
-      <BackgroundRefreshIndicator
-        isFetching={isFetching}
-        isLoading={isLoading}
-      />
+    <div className="space-y-6" dir="rtl">
+      {/* אינדיקטור שקט לרענון נתונים ברקע */}
+      <BackgroundRefreshIndicator isFetching={isFetching} />
 
-      {/* Header */}
+      {/* כותרת עם שם המשתמש */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">דשבורד ניהול</h1>
+          <h1 className="text-3xl font-bold tracking-tight">
+            {user?.full_name ? `שלום, ${user.full_name}` : 'לוח בקרה'}
+          </h1>
           <p className="text-muted-foreground">
-            סטטיסטיקות ומצב כללי של המערכת
+            סקירה כללית וניהול המערכת
           </p>
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6">
-        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-blue-500">
-          <CardHeader className="flex flex-row-reverse items-center justify-between pb-2">
-            <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-              <Package className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+      {/* כרטיסי סטטיסטיקה */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <Card className="border-r-4 border-r-blue-500 shadow-sm">
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
+            <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center">
+              <Smartphone className="h-4 w-4 text-blue-600" />
             </div>
-            <CardTitle className="text-sm font-medium">סה&quot;כ מכשירים</CardTitle>
+            <CardTitle className="text-sm font-medium">סה"כ מכשירים</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-blue-600">{stats.total}</div>
+            <div className="text-2xl font-bold">{stats.total}</div>
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-gray-500">
-          <CardHeader className="flex flex-row-reverse items-center justify-between pb-2">
-            <div className="h-10 w-10 rounded-full bg-gray-100 dark:bg-gray-900 flex items-center justify-center">
-              <Package className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+        <Card className="border-r-4 border-r-green-500 shadow-sm">
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
+            <div className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center">
+              <Package className="h-4 w-4 text-green-600" />
             </div>
-            <CardTitle className="text-sm font-medium">חדשים</CardTitle>
+            <CardTitle className="text-sm font-medium">חדשים במלאי</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-gray-600">{stats.new}</div>
+            <div className="text-2xl font-bold">{stats.new}</div>
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-green-500">
-          <CardHeader className="flex flex-row-reverse items-center justify-between pb-2">
-            <div className="h-10 w-10 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center">
-              <Shield className="h-5 w-5 text-green-600 dark:text-green-400" />
+        <Card className="border-r-4 border-r-emerald-500 shadow-sm">
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
+            <div className="h-8 w-8 rounded-full bg-emerald-100 flex items-center justify-center">
+              <Shield className="h-4 w-4 text-emerald-600" />
             </div>
             <CardTitle className="text-sm font-medium">אחריות פעילה</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-green-600">{stats.active}</div>
+            <div className="text-2xl font-bold">{stats.active}</div>
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-red-500">
-          <CardHeader className="flex flex-row-reverse items-center justify-between pb-2">
-            <div className="h-10 w-10 rounded-full bg-red-100 dark:bg-red-900 flex items-center justify-center">
-              <XCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
+        <Card className="border-r-4 border-r-red-500 shadow-sm">
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
+            <div className="h-8 w-8 rounded-full bg-red-100 flex items-center justify-center">
+              <XCircle className="h-4 w-4 text-red-600" />
             </div>
-            <CardTitle className="text-sm font-medium">אחריות פגה</CardTitle>
+            <CardTitle className="text-sm font-medium">פגי תוקף</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-red-600">{stats.expired}</div>
+            <div className="text-2xl font-bold">{stats.expired}</div>
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-purple-500">
-          <CardHeader className="flex flex-row-reverse items-center justify-between pb-2">
-            <div className="h-10 w-10 rounded-full bg-purple-100 dark:bg-purple-900 flex items-center justify-center">
-              <RefreshCw className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+        <Card className="border-r-4 border-r-purple-500 shadow-sm">
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
+            <div className="h-8 w-8 rounded-full bg-purple-100 flex items-center justify-center">
+              <RefreshCw className="h-4 w-4 text-purple-600" />
             </div>
             <CardTitle className="text-sm font-medium">הוחלפו</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-purple-600">{stats.replaced}</div>
+            <div className="text-2xl font-bold">{stats.replaced}</div>
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-orange-500">
-          <CardHeader className="flex flex-row-reverse items-center justify-between pb-2">
-            <div className="h-10 w-10 rounded-full bg-orange-100 dark:bg-orange-900 flex items-center justify-center">
-              <Wrench className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+        <Card className="border-r-4 border-r-orange-500 shadow-sm">
+          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
+            <div className="h-8 w-8 rounded-full bg-orange-100 flex items-center justify-center">
+              <Wrench className="h-4 w-4 text-orange-600" />
             </div>
             <CardTitle className="text-sm font-medium">בתיקון</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-orange-600">{stats.inRepair}</div>
+            <div className="text-2xl font-bold">{stats.inRepair}</div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Quick Links Section */}
-      <section className="space-y-4" aria-labelledby="quick-links-heading">
-        <div>
-          <h2 id="quick-links-heading" className="text-2xl font-bold tracking-tight">קישורים מהירים</h2>
-          <p className="text-muted-foreground">
-            גישה מהירה לכל העמודים העיקריים במערכת
-          </p>
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3" role="list">
+      {/* אזור קיצורי דרך */}
+      <section>
+        <h2 className="text-lg font-semibold mb-4">קיצורי דרך</h2>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4" role="list">
           <QuickLinkCard
-            className=""
-            title="מכשירים"
-            description="ניהול מלאי מכשירים, ייבוא והחלפות"
-            icon={Package}
-            href="/admin/devices"
-            iconColor="text-blue-600"
-          />
-          <QuickLinkCard
-            className=""
-            title="אחריות"
-            description="הפעלת אחריות, מעקב ותוקף"
-            icon={Shield}
-            href="/admin/warranties"
-            iconColor="text-green-600"
-          />
-          <QuickLinkCard
-            className=""
-            title="משתמשים"
-            description="ניהול משתמשים והרשאות"
+            title="ניהול משתמשים"
+            description="צפייה ועריכת משתמשי מערכת"
             icon={Users}
             href="/admin/users"
-            iconColor="text-purple-600"
+            color="blue"
           />
           <QuickLinkCard
-            className=""
-            title="חנויות"
-            description="ניהול חנויות ומשתמשי חנויות"
-            icon={Store}
-            href="/admin/stores"
-            iconColor="text-orange-600"
+            title="ניהול מכשירים"
+            description="מאגר המכשירים והאחריויות"
+            icon={Smartphone}
+            href="/admin/devices"
+            color="indigo"
           />
           <QuickLinkCard
-            className=""
-            title="מעבדות"
-            description="ניהול מעבדות ותיקונים"
+            title="תיקונים"
+            description="מעקב וניהול סטטוס תיקונים"
             icon={Wrench}
-            href="/admin/labs"
-            iconColor="text-red-600"
+            href="/admin/repairs"
+            color="orange"
           />
           <QuickLinkCard
-            className=""
             title="דוחות"
-            description="דוחות וסטטיסטיקות מפורטות"
-            icon={BarChart3}
+            description="דוחות פעילות ומלאי"
+            icon={FileBarChart} 
             href="/admin/reports"
-            iconColor="text-cyan-600"
+            color="green"
           />
         </div>
       </section>
 
-      {/* Quick Settings Section */}
-      <section className="space-y-4" aria-labelledby="quick-settings-heading">
-        <div>
-          <h2 id="quick-settings-heading" className="text-2xl font-bold tracking-tight">הגדרות מהירות</h2>
-          <p className="text-muted-foreground">
-            נהל הגדרות מערכת בסיסיות ישירות מהדשבורד
-          </p>
-        </div>
-
+      {/* אזור הגדרות מערכת */}
+      <section>
+        <h2 className="text-lg font-semibold mb-4">הגדרות מערכת</h2>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3" role="list">
           <SettingCard
             title="ניהול דגמים"
@@ -295,27 +185,18 @@ export default function AdminDashboard() {
         </div>
       </section>
 
-      {/* Dialogs */}
+      {/* דיאלוגים (Modals) */}
       <DeviceModelsDialog
         open={isModelsDialogOpen}
-        onOpenChange={handleModelsOpenChange}
+        onOpenChange={setIsModelsDialogOpen}
       />
       <RepairTypesDialog
         open={isRepairTypesDialogOpen}
-        onOpenChange={handleRepairTypesOpenChange}
+        onOpenChange={setIsRepairTypesDialogOpen}
       />
       <LabRepairPricesDialog
         open={isLabPricesDialogOpen}
-        onOpenChange={handleLabPricesOpenChange}
-      />
-      <ComingSoonDialog
-        open={comingSoonDialog.open}
-        onOpenChange={(open) =>
-          setComingSoonDialog((prev) => ({ ...prev, open }))
-        }
-        title={comingSoonDialog.title}
-        description={comingSoonDialog.description}
-        features={comingSoonDialog.features}
+        onOpenChange={setIsLabPricesDialogOpen}
       />
     </div>
   );

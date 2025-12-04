@@ -4,7 +4,7 @@ import { requireAdmin } from '@/lib/auth/jwt-helper';
 
 export async function POST(request: Request) {
   try {
-    // אופטימיזציה: שימוש ב-JWT claims - אפס קריאות נוספות!
+
     const auth = await requireAdmin();
     if (!auth.success) return auth.response;
 

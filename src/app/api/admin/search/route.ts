@@ -4,7 +4,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/auth/jwt-helper';
 
 export async function GET(request: NextRequest) {
-  // אופטימיזציה: שימוש ב-JWT claims - אפס קריאות נוספות!
   const auth = await requireAdmin();
   if (!auth.success) return auth.response;
 

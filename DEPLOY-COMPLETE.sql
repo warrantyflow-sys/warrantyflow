@@ -1452,8 +1452,6 @@ BEGIN
   END IF;
 
   RETURN NEW;
-END;
-$$;
 
   -- Handle CUSTOM REPAIRS
   -- If custom repair is specified, use custom_repair_price as cost

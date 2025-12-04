@@ -4,7 +4,6 @@ import { requireLab } from '@/lib/auth/jwt-helper';
 
 export async function GET() {
   try {
-    // אופטימיזציה: שימוש ב-JWT claims - אפס קריאות נוספות!
     const auth = await requireLab();
     if (!auth.success) return auth.response;
 
@@ -37,7 +36,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    // אופטימיזציה: שימוש ב-JWT claims - אפס קריאות נוספות!
+
     const auth = await requireLab();
     if (!auth.success) return auth.response;
 
@@ -72,7 +71,7 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
-    // אופטימיזציה: שימוש ב-JWT claims - אפס קריאות נוספות!
+
     const auth = await requireLab();
     if (!auth.success) return auth.response;
 
@@ -103,7 +102,7 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    // אופטימיזציה: שימוש ב-JWT claims - אפס קריאות נוספות!
+
     const auth = await requireLab();
     if (!auth.success) return auth.response;
 

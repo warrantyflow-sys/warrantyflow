@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
+import Papa from 'papaparse';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -108,25 +109,13 @@ export function getWarrantyStatus(expiryDate: string | Date): 'active' | 'expire
   }
 }
 
+
 export function parseCSV(text: string): Array<Record<string, string>> {
-  const lines = text.split('\n').filter(line => line.trim());
-  if (lines.length === 0) return [];
-  
-  const headers = lines[0].split(',').map(h => h.trim());
-  const data = [];
-  
-  for (let i = 1; i < lines.length; i++) {
-    const values = lines[i].split(',').map(v => v.trim());
-    const entry: Record<string, string> = {};
-    
-    headers.forEach((header, index) => {
-      entry[header] = values[index] || '';
-    });
-    
-    data.push(entry);
-  }
-  
-  return data;
+  const result = Papa.parse(text, {
+    header: true,
+    skipEmptyLines: true,
+  });
+  return result.data as Array<Record<string, string>>;
 }
 
 export function downloadFile(content: string, filename: string, type: string = 'text/plain') {
