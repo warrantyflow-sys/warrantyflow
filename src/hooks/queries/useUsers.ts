@@ -3,235 +3,105 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import type { User } from '@/types';
+import { fetchUsersWithPagination, UserFilters } from '@/lib/api/users';
 
-export interface UserStats {
-  totalWarranties: number;
-  activeWarranties: number;
-  monthlyActivations: number;
-  totalRepairs: number;
-  pendingRepairs: number;
-  completedRepairs: number;
-}
-
-/**
- * שליפת כל המשתמשים
- */
-async function fetchAllUsers(): Promise<User[]> {
-  const supabase = createClient();
-
-  const { data, error } = await supabase
-    .from('users')
-    .select('*')
-    .order('created_at', { ascending: false });
-
-  if (error) {
-    throw new Error(`Failed to fetch users: ${error.message}`);
-  }
-
-  return (data || []) as User[];
-}
-
-/**
- * שליפת סטטיסטיקות למשתמש
- */
-async function fetchUserStats(userId: string, role: string): Promise<UserStats> {
-  const supabase = createClient();
-
-  const stats: UserStats = {
-    totalWarranties: 0,
-    activeWarranties: 0,
-    monthlyActivations: 0,
-    totalRepairs: 0,
-    pendingRepairs: 0,
-    completedRepairs: 0,
-  };
-
-  if (role === 'store') {
-    // Store stats
-    const { count: totalWarranties } = await supabase
-      .from('warranties')
-      .select('*', { count: 'exact', head: true })
-      .eq('store_id', userId);
-
-    const { count: activeWarranties } = await supabase
-      .from('warranties')
-      .select('*', { count: 'exact', head: true })
-      .eq('store_id', userId)
-      .eq('is_active', true)
-      .gte('expiry_date', new Date().toISOString());
-
-    const startOfMonth = new Date();
-    startOfMonth.setDate(1);
-    startOfMonth.setHours(0, 0, 0, 0);
-
-    const { count: monthlyActivations } = await supabase
-      .from('warranties')
-      .select('*', { count: 'exact', head: true })
-      .eq('store_id', userId)
-      .gte('activation_date', startOfMonth.toISOString());
-
-    stats.totalWarranties = totalWarranties || 0;
-    stats.activeWarranties = activeWarranties || 0;
-    stats.monthlyActivations = monthlyActivations || 0;
-  } else if (role === 'lab') {
-    // Lab stats
-    const { count: totalRepairs } = await supabase
-      .from('repairs')
-      .select('*', { count: 'exact', head: true })
-      .eq('lab_id', userId);
-
-    const { count: pendingRepairs } = await supabase
-      .from('repairs')
-      .select('*', { count: 'exact', head: true })
-      .eq('lab_id', userId)
-      .in('status', ['received', 'in_progress']);
-
-    const { count: completedRepairs } = await supabase
-      .from('repairs')
-      .select('*', { count: 'exact', head: true })
-      .eq('lab_id', userId)
-      .eq('status', 'completed');
-
-    stats.totalRepairs = totalRepairs || 0;
-    stats.pendingRepairs = pendingRepairs || 0;
-    stats.completedRepairs = completedRepairs || 0;
-  }
-
-  return stats;
-}
-
-/**
- * Hook לכל המשתמשים
- */
-export function useAllUsers() {
+// Hook כללי למשתמשים (תומך בכל התפקידים)
+export function useUsersTable(
+  page: number, 
+  pageSize: number, 
+  filters: UserFilters
+) {
   const queryClient = useQueryClient();
 
   const query = useQuery({
-    queryKey: ['users', 'all'],
-    queryFn: fetchAllUsers,
-    staleTime: 2 * 60 * 1000, // 2 minutes - semi-static data
-    // No refetchInterval - Realtime subscription handles updates
+    queryKey: ['users', 'list', page, pageSize, filters],
+    queryFn: () => fetchUsersWithPagination(page, pageSize, filters),
+    placeholderData: (prev) => prev,
   });
 
-  // Realtime subscription
+  // Realtime Subscription
   useEffect(() => {
     const supabase = createClient();
+    
+    // בניית פילטר ל-Realtime אם אפשר, או האזנה כללית
+    let filter = undefined;
+    if (filters.role && filters.role !== 'all') {
+      filter = `role=eq.${filters.role}`;
+    }
 
-    const channel = supabase
-      .channel('users-all')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
+    const channel = supabase.channel(`users-list-${filters.role || 'all'}`)
+      .on('postgres_changes', { 
+          event: '*', 
+          schema: 'public', 
           table: 'users',
-        },
-        () => {
-          queryClient.invalidateQueries({
-            queryKey: ['users', 'all'],
-          });
-        }
+          filter: filter 
+        }, 
+        () => queryClient.invalidateQueries({ queryKey: ['users', 'list'] })
       )
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [queryClient]);
+    return () => { supabase.removeChannel(channel); };
+  }, [queryClient, filters.role]);
 
-  return {
-    users: query.data || [],
-    isLoading: query.isLoading,
-    isFetching: query.isFetching,
-    isError: query.isError,
-    error: query.error,
-    refetch: query.refetch,
-  };
+  return query;
 }
 
-/**
- * Hook לסטטיסטיקות משתמש
- */
+// --- Hook לסטטיסטיקות משתמש (נשאר לשימוש בדיאלוגים) ---
+// (העתקתי את הלוגיקה הקיימת כי היא משמשת לסטטיסטיקה פרטנית של חנות/מעבדה)
 export function useUserStats(userId: string | null, role: string | null) {
   const queryClient = useQueryClient();
+  const supabase = createClient();
 
   const query = useQuery({
     queryKey: ['user', 'stats', userId],
-    queryFn: () => {
+    queryFn: async () => {
       if (!userId || !role) throw new Error('User ID and role are required');
-      return fetchUserStats(userId, role);
+      
+      const stats = {
+        totalWarranties: 0,
+        activeWarranties: 0,
+        monthlyActivations: 0,
+        totalRepairs: 0,
+        pendingRepairs: 0,
+        completedRepairs: 0,
+      };
+
+      if (role === 'store') {
+        const { count: total } = await supabase.from('warranties').select('*', { count: 'exact', head: true }).eq('store_id', userId);
+        const { count: active } = await supabase.from('warranties').select('*', { count: 'exact', head: true }).eq('store_id', userId).eq('is_active', true).gte('expiry_date', new Date().toISOString());
+        
+        const startOfMonth = new Date();
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0, 0, 0, 0);
+        const { count: monthly } = await supabase.from('warranties').select('*', { count: 'exact', head: true }).eq('store_id', userId).gte('activation_date', startOfMonth.toISOString());
+
+        stats.totalWarranties = total || 0;
+        stats.activeWarranties = active || 0;
+        stats.monthlyActivations = monthly || 0;
+      } else if (role === 'lab') {
+        const { count: total } = await supabase.from('repairs').select('*', { count: 'exact', head: true }).eq('lab_id', userId);
+        const { count: pending } = await supabase.from('repairs').select('*', { count: 'exact', head: true }).eq('lab_id', userId).in('status', ['received', 'in_progress']);
+        const { count: completed } = await supabase.from('repairs').select('*', { count: 'exact', head: true }).eq('lab_id', userId).eq('status', 'completed');
+
+        stats.totalRepairs = total || 0;
+        stats.pendingRepairs = pending || 0;
+        stats.completedRepairs = completed || 0;
+      }
+      return stats;
     },
     enabled: !!userId && !!role,
-    refetchInterval: 60 * 1000, // 60 seconds as backup to Realtime
+    staleTime: 1000 * 60 * 5, 
   });
 
-  // Realtime subscriptions based on role
-  useEffect(() => {
-    if (!userId || !role) return;
+  return query;
+}
 
-    const supabase = createClient();
-
-    if (role === 'store') {
-      const channel = supabase
-        .channel(`user-stats-store-${userId}`)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'warranties',
-            filter: `store_id=eq.${userId}`,
-          },
-          () => {
-            queryClient.invalidateQueries({
-              queryKey: ['user', 'stats', userId],
-            });
-          }
-        )
-        .subscribe();
-
-      return () => {
-        supabase.removeChannel(channel);
-      };
-    } else if (role === 'lab') {
-      const channel = supabase
-        .channel(`user-stats-lab-${userId}`)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'repairs',
-            filter: `lab_id=eq.${userId}`,
-          },
-          () => {
-            queryClient.invalidateQueries({
-              queryKey: ['user', 'stats', userId],
-            });
-          }
-        )
-        .subscribe();
-
-      return () => {
-        supabase.removeChannel(channel);
-      };
-    }
-  }, [userId, role, queryClient]);
-
-  return {
-    stats: query.data || {
-      totalWarranties: 0,
-      activeWarranties: 0,
-      monthlyActivations: 0,
-      totalRepairs: 0,
-      pendingRepairs: 0,
-      completedRepairs: 0,
-    },
-    isLoading: query.isLoading,
-    isFetching: query.isFetching,
-    isError: query.isError,
-    error: query.error,
-    refetch: query.refetch,
-  };
+// Hook תאימות לאחור (אם עדיין בשימוש במקומות אחרים)
+export function useAllUsers() {
+    const { data, isLoading, isFetching } = useUsersTable(1, 1000, { role: 'all', status: 'all' });
+    return {
+        users: data?.users || [],
+        isLoading,
+        isFetching
+    };
 }

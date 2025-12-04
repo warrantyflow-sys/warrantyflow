@@ -31,7 +31,7 @@ export default function LabDashboardPage() {
   const { repairs: recentRepairs, isLoading: isRecentLoading, isFetching: isRecentFetching } = useLabRecentRepairs(labId);
   const { repairs: urgentRepairs, isLoading: isUrgentLoading, isFetching: isUrgentFetching } = useLabUrgentRepairs(labId);
 
-  const isLoading = isUserLoading || isStatsLoading || isRecentLoading || isUrgentLoading;
+  const isLoading = isUserLoading || !labId || isStatsLoading || isRecentLoading || isUrgentLoading;
   const isFetching = isStatsFetching || isRecentFetching || isUrgentFetching;
 
   const router = useRouter();

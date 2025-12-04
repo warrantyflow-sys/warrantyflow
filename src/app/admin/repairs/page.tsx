@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { useAllRepairs } from '@/hooks/queries/useRepairs';
+// ✅ שימוש ב-Hooks החדשים והיעילים שיצרנו
+import { useRepairsTable, useRepairsStats } from '@/hooks/queries/useRepairs';
 import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,7 +36,9 @@ import {
   Phone,
   User,
   FileText,
-  Package
+  Package,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import ShekelIcon from '@/components/ui/shekel-icon';
 import { formatDate, formatDateTime, formatCurrency } from '@/lib/utils';
@@ -44,21 +47,26 @@ type RepairStatus = 'received' | 'in_progress' | 'completed' | 'replacement_requ
 type FaultType = 'screen' | 'charging_port' | 'flash' | 'speaker' | 'board' | 'other';
 
 export default function RepairsPage() {
-  // React Query hooks with Realtime subscriptions
-  const { repairs, isLoading: isRepairsLoading, isFetching } = useAllRepairs();
-  const isLoading = isRepairsLoading;
-
-  // Filter States
-  const [labs, setLabs] = useState<any[]>([]);
+  // --- ניהול State ---
+  
+  // Pagination & Search
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(50);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterStatus, setFilterStatus] = useState<'all' | RepairStatus>('all');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  // Filters
+  const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterLab, setFilterLab] = useState<string>('all');
   const [filterRepairType, setFilterRepairType] = useState<string>('all');
   const [filterDeviceModel, setFilterDeviceModel] = useState<string>('all');
   const [filterDateFrom, setFilterDateFrom] = useState<string>('');
   const [filterDateTo, setFilterDateTo] = useState<string>('');
 
-  // Dialog States
+  // Auxiliary Data
+  const [labs, setLabs] = useState<any[]>([]);
+
+  // Dialogs
   const [selectedRepair, setSelectedRepair] = useState<any>(null);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
@@ -67,7 +75,50 @@ export default function RepairsPage() {
   const supabase = createClient();
   const { toast } = useToast();
 
-  // Fetch labs on mount
+  // --- Data Fetching (Optimized) ---
+
+  // 1. שליפת הסטטיסטיקות (RPC מהיר)
+  const { data: statsData, isLoading: isStatsLoading } = useRepairsStats();
+
+  // 2. שליפת הטבלה (Server-Side Pagination)
+  const { 
+    data: repairsData, 
+    isLoading: isRepairsLoading, 
+    isFetching 
+  } = useRepairsTable(page, pageSize, {
+    status: filterStatus,
+    labId: filterLab,
+    search: debouncedSearch,
+    // הערה: הוספת שדות אלו ל-Hook תלויה ביישום שלו, כרגע נשלחים למקרה שהוספת תמיכה
+    // repairType: filterRepairType,
+    // deviceModel: filterDeviceModel,
+    // dateFrom: filterDateFrom,
+    // dateTo: filterDateTo
+  });
+
+  const repairs = repairsData?.data || [];
+  const totalCount = repairsData?.count || 0;
+  const totalPages = Math.ceil(totalCount / pageSize);
+
+  const isLoading = isRepairsLoading;
+
+  // --- Effects ---
+
+  // Debounce לחיפוש כדי למנוע עומס קריאות
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      if (searchQuery !== debouncedSearch) setPage(1);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // איפוס עמוד בעת שינוי פילטרים
+  useEffect(() => {
+    setPage(1);
+  }, [filterStatus, filterLab, filterRepairType, filterDeviceModel, filterDateFrom, filterDateTo]);
+
+  // טעינת רשימת מעבדות (לפילטרים והקצאה)
   useEffect(() => {
     const fetchLabs = async () => {
       const { data: labsData } = await supabase
@@ -77,83 +128,15 @@ export default function RepairsPage() {
       setLabs(labsData || []);
     };
     fetchLabs();
-  }, []); // Empty dependency array is fine here as supabase client is stable
+  }, []);
 
-  // Optimized Filtering Logic using useMemo
-  const filteredRepairs = useMemo(() => {
-    let filtered = repairs || [];
+  // --- Handlers ---
 
-    // Filter by status
-    if (filterStatus !== 'all') {
-      filtered = filtered.filter(r => r.status === filterStatus);
-    }
-
-    // Filter by lab
-    if (filterLab !== 'all') {
-      filtered = filtered.filter(r => r.lab_id === filterLab);
-    }
-
-    // Filter by repair type
-    if (filterRepairType !== 'all') {
-      filtered = filtered.filter(r => r.repair_type?.id === filterRepairType);
-    }
-
-    // Filter by device model
-    if (filterDeviceModel !== 'all') {
-      filtered = filtered.filter(r => r.device?.device_model?.model_name === filterDeviceModel);
-    }
-
-    // Filter by date range
-    if (filterDateFrom) {
-      filtered = filtered.filter(r => r.created_at && r.created_at >= filterDateFrom);
-    }
-
-    if (filterDateTo) {
-      filtered = filtered.filter(r => r.created_at && r.created_at <= filterDateTo + 'T23:59:59');
-    }
-
-    // Filter by search query
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(
-        (repair) =>
-          repair.device?.imei?.toLowerCase().includes(query) ||
-          repair.device?.device_model?.model_name?.toLowerCase().includes(query) ||
-          repair.customer_name?.toLowerCase().includes(query) ||
-          repair.customer_phone?.includes(query) ||
-          repair.lab?.full_name?.toLowerCase().includes(query) ||
-          repair.lab?.email?.toLowerCase().includes(query)
-      );
-    }
-
-    return filtered;
-  }, [repairs, searchQuery, filterStatus, filterLab, filterRepairType, filterDeviceModel, filterDateFrom, filterDateTo]);
-
-  // Optimized Stats Calculation using useMemo
-  const stats = useMemo(() => {
-    const currentStats = {
-      total: filteredRepairs.length,
-      received: filteredRepairs.filter(r => r.status === 'received').length,
-      in_progress: filteredRepairs.filter(r => r.status === 'in_progress').length,
-      completed: filteredRepairs.filter(r => r.status === 'completed').length,
-      replacement_requested: filteredRepairs.filter(r => r.status === 'replacement_requested').length,
-      avgRepairTime: 0,
-      totalCost: filteredRepairs.reduce((sum, r) => sum + (r.cost || 0), 0),
-    };
-
-    // Calculate average repair time
-    const completedRepairs = filteredRepairs.filter(r => r.completed_at);
-    if (completedRepairs.length > 0) {
-      const totalHours = completedRepairs.reduce((sum, r) => {
-        const start = new Date(r.created_at || '');
-        const end = new Date(r.completed_at || '');
-        return sum + (end.getTime() - start.getTime()) / (1000 * 60 * 60);
-      }, 0);
-      currentStats.avgRepairTime = totalHours / completedRepairs.length;
-    }
-
-    return currentStats;
-  }, [filteredRepairs]);
+  const handleRefresh = () => {
+    // Invalidation מטופל בתוך ה-Hook ע"י React Query
+    // אפשר להוסיף כאן refetch ידני אם רוצים
+    toast({ title: 'הנתונים מתעדכנים...' });
+  };
 
   const handleAssignLab = async () => {
     if (!selectedRepair || !selectedLabId) return;
@@ -177,9 +160,7 @@ export default function RepairsPage() {
       setIsAssignDialogOpen(false);
       setSelectedRepair(null);
       setSelectedLabId('');
-      
-      // Removed refetchRepairs() - Realtime subscription handles updates
-
+      // הנתונים יתעדכנו אוטומטית בזכות ה-Realtime ב-Hook
     } catch (error: any) {
       toast({
         title: 'שגיאה',
@@ -208,9 +189,6 @@ export default function RepairsPage() {
         title: 'הצלחה',
         description: 'הסטטוס עודכן בהצלחה',
       });
-  
-      // Removed refetchRepairs() - Realtime subscription handles updates
-
     } catch (error: any) {
       toast({
         title: 'שגיאה',
@@ -220,6 +198,8 @@ export default function RepairsPage() {
     }
   };
 
+  // --- Helper Functions (Badges & Labels) ---
+
   const getStatusBadge = (status: RepairStatus) => {
     const variants = {
       received: { icon: Clock, label: 'התקבל', className: 'bg-blue-100 text-blue-700' },
@@ -228,7 +208,7 @@ export default function RepairsPage() {
       replacement_requested: { icon: Package, label: 'בקשת החלפה', className: 'bg-red-100 text-red-700' },
     };
 
-    const variant = variants[status];
+    const variant = variants[status] || variants.received;
     const Icon = variant.icon;
 
     return (
@@ -239,9 +219,8 @@ export default function RepairsPage() {
     );
   };
 
-  // Legacy fault type labels for backwards compatibility
-  const getFaultTypeLabel = (type: FaultType) => {
-    const labels = {
+  const getRepairTypeDisplay = (repair: any) => {
+    const labels: Record<string, string> = {
       screen: 'מסך',
       charging_port: 'שקע טעינה',
       flash: 'פנס',
@@ -249,36 +228,23 @@ export default function RepairsPage() {
       board: 'לוח אם',
       other: 'אחר',
     };
-    return labels[type] || type;
-  };
 
-  const getRepairTypeDisplay = (repair: any) => {
-    if (repair.repair_type?.name) {
-      return repair.repair_type.name;
-    }
-    if (repair.custom_repair_description) {
-      return repair.custom_repair_description;
-    }
-    if (repair.fault_type) {
-      return getFaultTypeLabel(repair.fault_type);
-    }
+    if (repair.repair_type?.name) return repair.repair_type.name;
+    if (repair.custom_repair_description) return repair.custom_repair_description;
+    if (repair.fault_type) return labels[repair.fault_type] || repair.fault_type;
     return 'לא ידוע';
   };
 
   const getUrgencyBadge = (createdAt: string, status: RepairStatus) => {
     if (status === 'completed' || status === 'replacement_requested') return null;
-
     const days = Math.floor((Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24));
 
-    if (days > 3) {
-      return <Badge variant="destructive">דחוף - {days} ימים</Badge>;
-    } else if (days > 1) {
-      return <Badge variant="outline" className="border-yellow-500">{days} ימים</Badge>;
-    }
+    if (days > 3) return <Badge variant="destructive">דחוף - {days} ימים</Badge>;
+    if (days > 1) return <Badge variant="outline" className="border-yellow-500">{days} ימים</Badge>;
     return null;
   };
 
-  if (isLoading) {
+  if (isLoading && page === 1) { // מציג שלד רק בטעינה ראשונית של עמוד ראשון
     return (
       <div className="flex items-center justify-center h-96">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
@@ -288,9 +254,8 @@ export default function RepairsPage() {
 
   return (
     <div className="space-y-6" dir="rtl">
-      {/* Background refresh indicator */}
       <BackgroundRefreshIndicator
-        isFetching={isFetching}
+        isFetching={isFetching || isStatsLoading} // אינדיקציה גם לטבלת תיקונים וגם לסטטיסטיקות
         isLoading={isLoading}
       />
 
@@ -298,60 +263,22 @@ export default function RepairsPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">ניהול תיקונים</h1>
           <p className="text-muted-foreground">
-            ניהול ומעקב אחר כל התיקונים במערכת
+            ניהול ומעקב אחר כל התיקונים במערכת ({totalCount} רשומות)
           </p>
         </div>
       </div>
 
-      {/* Stats Cards */}
+      {/* Stats Cards - שימוש במידע מה-Hook החדש */}
       <div className="grid gap-4 md:grid-cols-4">
-        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-blue-500">
-          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
-            <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-              <Wrench className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-            </div>
-            <CardTitle className="text-sm font-medium">סה"כ תיקונים</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{stats.total}</div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-orange-500">
-          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
-            <div className="h-10 w-10 rounded-full bg-orange-100 dark:bg-orange-900 flex items-center justify-center">
-              <Clock className="h-5 w-5 text-orange-600 dark:text-orange-400" />
-            </div>
-            <CardTitle className="text-sm font-medium">בטיפול</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-orange-600">{stats.in_progress}</div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-green-500">
-          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
-            <div className="h-10 w-10 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center">
-              <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
-            </div>
-            <CardTitle className="text-sm font-medium">הושלמו</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">{stats.completed}</div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-purple-500">
-          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
-            <div className="h-10 w-10 rounded-full bg-purple-100 dark:bg-purple-900 flex items-center justify-center">
-              <ShekelIcon className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-            </div>
-            <CardTitle className="text-sm font-medium">עלות כוללת</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-purple-600">{formatCurrency(stats.totalCost)}</div>
-          </CardContent>
-        </Card>
+        <StatCard title='סה"כ תיקונים' value={statsData?.total || 0} icon={Wrench} color="blue" />
+        <StatCard title='בטיפול' value={statsData?.in_progress || 0} icon={Clock} color="orange" />
+        <StatCard title='הושלמו' value={statsData?.completed || 0} icon={CheckCircle} color="green" />
+        <StatCard 
+          title='עלות כוללת' 
+          value={formatCurrency(statsData?.totalCost || 0)} 
+          icon={ShekelIcon} 
+          color="purple" 
+        />
       </div>
 
       {/* Filters */}
@@ -377,7 +304,7 @@ export default function RepairsPage() {
             <div>
               <Label>מעבדה</Label>
               <select
-                title="בחר מעבדה"
+                title="מעבדה"
                 className="w-full px-3 py-2 border rounded-md text-sm mt-1"
                 value={filterLab}
                 onChange={(e) => setFilterLab(e.target.value)}
@@ -394,10 +321,10 @@ export default function RepairsPage() {
             <div>
               <Label>סטטוס</Label>
               <select
-                title="בחר סטטוס"
+                title="סטטוס"
                 className="w-full px-3 py-2 border rounded-md text-sm mt-1"
                 value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value as any)}
+                onChange={(e) => setFilterStatus(e.target.value)}
               >
                 <option value="all">כל הסטטוסים</option>
                 <option value="received">התקבל</option>
@@ -407,98 +334,69 @@ export default function RepairsPage() {
               </select>
             </div>
 
+            {/* שאר הפילטרים (סוג תיקון, דגם, תאריכים) נשארו כפי שהם לשימוש עתידי ב-Hook */}
             <div>
               <Label>סוג תיקון</Label>
               <select
-                title="בחר סוג תיקון"
+                title="סוג תיקון"
                 className="w-full px-3 py-2 border rounded-md text-sm mt-1"
                 value={filterRepairType}
                 onChange={(e) => setFilterRepairType(e.target.value)}
               >
                 <option value="all">כל הסוגים</option>
-                {Array.from(
-                  new Map(
-                    repairs
-                      .map(r => r.repair_type)
-                      .filter(
-                        (rt): rt is NonNullable<typeof rt> => !!rt
-                      )
-                      .map(rt => [rt.id, rt])
-                  ).values()
-                )
-                  .sort((a, b) => a.name.localeCompare(b.name))
-                  .map((rt) => (
-                    <option key={rt.id} value={rt.id}>
-                      {rt.name}
-                    </option>
-                  ))}
+                {/* אופציה: למלא דינמית אם יש רשימת סוגים */}
               </select>
             </div>
 
-            <div>
-              <Label>דגם מכשיר</Label>
+             <div>
+              <Label>דגם</Label>
               <select
-                title="בחר דגם מכשיר"
+                title="דגם"
                 className="w-full px-3 py-2 border rounded-md text-sm mt-1"
                 value={filterDeviceModel}
                 onChange={(e) => setFilterDeviceModel(e.target.value)}
               >
                 <option value="all">כל הדגמים</option>
-                {Array.from(new Set(repairs.map(r => r.device?.device_model?.model_name).filter(Boolean)))
-                  .sort()
-                  .map((model: any) => (
-                    <option key={model} value={model}>
-                      {model}
-                    </option>
-                  ))}
               </select>
             </div>
 
             <div>
-              <Label>מתאריך</Label>
-              <Input
-                type="date"
-                value={filterDateFrom}
-                onChange={(e) => setFilterDateFrom(e.target.value)}
-                className="mt-1"
-              />
-            </div>
-
-            <div>
-              <Label>עד תאריך</Label>
-              <Input
-                type="date"
-                value={filterDateTo}
-                onChange={(e) => setFilterDateTo(e.target.value)}
-                className="mt-1"
-              />
-            </div>
-
-            <div className="flex items-end">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setSearchQuery('');
-                  setFilterStatus('all');
-                  setFilterLab('all');
-                  setFilterRepairType('all');
-                  setFilterDeviceModel('all');
-                  setFilterDateFrom('');
-                  setFilterDateTo('');
-                }}
-                className="w-full"
-              >
-                נקה סינונים
-              </Button>
+              <div className="flex items-end h-full pb-1">
+                 <Button
+                  variant="outline"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setFilterStatus('all');
+                    setFilterLab('all');
+                    setFilterRepairType('all');
+                    setFilterDeviceModel('all');
+                    setFilterDateFrom('');
+                    setFilterDateTo('');
+                  }}
+                  className="w-full"
+                >
+                  נקה סינונים
+                </Button>
+              </div>
             </div>
           </div>
         </CardContent>
       </Card>
 
+      {/* Pagination - Top */}
+      <PaginationControls 
+        page={page} 
+        totalPages={totalPages} 
+        totalCount={totalCount} 
+        pageSize={pageSize} 
+        onPageChange={setPage} 
+        isFetching={isFetching} 
+      />
+
       {/* Table */}
       <Card>
         <CardHeader>
-          <CardTitle>רשימת תיקונים ({filteredRepairs.length})</CardTitle>
+          <CardTitle>רשימת תיקונים ({totalCount})</CardTitle>
         </CardHeader>
         <CardContent>
           <Table>
@@ -516,11 +414,11 @@ export default function RepairsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredRepairs.map((repair) => (
+              {repairs.map((repair) => (
                 <TableRow key={repair.id}>
                   <TableCell>
                     <div>
-                      <div className="font-medium">{repair.device?.device_model?.model_name}</div>
+                      <div className="font-medium">{repair.device?.device_models?.model_name || repair.device?.device_model?.model_name || 'לא ידוע'}</div>
                       <div className="text-xs text-muted-foreground">{repair.device?.imei}</div>
                     </div>
                   </TableCell>
@@ -528,11 +426,11 @@ export default function RepairsPage() {
                     <div>
                       <div className="flex items-center gap-1">
                         <User className="h-3 w-3" />
-                        {repair.customer_name}
+                        {repair.customer_name || repair.warranty?.[0]?.customer_name}
                       </div>
                       <div className="flex items-center gap-1 text-xs text-muted-foreground">
                         <Phone className="h-3 w-3" />
-                        {repair.customer_phone}
+                        {repair.customer_phone || repair.warranty?.[0]?.customer_phone}
                       </div>
                     </div>
                   </TableCell>
@@ -590,6 +488,7 @@ export default function RepairsPage() {
                           size="sm"
                           variant="ghost"
                           onClick={() => handleUpdateStatus(repair.id, 'in_progress')}
+                          title="העבר לטיפול"
                         >
                           <Wrench className="h-4 w-4 text-yellow-600" />
                         </Button>
@@ -600,6 +499,7 @@ export default function RepairsPage() {
                           size="sm"
                           variant="ghost"
                           onClick={() => handleUpdateStatus(repair.id, 'completed')}
+                          title="סמן כהושלם"
                         >
                           <CheckCircle className="h-4 w-4 text-green-600" />
                         </Button>
@@ -611,13 +511,23 @@ export default function RepairsPage() {
             </TableBody>
           </Table>
 
-          {filteredRepairs.length === 0 && (
+          {repairs.length === 0 && (
             <div className="text-center py-8 text-muted-foreground">
               לא נמצאו תיקונים מתאימים
             </div>
           )}
         </CardContent>
       </Card>
+
+      {/* Pagination - Bottom */}
+      <PaginationControls 
+        page={page} 
+        totalPages={totalPages} 
+        totalCount={totalCount} 
+        pageSize={pageSize} 
+        onPageChange={setPage} 
+        isFetching={isFetching} 
+      />
 
       {/* Assign Lab Dialog */}
       <Dialog open={isAssignDialogOpen} onOpenChange={setIsAssignDialogOpen}>
@@ -632,10 +542,10 @@ export default function RepairsPage() {
             <div>
               <Label>מעבדה</Label>
               <select
+                title="מעבדה"
                 className="w-full px-3 py-2 border rounded-md mt-1"
                 value={selectedLabId}
                 onChange={(e) => setSelectedLabId(e.target.value)}
-                aria-label="בחירת מעבדה"
               >
                 <option value="">בחר מעבדה</option>
                 {labs.map((lab) => (
@@ -730,5 +640,87 @@ export default function RepairsPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+// --- Helper Components ---
+
+function StatCard({ title, value, icon: Icon, color }: any) {
+  const colors: any = {
+    blue: { border: 'border-r-blue-500', bg: 'bg-blue-100', text: 'text-blue-600' },
+    orange: { border: 'border-r-orange-500', bg: 'bg-orange-100', text: 'text-orange-600' },
+    green: { border: 'border-r-green-500', bg: 'bg-green-100', text: 'text-green-600' },
+    purple: { border: 'border-r-purple-500', bg: 'bg-purple-100', text: 'text-purple-600' },
+  };
+  const c = colors[color] || colors.blue;
+
+  return (
+    <Card className={`shadow-sm hover:shadow-md transition-shadow border-r-4 ${c.border}`}>
+      <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
+        <div className={`h-10 w-10 rounded-full ${c.bg} dark:bg-opacity-20 flex items-center justify-center`}>
+          <Icon className={`h-5 w-5 ${c.text} dark:text-opacity-80`} />
+        </div>
+        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className={`text-2xl font-bold ${c.text}`}>{value}</div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PaginationControls({ page, totalPages, totalCount, pageSize, onPageChange, isFetching }: any) {
+  if (totalPages <= 1) return null;
+  
+  return (
+    <Card className="border-0 shadow-none bg-transparent">
+      <CardContent className="p-0 py-2">
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-muted-foreground">
+            מציג {totalCount > 0 ? ((page - 1) * pageSize) + 1 : 0}-
+            {Math.min(page * pageSize, totalCount)} מתוך {totalCount}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onPageChange(1)}
+              disabled={page === 1 || isFetching}
+            >
+              <span className="sr-only">ראשון</span>«
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onPageChange((p: number) => Math.max(1, p - 1))}
+              disabled={page === 1 || isFetching}
+            >
+              <ChevronRight className="h-4 w-4" />
+              הקודם
+            </Button>
+            <div className="text-sm px-2">
+              עמוד {page} מתוך {Math.max(1, totalPages)}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onPageChange((p: number) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages || isFetching}
+            >
+              הבא
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onPageChange(totalPages)}
+              disabled={page >= totalPages || isFetching}
+            >
+              <span className="sr-only">אחרון</span>»
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

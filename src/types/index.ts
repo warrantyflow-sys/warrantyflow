@@ -88,9 +88,17 @@ export type RequestStatus = 'pending' | 'approved' | 'rejected';
 // Base ReplacementRequest type from database
 export type ReplacementRequest = Tables<'replacement_requests'>;
 
+// Device type for replacement requests (with device_model relation)
+type DeviceWithModel = Device & {
+  device_model?: {
+    model_name: string;
+  } | null;
+  warranty?: Warranty;
+};
+
 // ReplacementRequest with relations
 export interface ReplacementRequestWithRelations extends ReplacementRequest {
-  device?: Device;
+  device?: DeviceWithModel;
   repair?: Repair;
   requester?: User;
   resolver?: User;

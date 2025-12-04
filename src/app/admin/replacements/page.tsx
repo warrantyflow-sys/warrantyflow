@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { useAllReplacementRequests } from '@/hooks/queries/useReplacements';
+import { useReplacementsTable, useReplacementsStats } from '@/hooks/queries/useReplacements';
 import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -34,14 +34,10 @@ import {
   XCircle,
   Clock,
   AlertCircle,
-  Package,
-  Wrench,
   FileText,
   MessageSquare,
-  Calendar,
-  User,
-  Phone,
-  Building2
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { formatDate, formatDateTime } from '@/lib/utils';
 import { ReplacementsPageSkeleton } from '@/components/ui/loading-skeletons';
@@ -49,83 +45,76 @@ import { ReplacementsPageSkeleton } from '@/components/ui/loading-skeletons';
 type RequestStatus = 'pending' | 'approved' | 'rejected';
 
 export default function ReplacementsPage() {
-  // React Query hook with Realtime
-  
-  const { requests, isLoading, isFetching, refetch } = useAllReplacementRequests();
-  // Local state for filtering
+  // --- State ---
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(50);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | RequestStatus>('all');
+
+  // Dialog States
   const [selectedRequest, setSelectedRequest] = useState<any>(null);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
   const [isDecisionDialogOpen, setIsDecisionDialogOpen] = useState(false);
   const [decision, setDecision] = useState<'approve' | 'reject'>('approve');
   const [adminNotes, setAdminNotes] = useState('');
 
-  // אופטימיזציה: שמירת user ID לצורך audit logging
+  // User ID for audit log
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const supabase = createClient();
   const { toast } = useToast();
 
-  const getUserDisplayName = useCallback((user?: { full_name?: string | null; email?: string | null }) => {
-    if (!user) return '';
-    return user.full_name?.trim() || user.email || '';
-  }, []);
-
-
-
-  const filteredRequests = useMemo(() => {
-    let filtered = requests;
+  // --- Optimized Data Fetching ---
+  const { data: statsData, isLoading: isStatsLoading } = useReplacementsStats();
   
-    if (filterStatus !== 'all') {
-      filtered = filtered.filter(r => r.status === filterStatus);
-    }
+  const { 
+    data: requestsData, 
+    isLoading: isRequestsLoading, 
+    isFetching 
+  } = useReplacementsTable(page, pageSize, {
+    status: filterStatus,
+    search: debouncedSearch
+  });
+
+  const requests = requestsData?.data || [];
+  const totalCount = requestsData?.count || 0;
+  const totalPages = Math.ceil(totalCount / pageSize);
   
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(
-        (request) =>
-          request.device?.imei?.toLowerCase().includes(query) ||
-          request.device?.device_model?.model_name?.toLowerCase().includes(query) ||
-          getUserDisplayName(request.requester)?.toLowerCase().includes(query) ||
-          request.reason?.toLowerCase().includes(query)
-      );
-    }
-    return filtered;
-  }, [requests, searchQuery, filterStatus, getUserDisplayName]);
+  const isLoading = isRequestsLoading; // Main loading state
 
+  // --- Effects ---
 
-  // אופטימיזציה: טעינת user ID פעם אחת בלבד
+  // Debounce Search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      if (searchQuery !== debouncedSearch) setPage(1);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Reset page on filter change
+  useEffect(() => {
+    setPage(1);
+  }, [filterStatus]);
+
+  // Load User ID once
   useEffect(() => {
     const loadUserId = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setCurrentUserId(user.id);
-      }
+      if (user) setCurrentUserId(user.id);
     };
     loadUserId();
   }, [supabase]);
 
-  const stats = useMemo(() => {
-    const statsData = {
-      total: requests.length,
-      pending: requests.filter(r => r.status === 'pending').length,
-      approved: requests.filter(r => r.status === 'approved').length,
-      rejected: requests.filter(r => r.status === 'rejected').length,
-      avgProcessTime: 0,
-    };
-  
-    const processedRequests = requests.filter(r => r.resolved_at);
-    if (processedRequests.length > 0) {
-      const totalTime = processedRequests.reduce((sum, r) => {
-        const created = new Date(r.created_at).getTime();
-        const resolved = new Date(r.resolved_at!).getTime();
-        return sum + (resolved - created);
-      }, 0);
-      statsData.avgProcessTime = totalTime / processedRequests.length / (1000 * 60 * 60);
-    }
-    return statsData;
-  }, [requests]);
+
+  // --- Handlers ---
+
+  const handleRefresh = () => {
+    toast({ title: 'הנתונים מתעדכנים...' });
+    // Invalidation happens automatically via hooks if needed, or we can expose refetch
+  };
 
   const handleDecision = async () => {
     if (!selectedRequest) return;
@@ -139,7 +128,6 @@ export default function ReplacementsPage() {
     }
 
     try {
-      // אופטימיזציה: משתמש ב-currentUserId במקום getUser()
       if (!currentUserId) throw new Error('משתמש לא מחובר');
 
       if (decision === 'approve') {
@@ -150,7 +138,7 @@ export default function ReplacementsPage() {
 
         if (error) throw error;
 
-        // --- Audit Log ---
+        // Audit Log
         supabase.from('audit_log').insert({
           actor_user_id: currentUserId,
           action: 'replacement.approve',
@@ -161,10 +149,7 @@ export default function ReplacementsPage() {
             requester_id: selectedRequest.requester_id,
             admin_notes: adminNotes || null
           }
-        }).then(({ error: logError }) => {
-          if (logError) console.error('Audit log failed:', logError);
         });
-        // --- End Audit Log ---
 
         toast({
           title: 'הבקשה אושרה',
@@ -178,7 +163,7 @@ export default function ReplacementsPage() {
 
         if (error) throw error;
 
-        // --- Audit Log ---
+        // Audit Log
         supabase.from('audit_log').insert({
           actor_user_id: currentUserId,
           action: 'replacement.reject',
@@ -189,10 +174,7 @@ export default function ReplacementsPage() {
             requester_id: selectedRequest.requester_id,
             admin_notes: adminNotes
           }
-        }).then(({ error: logError }) => {
-          if (logError) console.error('Audit log failed:', logError);
         });
-        // --- End Audit Log ---
 
         toast({
           title: 'הבקשה נדחתה',
@@ -203,7 +185,7 @@ export default function ReplacementsPage() {
 
       setIsDecisionDialogOpen(false);
       setAdminNotes('');
-      // React Query + Realtime will auto-refresh
+      // Data updates automatically via Realtime subscription in the hook
     } catch (error) {
       console.error('Error processing decision:', error);
       toast({
@@ -214,13 +196,20 @@ export default function ReplacementsPage() {
     }
   };
 
+  // --- Helpers ---
+
+  const getUserDisplayName = useCallback((user?: { full_name?: string | null; email?: string | null }) => {
+    if (!user) return '';
+    return user.full_name?.trim() || user.email || '';
+  }, []);
+
   const getStatusBadge = (status: RequestStatus) => {
     const variants = {
       pending: { variant: 'outline' as const, text: 'ממתין' },
       approved: { variant: 'default' as const, text: 'אושר' },
       rejected: { variant: 'destructive' as const, text: 'נדחה' },
     };
-    const config = variants[status];
+    const config = variants[status] || variants.pending;
     return <Badge variant={config.variant}>{config.text}</Badge>;
   };
 
@@ -251,15 +240,14 @@ export default function ReplacementsPage() {
     return <Badge variant={roleConfig.variant}>{roleConfig.text}</Badge>;
   };
 
-  if (isLoading) {
+  if (isLoading && page === 1) {
     return <ReplacementsPageSkeleton />;
   }
 
   return (
     <div className="space-y-6" dir="rtl">
-      {/* Background refresh indicator */}
       <BackgroundRefreshIndicator
-        isFetching={isFetching}
+        isFetching={isFetching || isStatsLoading}
         isLoading={isLoading}
       />
 
@@ -272,76 +260,31 @@ export default function ReplacementsPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-5">
-        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-blue-500">
-          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
-            <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-              <RefreshCw className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-            </div>
-            <CardTitle className="text-sm font-medium">סה"כ בקשות</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{stats.total}</div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-orange-500">
-          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
-            <div className="h-10 w-10 rounded-full bg-orange-100 dark:bg-orange-900 flex items-center justify-center">
-              <Clock className="h-5 w-5 text-orange-600 dark:text-orange-400" />
-            </div>
-            <CardTitle className="text-sm font-medium">ממתינות</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-orange-600">{stats.pending}</div>
-            {stats.pending > 0 && (
-              <p className="text-xs text-muted-foreground font-medium">דורש טיפול</p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-green-500">
-          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
-            <div className="h-10 w-10 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center">
-              <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
-            </div>
-            <CardTitle className="text-sm font-medium">אושרו</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">{stats.approved}</div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-red-500">
-          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
-            <div className="h-10 w-10 rounded-full bg-red-100 dark:bg-red-900 flex items-center justify-center">
-              <XCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
-            </div>
-            <CardTitle className="text-sm font-medium">נדחו</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-600">{stats.rejected}</div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-sm hover:shadow-md transition-shadow border-r-4 border-r-purple-500">
-          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
-            <div className="h-10 w-10 rounded-full bg-purple-100 dark:bg-purple-900 flex items-center justify-center">
-              <Clock className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-            </div>
-            <CardTitle className="text-sm font-medium">זמן טיפול ממוצע</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-purple-600">{stats.avgProcessTime.toFixed(1)}ש'</div>
-          </CardContent>
-        </Card>
+      {/* Stats Cards */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <StatCard title='סה"כ בקשות' value={statsData?.total || 0} icon={RefreshCw} color="blue" />
+        <StatCard title='ממתינות' value={statsData?.pending || 0} icon={Clock} color="orange" />
+        <StatCard title='אושרו' value={statsData?.approved || 0} icon={CheckCircle} color="green" />
+        <StatCard title='נדחו' value={statsData?.rejected || 0} icon={XCircle} color="red" />
       </div>
 
+      {/* Pending Alert */}
+      {(statsData?.pending || 0) > 0 && (
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>יש {statsData?.pending} בקשות ממתינות</AlertTitle>
+          <AlertDescription>
+            הבקשות נמצאות בטיפול וייענו בהקדם האפשרי
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Filters */}
       <Card>
         <CardHeader>
           <div className="flex justify-between items-center">
-            <CardTitle>בקשות החלפה</CardTitle>
-            <Button variant="outline" size="sm" onClick={() => refetch()}>
+            <CardTitle>סינון בקשות</CardTitle>
+            <Button variant="outline" size="sm" onClick={handleRefresh}>
               רענן
               <RefreshCw className="h-4 w-4 ms-2" />
             </Button>
@@ -362,7 +305,7 @@ export default function ReplacementsPage() {
             <div className="relative flex-1">
               <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
               <Input
-                placeholder="חיפוש לפי IMEI, דגם, מבקש או סיבה..."
+                placeholder="חיפוש לפי IMEI או שם לקוח..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pr-10"
@@ -371,6 +314,13 @@ export default function ReplacementsPage() {
           </div>
         </CardHeader>
         <CardContent>
+          
+          {/* Pagination Top */}
+          <PaginationControls 
+             page={page} totalPages={totalPages} totalCount={totalCount} 
+             pageSize={pageSize} onPageChange={setPage} isFetching={isFetching} 
+          />
+
           <Table>
             <TableHeader>
               <TableRow>
@@ -385,7 +335,7 @@ export default function ReplacementsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredRequests.map((request) => (
+              {requests.map((request) => (
                 <TableRow key={request.id}>
                   <TableCell>
                     <div>
@@ -460,6 +410,7 @@ export default function ReplacementsPage() {
                               setDecision('approve');
                               setIsDecisionDialogOpen(true);
                             }}
+                            title="אשר"
                           >
                             <CheckCircle className="h-4 w-4" />
                           </Button>
@@ -471,6 +422,7 @@ export default function ReplacementsPage() {
                               setDecision('reject');
                               setIsDecisionDialogOpen(true);
                             }}
+                            title="דחה"
                           >
                             <XCircle className="h-4 w-4" />
                           </Button>
@@ -483,14 +435,23 @@ export default function ReplacementsPage() {
             </TableBody>
           </Table>
 
-          {filteredRequests.length === 0 && (
+          {requests.length === 0 && (
             <div className="text-center py-8 text-muted-foreground">
               לא נמצאו בקשות מתאימות
             </div>
           )}
+
+           {/* Pagination Bottom */}
+           <div className="mt-4">
+             <PaginationControls 
+               page={page} totalPages={totalPages} totalCount={totalCount} 
+               pageSize={pageSize} onPageChange={setPage} isFetching={isFetching} 
+             />
+           </div>
         </CardContent>
       </Card>
 
+      {/* Decision Dialog */}
       <Dialog open={isDecisionDialogOpen} onOpenChange={setIsDecisionDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -542,6 +503,7 @@ export default function ReplacementsPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Details Dialog */}
       <Dialog open={isDetailsDialogOpen} onOpenChange={setIsDetailsDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -551,23 +513,23 @@ export default function ReplacementsPage() {
             <div className="space-y-4 py-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label>מכשיר</Label>
+                  <Label className="text-muted-foreground">מכשיר</Label>
                   <p className="font-medium">{selectedRequest.device?.device_model?.model_name}</p>
                   <p className="text-sm text-muted-foreground">{selectedRequest.device?.imei}</p>
                 </div>
                 <div>
-                  <Label>סטטוס</Label>
+                  <Label className="text-muted-foreground">סטטוס</Label>
                   <div className="mt-1">{getStatusBadge(selectedRequest.status)}</div>
                 </div>
                 <div>
-                  <Label>מבקש</Label>
+                  <Label className="text-muted-foreground">מבקש</Label>
                   <p className="font-medium">{getUserDisplayName(selectedRequest.requester) || '-'}</p>
                   <p className="text-sm text-muted-foreground">
                     {selectedRequest.requester?.email || ''}
                   </p>
                 </div>
                 <div>
-                  <Label>תאריך הגשה</Label>
+                  <Label className="text-muted-foreground">תאריך הגשה</Label>
                   <p className="font-medium">{formatDateTime(selectedRequest.created_at)}</p>
                 </div>
 
@@ -611,13 +573,6 @@ export default function ReplacementsPage() {
                   <p className="mt-1 p-3 bg-muted rounded">{selectedRequest.admin_notes}</p>
                 </div>
               )}
-
-              {selectedRequest.repair?.fault_description && (
-                <div>
-                  <Label>תיאור התקלה</Label>
-                  <p className="mt-1 p-3 bg-muted rounded">{selectedRequest.repair.fault_description}</p>
-                </div>
-              )}
             </div>
           )}
           <DialogFooter>
@@ -627,6 +582,80 @@ export default function ReplacementsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// Helper Components
+
+function StatCard({ title, value, icon: Icon, color }: any) {
+  const colors: any = {
+    blue: 'text-blue-600',
+    orange: 'text-orange-600',
+    green: 'text-green-600',
+    red: 'text-red-600',
+    purple: 'text-purple-600',
+  };
+  return (
+    <Card className={`shadow-sm border-r-4 border-r-${color}-500`}>
+      <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
+        <div className={`h-10 w-10 rounded-full bg-${color}-100 flex items-center justify-center`}>
+          <Icon className={`h-5 w-5 ${colors[color]}`} />
+        </div>
+        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className={`text-2xl font-bold ${colors[color]}`}>{value}</div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PaginationControls({ page, totalPages, totalCount, pageSize, onPageChange, isFetching }: any) {
+  if (totalPages <= 1) return null;
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-sm text-muted-foreground">
+        מציג {totalCount > 0 ? ((page - 1) * pageSize) + 1 : 0}-
+        {Math.min(page * pageSize, totalCount)} מתוך {totalCount}
+      </span>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(1)}
+          disabled={page === 1 || isFetching}
+        >
+          «
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange((p: number) => Math.max(1, p - 1))}
+          disabled={page === 1 || isFetching}
+        >
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+        <div className="text-sm px-2">
+          {page} / {totalPages}
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange((p: number) => Math.min(totalPages, p + 1))}
+          disabled={page >= totalPages || isFetching}
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(totalPages)}
+          disabled={page >= totalPages || isFetching}
+        >
+          »
+        </Button>
+      </div>
     </div>
   );
 }

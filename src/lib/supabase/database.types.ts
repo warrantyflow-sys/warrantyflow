@@ -701,6 +701,22 @@ export type Database = {
       }
     }
     Functions: {
+      get_dashboard_counts: {
+        Args: Record<string, never>
+        Returns: Json
+      }
+      get_repair_stats: {
+        Args: Record<string, never>
+        Returns: Json
+      }
+      get_warranty_stats: {
+        Args: Record<string, never>
+        Returns: Json
+      }
+      get_replacement_stats: {
+        Args: Record<string, never>
+        Returns: Json
+      }
       get_my_role: {
         Args: Record<string, never>
         Returns: string

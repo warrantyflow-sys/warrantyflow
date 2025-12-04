@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation'; // הוספת ייבואים
 import { useAdminDashboardStats } from '@/hooks/queries/useAdminDashboard';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
@@ -19,30 +20,100 @@ import {
   XCircle,
   Users,
   Smartphone,
-  Store,
   FileBarChart
 } from 'lucide-react';
 
-export default function AdminDashboard() {
-  // 1. שליפת נתונים
-  const { stats, isFetching } = useAdminDashboardStats();
-  const { user } = useCurrentUser(); // כדי להציג "שלום ישראל"
+// הגדרת טיפוס לדיאלוגים הפעילים למניעת ריבוי משתני state
+type ActiveDialog = 'models' | 'repair-types' | 'lab-prices' | null;
 
-  // 2. ניהול מצבי Dialog
-  const [isModelsDialogOpen, setIsModelsDialogOpen] = useState(false);
-  const [isRepairTypesDialogOpen, setIsRepairTypesDialogOpen] = useState(false);
-  const [isLabPricesDialogOpen, setIsLabPricesDialogOpen] = useState(false);
+export default function AdminDashboard() {
+  // 1. Data Fetching
+  const { stats, isFetching, isError } = useAdminDashboardStats();
+  const { user, isLoading: isUserLoading } = useCurrentUser();
+  
+  // ניהול URL ו-Router
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  // 2. UI State Management
+  const [activeDialog, setActiveDialog] = useState<ActiveDialog>(null);
+
+  // 3. Effect: האזנה לשינויים ב-URL ופתיחת הדיאלוג המתאים
+  useEffect(() => {
+    const dialogParam = searchParams.get('dialog');
+    if (dialogParam === 'models' || dialogParam === 'repair-types' || dialogParam === 'lab-prices') {
+      setActiveDialog(dialogParam as ActiveDialog);
+    } else {
+      setActiveDialog(null);
+    }
+  }, [searchParams]);
+
+  // פונקציית עזר לסגירת דיאלוג וניקוי ה-URL
+  const handleCloseDialog = (isOpen: boolean) => {
+    if (!isOpen) {
+      setActiveDialog(null);
+      // מנקה את הפרמטר מה-URL כדי שריענון הדף לא יפתח את הדיאלוג שוב
+      // וכדי לאפשר פתיחה מחדש בלחיצה נוספת על הקישור
+      router.push('/admin/dashboard', { scroll: false });
+    }
+  };
+
+  // פונקציית עזר לפתיחת דיאלוג ועדכון ה-URL (לחיצה מתוך הדשבורד)
+  const handleOpenDialog = (dialogName: ActiveDialog) => {
+    if (dialogName) {
+      router.push(`/admin/dashboard?dialog=${dialogName}`, { scroll: false });
+    }
+  };
+
+  // הגדרת קיצורי הדרך במערך לניקיון הקוד
+  const quickLinks = [
+    { title: "ניהול משתמשים", description: "צפייה ועריכת משתמשי מערכת", icon: Users, href: "/admin/users", color: "blue" },
+    { title: "ניהול מכשירים", description: "מאגר המכשירים והאחריויות", icon: Smartphone, href: "/admin/devices", color: "indigo" },
+    { title: "תיקונים", description: "מעקב וניהול סטטוס תיקונים", icon: Wrench, href: "/admin/repairs", color: "orange" },
+    { title: "דוחות", description: "דוחות פעילות ומלאי", icon: FileBarChart, href: "/admin/reports", color: "green" }
+  ];
+
+  // הגדרת כרטיסי ההגדרות - עודכנו להשתמש ב-handleOpenDialog
+  const settingsCards = [
+    { 
+      title: "ניהול דגמים", 
+      description: "הוסף וערוך דגמי מכשירים ומשך אחריות", 
+      icon: Smartphone, 
+      action: () => handleOpenDialog('models') 
+    },
+    { 
+      title: "סוגי תיקונים", 
+      description: "נהל את רשימת סוגי התיקונים האפשריים", 
+      icon: Wrench, 
+      action: () => handleOpenDialog('repair-types') 
+    },
+    { 
+      title: "מחירי תיקונים למעבדות", 
+      description: "הגדר מחירים לכל מעבדה לפי סוג תיקון", 
+      icon: ShekelIcon, 
+      action: () => handleOpenDialog('lab-prices') 
+    }
+  ];
+
+  // הגדרת כרטיסי הסטטיסטיקה (Stats)
+  const statCards = [
+    { title: 'סה"כ מכשירים', value: stats.total, icon: Smartphone, color: 'blue', bg: 'bg-blue-100', text: 'text-blue-600' },
+    { title: 'חדשים במלאי', value: stats.new, icon: Package, color: 'green', bg: 'bg-green-100', text: 'text-green-600' },
+    { title: 'אחריות פעילה', value: stats.active, icon: Shield, color: 'emerald', bg: 'bg-emerald-100', text: 'text-emerald-600' },
+    { title: 'פגי תוקף', value: stats.expired, icon: XCircle, color: 'red', bg: 'bg-red-100', text: 'text-red-600' },
+    { title: 'הוחלפו', value: stats.replaced, icon: RefreshCw, color: 'purple', bg: 'bg-purple-100', text: 'text-purple-600' },
+    { title: 'בתיקון', value: stats.inRepair, icon: Wrench, color: 'orange', bg: 'bg-orange-100', text: 'text-orange-600' },
+  ];
 
   return (
     <div className="space-y-6" dir="rtl">
-      {/* אינדיקטור שקט לרענון נתונים ברקע */}
       <BackgroundRefreshIndicator isFetching={isFetching} />
 
-      {/* כותרת עם שם המשתמש */}
+      {/* Header */}
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">
-            {user?.full_name ? `שלום, ${user.full_name}` : 'לוח בקרה'}
+            {isUserLoading ? 'טוען...' : (user?.full_name ? `שלום, ${user.full_name}` : 'לוח בקרה')}
           </h1>
           <p className="text-muted-foreground">
             סקירה כללית וניהול המערכת
@@ -50,153 +121,70 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* כרטיסי סטטיסטיקה */}
+      {/* Statistics Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <Card className="border-r-4 border-r-blue-500 shadow-sm">
-          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
-            <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center">
-              <Smartphone className="h-4 w-4 text-blue-600" />
-            </div>
-            <CardTitle className="text-sm font-medium">סה"כ מכשירים</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.total}</div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-r-4 border-r-green-500 shadow-sm">
-          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
-            <div className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center">
-              <Package className="h-4 w-4 text-green-600" />
-            </div>
-            <CardTitle className="text-sm font-medium">חדשים במלאי</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.new}</div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-r-4 border-r-emerald-500 shadow-sm">
-          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
-            <div className="h-8 w-8 rounded-full bg-emerald-100 flex items-center justify-center">
-              <Shield className="h-4 w-4 text-emerald-600" />
-            </div>
-            <CardTitle className="text-sm font-medium">אחריות פעילה</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.active}</div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-r-4 border-r-red-500 shadow-sm">
-          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
-            <div className="h-8 w-8 rounded-full bg-red-100 flex items-center justify-center">
-              <XCircle className="h-4 w-4 text-red-600" />
-            </div>
-            <CardTitle className="text-sm font-medium">פגי תוקף</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.expired}</div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-r-4 border-r-purple-500 shadow-sm">
-          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
-            <div className="h-8 w-8 rounded-full bg-purple-100 flex items-center justify-center">
-              <RefreshCw className="h-4 w-4 text-purple-600" />
-            </div>
-            <CardTitle className="text-sm font-medium">הוחלפו</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.replaced}</div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-r-4 border-r-orange-500 shadow-sm">
-          <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
-            <div className="h-8 w-8 rounded-full bg-orange-100 flex items-center justify-center">
-              <Wrench className="h-4 w-4 text-orange-600" />
-            </div>
-            <CardTitle className="text-sm font-medium">בתיקון</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.inRepair}</div>
-          </CardContent>
-        </Card>
+        {statCards.map((stat, index) => (
+          <Card key={index} className={`border-r-4 border-r-${stat.color}-500 shadow-sm`}>
+            <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
+              <div className={`h-8 w-8 rounded-full ${stat.bg} flex items-center justify-center`}>
+                <stat.icon className={`h-4 w-4 ${stat.text}`} />
+              </div>
+              <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {isError ? "-" : stats[Object.keys(stats)[index] as keyof typeof stats] ?? stat.value}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
-      {/* אזור קיצורי דרך */}
+      {/* Quick Links Section */}
       <section>
         <h2 className="text-lg font-semibold mb-4">קיצורי דרך</h2>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4" role="list">
-          <QuickLinkCard
-            title="ניהול משתמשים"
-            description="צפייה ועריכת משתמשי מערכת"
-            icon={Users}
-            href="/admin/users"
-            color="blue"
-          />
-          <QuickLinkCard
-            title="ניהול מכשירים"
-            description="מאגר המכשירים והאחריויות"
-            icon={Smartphone}
-            href="/admin/devices"
-            color="indigo"
-          />
-          <QuickLinkCard
-            title="תיקונים"
-            description="מעקב וניהול סטטוס תיקונים"
-            icon={Wrench}
-            href="/admin/repairs"
-            color="orange"
-          />
-          <QuickLinkCard
-            title="דוחות"
-            description="דוחות פעילות ומלאי"
-            icon={FileBarChart} 
-            href="/admin/reports"
-            color="green"
-          />
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {quickLinks.map((link, index) => (
+            <QuickLinkCard
+              key={index}
+              title={link.title}
+              description={link.description}
+              icon={link.icon}
+              href={link.href}
+              color={link.color}
+            />
+          ))}
         </div>
       </section>
 
-      {/* אזור הגדרות מערכת */}
+      {/* Settings Section */}
       <section>
         <h2 className="text-lg font-semibold mb-4">הגדרות מערכת</h2>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3" role="list">
-          <SettingCard
-            title="ניהול דגמים"
-            description="הוסף וערוך דגמי מכשירים ומשך אחריות"
-            icon={Smartphone}
-            onClick={() => setIsModelsDialogOpen(true)}
-          />
-          <SettingCard
-            title="סוגי תיקונים"
-            description="נהל את רשימת סוגי התיקונים האפשריים"
-            icon={Wrench}
-            onClick={() => setIsRepairTypesDialogOpen(true)}
-          />
-          <SettingCard
-            title="מחירי תיקונים למעבדות"
-            description="הגדר מחירים לכל מעבדה לפי סוג תיקון"
-            icon={ShekelIcon}
-            onClick={() => setIsLabPricesDialogOpen(true)}
-          />
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {settingsCards.map((card, index) => (
+            <SettingCard
+              key={index}
+              title={card.title}
+              description={card.description}
+              icon={card.icon}
+              onClick={card.action}
+            />
+          ))}
         </div>
       </section>
 
-      {/* דיאלוגים (Modals) */}
+      {/* Dialogs - מעודכנים להשתמש ב-handleCloseDialog */}
       <DeviceModelsDialog
-        open={isModelsDialogOpen}
-        onOpenChange={setIsModelsDialogOpen}
+        open={activeDialog === 'models'}
+        onOpenChange={handleCloseDialog}
       />
       <RepairTypesDialog
-        open={isRepairTypesDialogOpen}
-        onOpenChange={setIsRepairTypesDialogOpen}
+        open={activeDialog === 'repair-types'}
+        onOpenChange={handleCloseDialog}
       />
       <LabRepairPricesDialog
-        open={isLabPricesDialogOpen}
-        onOpenChange={setIsLabPricesDialogOpen}
+        open={activeDialog === 'lab-prices'}
+        onOpenChange={handleCloseDialog}
       />
     </div>
   );

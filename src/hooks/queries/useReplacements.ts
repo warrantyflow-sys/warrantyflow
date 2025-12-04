@@ -3,42 +3,67 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { fetchReplacementsWithPagination, type ReplacementFilters } from '@/lib/api/replacements';
 
-/**
- * שליפת כל בקשות ההחלפה (admin)
- */
-async function fetchAllReplacementRequests() {
-  const supabase = createClient();
+// --- Hook לסטטיסטיקות (RPC מהיר) ---
+export function useReplacementsStats() {
+  const queryClient = useQueryClient();
+  
+  const query = useQuery({
+    queryKey: ['replacements', 'stats'],
+    queryFn: async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase.rpc('get_replacement_stats');
+      if (error) throw error;
+      return data as any;
+    },
+    staleTime: 1000 * 60 * 5, // 5 דקות
+  });
 
-  const { data, error } = await supabase
-    .from('replacement_requests')
-    .select(`
-      *,
-      device:devices(
-        *,
-        device_model:device_models(model_name),
-        warranty:warranties(*)
-      ),
-      repair:repairs(
-        fault_type,
-        fault_description,
-        lab:users!repairs_lab_id_fkey(full_name, email)
-      ),
-      requester:users!replacement_requests_requester_id_fkey(full_name, role, email),
-      resolver:users!replacement_requests_resolved_by_fkey(full_name)
-    `)
-    .order('created_at', { ascending: false });
+  // Realtime Subscription
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase.channel('replacements-stats')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'replacement_requests' }, 
+          () => queryClient.invalidateQueries({ queryKey: ['replacements', 'stats'] }))
+      .subscribe();
 
-  if (error) {
-    throw new Error(`Failed to fetch replacement requests: ${error.message}`);
-  }
+    return () => { supabase.removeChannel(channel); };
+  }, [queryClient]);
 
-  return data || [];
+  return query;
 }
 
-/**
- * שליפת בקשות החלפה של חנות ספציפית
- */
+// --- Hook לטבלה (Pagination) ---
+export function useReplacementsTable(
+  page: number, 
+  pageSize: number, 
+  filters: ReplacementFilters
+) {
+  const queryClient = useQueryClient();
+
+  const query = useQuery({
+    queryKey: ['replacements', 'list', page, pageSize, filters],
+    queryFn: () => fetchReplacementsWithPagination(page, pageSize, filters),
+    placeholderData: (prev) => prev, // שומר על המידע הקודם בזמן טעינת עמוד חדש למניעת הבהוב
+  });
+
+  // Realtime Subscription
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase.channel('replacements-list')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'replacement_requests' }, 
+          () => queryClient.invalidateQueries({ queryKey: ['replacements', 'list'] }))
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [queryClient]);
+
+  return query;
+}
+
+// --- Hook ישן (תאימות לאחור / שימוש בפורטל חנות) ---
+// במידה ופורטל החנות עדיין משתמש בגרסה הישנה, אפשר להשאיר זאת כך או לשדרג גם אותו
 async function fetchStoreReplacementRequests(storeId: string) {
   const supabase = createClient();
 
@@ -69,70 +94,6 @@ async function fetchStoreReplacementRequests(storeId: string) {
   return data || [];
 }
 
-/**
- * Hook לשליפת כל בקשות ההחלפה (admin) עם Realtime updates
- */
-export function useAllReplacementRequests() {
-  const queryClient = useQueryClient();
-
-  const query = useQuery({
-    queryKey: ['replacement-requests', 'all'],
-    queryFn: fetchAllReplacementRequests,
-    refetchInterval: 60 * 1000, // 60 seconds as backup to Realtime
-  });
-
-  // Supabase Realtime subscription
-  // ✅ Optimization: Single channel with multiple table subscriptions
-  // Reduces WebSocket connections from 2 to 1 (50% reduction)
-  useEffect(() => {
-    const supabase = createClient();
-
-    const handleChange = () => {
-      queryClient.invalidateQueries({
-        queryKey: ['replacement-requests', 'all'],
-      });
-    };
-
-    const channel = supabase
-      .channel('replacement-requests-all-combined')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'replacement_requests',
-        },
-        handleChange
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'devices',
-        },
-        handleChange
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [queryClient]);
-
-  return {
-    requests: query.data || [],
-    isLoading: query.isLoading,
-    isFetching: query.isFetching,
-    isError: query.isError,
-    error: query.error,
-    refetch: query.refetch,
-  };
-}
-
-/**
- * Hook לשליפת בקשות החלפה של חנות עם Realtime updates
- */
 export function useStoreReplacementRequests(storeId: string | null) {
   const queryClient = useQueryClient();
 
@@ -143,25 +104,14 @@ export function useStoreReplacementRequests(storeId: string | null) {
       return fetchStoreReplacementRequests(storeId);
     },
     enabled: !!storeId,
-    refetchInterval: 60 * 1000, // 60 seconds as backup to Realtime
+    refetchInterval: 60 * 1000,
   });
 
-  // Supabase Realtime subscription
-  // ✅ Optimization: Single channel with multiple table subscriptions
-  // Reduces WebSocket connections from 2 to 1 (50% reduction)
   useEffect(() => {
     if (!storeId) return;
-
     const supabase = createClient();
-
-    const handleChange = () => {
-      queryClient.invalidateQueries({
-        queryKey: ['replacement-requests', 'store', storeId],
-      });
-    };
-
     const channel = supabase
-      .channel(`replacement-requests-store-all-${storeId}`)
+      .channel(`replacement-requests-store-${storeId}`)
       .on(
         'postgres_changes',
         {
@@ -170,16 +120,11 @@ export function useStoreReplacementRequests(storeId: string | null) {
           table: 'replacement_requests',
           filter: `requester_id=eq.${storeId}`,
         },
-        handleChange
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'devices',
-        },
-        handleChange
+        () => {
+          queryClient.invalidateQueries({
+            queryKey: ['replacement-requests', 'store', storeId],
+          });
+        }
       )
       .subscribe();
 
@@ -196,4 +141,16 @@ export function useStoreReplacementRequests(storeId: string | null) {
     error: query.error,
     refetch: query.refetch,
   };
+}
+
+// Hook ישן (useAllReplacementRequests) - נמחק או הושאר כ-Alias לשימוש במקומות אחרים אם טרם שונו
+export function useAllReplacementRequests() {
+    // זה רק wrapper זמני למקרה ששכחנו לעדכן קובץ כלשהו
+    const { data, isLoading, isFetching, refetch } = useReplacementsTable(1, 1000, { status: 'all', search: '' });
+    return {
+        requests: data?.data || [],
+        isLoading,
+        isFetching,
+        refetch
+    };
 }

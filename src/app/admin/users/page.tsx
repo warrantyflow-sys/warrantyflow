@@ -1,13 +1,15 @@
 'use client';
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
-
 import { createClient } from '@/lib/supabase/client';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import type { User } from '@/types';
-import { useAllUsers, useUserStats } from '@/hooks/queries/useUsers';
+
+// ✅ שימוש ב-Hooks החדשים לקריאות יעילות
+import { useUsersTable, useUserStats } from '@/hooks/queries/useUsers';
+
 import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -39,12 +41,15 @@ import {
 import { useToast } from '@/components/ui/use-toast';
 import {
   Plus, Search, Shield, Store, Wrench, Edit, Key,
-  UserX, UserCheck, Trash2, BarChart3, Users
+  UserX, UserCheck, Trash2, BarChart3, Users,
+  ChevronRight, ChevronLeft, Loader2
 } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { UsersPageSkeleton } from '@/components/ui/loading-skeletons';
 
 type ManagedUser = User;
+
+// --- Zod Schemas ---
 
 const editUserSchema = z.object({
   email: z.string().email('כתובת אימייל לא תקינה'),
@@ -78,57 +83,104 @@ type CreateUserFormData = z.infer<typeof createUserSchema>;
 type EditUserFormData = z.infer<typeof editUserSchema>;
 type PasswordFormData = z.infer<typeof passwordSchema>;
 
-interface UserStats {
-  totalWarranties: number;
-  activeWarranties: number;
-  monthlyActivations: number;
-  totalRepairs: number;
-  pendingRepairs: number;
-  completedRepairs: number;
-}
-
 export default function UsersPage() {
-  // React Query hook with Realtime
-  const { users, isLoading, isFetching } = useAllUsers();
+  const supabase = createClient();
+  const { toast } = useToast();
 
-  // Local state for filtering/pagination
+  // --- State Management ---
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(50);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  
+  // Filters
+  const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'store' | 'lab'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+
+  // Dialog & Selection States
   const [selectedUser, setSelectedUser] = useState<ManagedUser | null>(null);
-
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
   const [isStatsDialogOpen, setIsStatsDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [roleFilter, setRoleFilter] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  
-  // Pagination state
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(50);
+  // Global Stats State (Top Cards)
+  const [globalStats, setGlobalStats] = useState({
+    total: 0, admins: 0, stores: 0, labs: 0, active: 0, inactive: 0
+  });
 
-  const [userStats, setUserStats] = useState<UserStats | null>(null);
-  const [loadingStats, setLoadingStats] = useState(false);
+  // --- Data Fetching: Main Table ---
+  // שימוש ב-Hook שמנהל את השאילתה, הסינון והפגינציה מול השרת
+  const { 
+    data: usersData, 
+    isLoading, 
+    isFetching, 
+    refetch 
+  } = useUsersTable(page, pageSize, {
+    role: roleFilter,
+    status: statusFilter === 'inactive' ? 'inactive' : statusFilter === 'active' ? 'active' : 'all',
+    search: debouncedSearch
+  });
 
-  // אופטימיזציה: Cache לכל הסטטיסטיקות - מונע N+1 queries
-  const [allStoreStats, setAllStoreStats] = useState<Map<string, UserStats>>(new Map());
-  const [allLabStats, setAllLabStats] = useState<Map<string, UserStats>>(new Map());
-  const [statsLoaded, setStatsLoaded] = useState(false);
+  const users = usersData?.users || [];
+  const totalCount = usersData?.total || 0;
+  const totalPages = Math.ceil(totalCount / pageSize);
 
-  const supabase = createClient();
-  const { toast } = useToast();
+  // --- Data Fetching: User Stats ---
+  // נטען רק כאשר הדיאלוג פתוח ויש משתמש נבחר
+  const { data: userStats, isLoading: loadingStats } = useUserStats(
+    isStatsDialogOpen && selectedUser ? selectedUser.id : null,
+    isStatsDialogOpen && selectedUser ? selectedUser.role : null
+  );
 
+  // --- Data Fetching: Global Stats ---
+  // שאילתות Count יעילות לכרטיסים למעלה
+  const fetchGlobalStats = useCallback(async () => {
+    try {
+      const [total, admins, stores, labs, active, inactive] = await Promise.all([
+        supabase.from('users').select('*', { count: 'exact', head: true }),
+        supabase.from('users').select('*', { count: 'exact', head: true }).eq('role', 'admin'),
+        supabase.from('users').select('*', { count: 'exact', head: true }).eq('role', 'store'),
+        supabase.from('users').select('*', { count: 'exact', head: true }).eq('role', 'lab'),
+        supabase.from('users').select('*', { count: 'exact', head: true }).eq('is_active', true),
+        supabase.from('users').select('*', { count: 'exact', head: true }).eq('is_active', false),
+      ]);
+
+      setGlobalStats({
+        total: total.count || 0,
+        admins: admins.count || 0,
+        stores: stores.count || 0,
+        labs: labs.count || 0,
+        active: active.count || 0,
+        inactive: inactive.count || 0,
+      });
+    } catch (error) {
+      console.error('Error fetching global stats:', error);
+    }
+  }, [supabase]);
+
+  // Initial Load & Debounce Logic
+  useEffect(() => {
+    fetchGlobalStats();
+  }, [fetchGlobalStats]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      if (searchQuery !== debouncedSearch) setPage(1); // חזרה לעמוד ראשון בחיפוש חדש
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchQuery, debouncedSearch]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [roleFilter, statusFilter]);
+
+  // --- Forms ---
   const createForm = useForm<CreateUserFormData>({
     resolver: zodResolver(createUserSchema),
-    defaultValues: {
-      email: '',
-      password: '',
-      confirmPassword: '',
-      full_name: '',
-      phone: '',
-      role: 'store',
-    }
+    defaultValues: { email: '', password: '', confirmPassword: '', full_name: '', phone: '', role: 'store' }
   });
 
   const editForm = useForm<EditUserFormData>({
@@ -141,219 +193,12 @@ export default function UsersPage() {
 
   const selectedRoleCreate = createForm.watch('role');
 
-  const stats = {
-    total: users.length,
-    admins: users.filter(u => u.role === 'admin').length,
-    stores: users.filter(u => u.role === 'store').length,
-    labs: users.filter(u => u.role === 'lab').length,
-    active: users.filter(u => u.is_active).length,
-    inactive: users.filter(u => !u.is_active).length,
+  // --- Action Handlers ---
+
+  const handleRefresh = () => {
+    refetch();
+    fetchGlobalStats();
   };
-
-
-  const handleSearchChange = (value: string) => {
-    setSearchQuery(value);
-    setCurrentPage(1);
-  };
-  
-  const handleRoleFilterChange = (value: string) => {
-    setRoleFilter(value);
-    setCurrentPage(1);
-  };
-  
-  const handleStatusFilterChange = (value: string) => {
-    setStatusFilter(value);
-    setCurrentPage(1);
-  };
-
-  // אופטימיזציה: טעינת כל הסטטיסטיקות מראש - 2 קריאות במקום N*3
-  const fetchAllStats = useCallback(async () => {
-    try {
-      const now = new Date();
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
-      // קריאה 1: כל הסטטיסטיקות של חנויות בבת אחת
-      const { data: warrantyStats, error: warrantyError } = await supabase
-        .from('warranties')
-        .select('store_id, is_active, expiry_date, activation_date');
-
-      if (warrantyError) throw warrantyError;
-
-      // חישוב סטטיסטיקות חנויות בזיכרון
-      const storeStatsMap = new Map<string, UserStats>();
-      (warrantyStats || []).forEach((w: any) => {
-        const storeId = w.store_id;
-        if (!storeId) return;
-
-        let stats = storeStatsMap.get(storeId);
-        if (!stats) {
-          stats = {
-            totalWarranties: 0,
-            activeWarranties: 0,
-            monthlyActivations: 0,
-            totalRepairs: 0,
-            pendingRepairs: 0,
-            completedRepairs: 0,
-          };
-          storeStatsMap.set(storeId, stats);
-        }
-
-        stats.totalWarranties++;
-
-        if (w.is_active && new Date(w.expiry_date) > now) {
-          stats.activeWarranties++;
-        }
-
-        if (w.activation_date && new Date(w.activation_date) >= startOfMonth) {
-          stats.monthlyActivations++;
-        }
-      });
-
-      setAllStoreStats(storeStatsMap);
-
-      // קריאה 2: כל הסטטיסטיקות של מעבדות בבת אחת
-      const { data: repairStats, error: repairError } = await supabase
-        .from('repairs')
-        .select('lab_id, status, completed_at');
-
-      if (repairError) throw repairError;
-
-      // חישוב סטטיסטיקות מעבדות בזיכרון
-      const labStatsMap = new Map<string, UserStats>();
-      (repairStats || []).forEach((r: any) => {
-        const labId = r.lab_id;
-        if (!labId) return;
-
-        let stats = labStatsMap.get(labId);
-        if (!stats) {
-          stats = {
-            totalWarranties: 0,
-            activeWarranties: 0,
-            monthlyActivations: 0,
-            totalRepairs: 0,
-            pendingRepairs: 0,
-            completedRepairs: 0,
-          };
-          labStatsMap.set(labId, stats);
-        }
-
-        stats.totalRepairs++;
-
-        if (r.status === 'received' || r.status === 'in_progress') {
-          stats.pendingRepairs++;
-        }
-
-        if (r.status === 'completed' && r.completed_at && new Date(r.completed_at) >= startOfMonth) {
-          stats.completedRepairs++;
-        }
-      });
-
-      setAllLabStats(labStatsMap);
-      setStatsLoaded(true);
-    } catch (error) {
-      console.error('Error fetching all stats:', error);
-      // לא מציג שגיאה למשתמש - סטטיסטיקות הן נחמדות לקבל אבל לא קריטיות
-    }
-  }, [supabase]);
-
-  // Load stats on mount
-  useEffect(() => {
-    if (!statsLoaded && users.length > 0) {
-      fetchAllStats();
-    }
-  }, [statsLoaded, users.length]);
-
-
-  const filteredUsers = useMemo(() => {
-    let filtered = users;
-  
-    if (roleFilter !== 'all') {
-      filtered = filtered.filter(u => u.role === roleFilter);
-    }
-  
-    if (statusFilter !== 'all') {
-      const isActive = statusFilter === 'active';
-      filtered = filtered.filter(u => u.is_active === isActive);
-    }
-  
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(u =>
-        u.email?.toLowerCase().includes(query) ||
-        u.full_name?.toLowerCase().includes(query) ||
-        u.phone?.includes(query)
-      );
-    }
-  
-    return filtered;
-  }, [users, searchQuery, roleFilter, statusFilter]);
-
-  const paginatedUsers = useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    const endIndex = startIndex + itemsPerPage;
-    return filteredUsers.slice(startIndex, endIndex);
-  }, [filteredUsers, currentPage, itemsPerPage]);
-
-  // אופטימיזציה: שימוש ב-cache במקום קריאות חדשות - חוסך 3-6 קריאות לכל משתמש!
-  const fetchUserStats = useCallback(async (user: ManagedUser) => {
-    setLoadingStats(true);
-    try {
-      // אם יש cache - השתמש בו מיד (אפס קריאות!)
-      if (user.role === 'store') {
-        const cachedStats = allStoreStats.get(user.id);
-        if (cachedStats) {
-          setUserStats(cachedStats);
-          setLoadingStats(false);
-          return;
-        }
-      } else if (user.role === 'lab') {
-        const cachedStats = allLabStats.get(user.id);
-        if (cachedStats) {
-          setUserStats(cachedStats);
-          setLoadingStats(false);
-          return;
-        }
-      }
-
-      // אם אין cache - טען מחדש את כל הסטטיסטיקות (fallback)
-      // זה יקרה רק אם העמוד נטען ישירות לסטטיסטיקות
-      await fetchAllStats();
-
-      // אחרי הטעינה, קח מה-cache - צריך לגשת מה-state החדש
-      setTimeout(() => {
-        if (user.role === 'store') {
-          const stats = allStoreStats.get(user.id);
-          setUserStats(stats || {
-            totalWarranties: 0,
-            activeWarranties: 0,
-            monthlyActivations: 0,
-            totalRepairs: 0,
-            pendingRepairs: 0,
-            completedRepairs: 0,
-          });
-        } else if (user.role === 'lab') {
-          const stats = allLabStats.get(user.id);
-          setUserStats(stats || {
-            totalWarranties: 0,
-            activeWarranties: 0,
-            monthlyActivations: 0,
-            totalRepairs: 0,
-            pendingRepairs: 0,
-            completedRepairs: 0,
-          });
-        }
-      }, 100);
-    } catch (error) {
-      console.error('Error fetching user stats:', error);
-      toast({
-        title: 'שגיאה',
-        description: 'אירעה שגיאה בטעינת הסטטיסטיקות',
-        variant: 'destructive',
-      });
-    } finally {
-      setTimeout(() => setLoadingStats(false), 100);
-    }
-  }, [allStoreStats, allLabStats, fetchAllStats, toast]);
 
   const handleCreateUser = async (data: CreateUserFormData) => {
     setIsSubmitting(true);
@@ -365,24 +210,17 @@ export default function UsersPage() {
         body: JSON.stringify(payload),
       });
 
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error);
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.error || 'שגיאה ביצירת משתמש');
+      }
 
-      toast({
-        title: 'הצלחה',
-        description: 'המשתמש נוצר בהצלחה',
-      });
-
+      toast({ title: 'הצלחה', description: 'המשתמש נוצר בהצלחה' });
       setIsCreateDialogOpen(false);
       createForm.reset();
-      // React Query + Realtime will auto-refresh
+      handleRefresh();
     } catch (error: any) {
-      console.error('Error creating user:', error);
-      toast({
-        title: 'שגיאה',
-        description: error.message || 'אירעה שגיאה ביצירת המשתמש',
-        variant: 'destructive',
-      });
+      toast({ title: 'שגיאה', description: error.message, variant: 'destructive' });
     } finally {
       setIsSubmitting(false);
     }
@@ -390,36 +228,22 @@ export default function UsersPage() {
 
   const handleUpdateUser = async (data: EditUserFormData) => {
     if (!selectedUser) return;
-
     setIsSubmitting(true);
     try {
-      const updates = {
+      const { error } = await supabase.from('users').update({
         full_name: data.full_name,
         phone: data.phone,
         role: data.role,
         is_active: data.is_active,
-      };
-
-      const { error } = await (supabase.from('users') as any)
-        .update(updates)
-        .eq('id', selectedUser.id);
+      }).eq('id', selectedUser.id);
 
       if (error) throw error;
 
-      toast({
-        title: 'הצלחה',
-        description: 'פרטי המשתמש עודכנו בהצלחה',
-      });
-
+      toast({ title: 'הצלחה', description: 'פרטי המשתמש עודכנו' });
       setIsEditDialogOpen(false);
-      // React Query + Realtime will auto-refresh
+      refetch(); // עדכון הטבלה
     } catch (error: any) {
-      console.error('Error updating user:', error);
-      toast({
-        title: 'שגיאה',
-        description: error.message || 'אירעה שגיאה בעדכון המשתמש',
-        variant: 'destructive',
-      });
+      toast({ title: 'שגיאה', description: error.message, variant: 'destructive' });
     } finally {
       setIsSubmitting(false);
     }
@@ -427,35 +251,24 @@ export default function UsersPage() {
 
   const handleResetPassword = async (data: PasswordFormData) => {
     if (!selectedUser) return;
-
     setIsSubmitting(true);
     try {
       const response = await fetch('/api/admin/users/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: selectedUser.id,
-          newPassword: data.password,
-        }),
+        body: JSON.stringify({ userId: selectedUser.id, newPassword: data.password }),
       });
 
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error);
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.error || 'שגיאה באיפוס סיסמה');
+      }
 
-      toast({
-        title: 'הצלחה',
-        description: 'הסיסמה שונתה בהצלחה',
-      });
-
+      toast({ title: 'הצלחה', description: 'הסיסמה שונתה בהצלחה' });
       setIsPasswordDialogOpen(false);
       passwordForm.reset();
     } catch (error: any) {
-      console.error('Error resetting password:', error);
-      toast({
-        title: 'שגיאה',
-        description: error.message || 'אירעה שגיאה בשינוי הסיסמה',
-        variant: 'destructive',
-      });
+      toast({ title: 'שגיאה', description: error.message, variant: 'destructive' });
     } finally {
       setIsSubmitting(false);
     }
@@ -463,55 +276,34 @@ export default function UsersPage() {
 
   const toggleUserStatus = async (userId: string, currentStatus: boolean) => {
     try {
-      const { error } = await (supabase.from('users') as any)
-        .update({ is_active: !currentStatus })
-        .eq('id', userId);
-
+      const { error } = await supabase.from('users').update({ is_active: !currentStatus }).eq('id', userId);
       if (error) throw error;
-
-      toast({
-        title: 'הצלחה',
-        description: `המשתמש ${!currentStatus ? 'הופעל' : 'הושעה'} בהצלחה`,
-      });
-      // React Query + Realtime will auto-refresh
+      toast({ title: 'הצלחה', description: `המשתמש ${!currentStatus ? 'הופעל' : 'הושעה'} בהצלחה` });
+      refetch(); // עדכון ה-Badge בטבלה
+      fetchGlobalStats(); // עדכון הסטטיסטיקות למעלה
     } catch (error: any) {
-      console.error('Error toggling user status:', error);
-      toast({
-        title: 'שגיאה',
-        description: error.message || 'אירעה שגיאה בשינוי סטטוס המשתמש',
-        variant: 'destructive',
-      });
+      toast({ title: 'שגיאה', description: error.message, variant: 'destructive' });
     }
   };
 
   const handleDeleteUser = async (userId: string) => {
-    if (!confirm('האם אתה בטוח שברצונך למחוק משתמש זה? הפעולה תמחק אותו לצמיתות.')) return;
-
+    if (!confirm('האם אתה בטוח שברצונך למחוק משתמש זה?')) return;
     try {
       const response = await fetch('/api/admin/users/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId }),
       });
-
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error);
-
-      toast({
-        title: 'הצלחה',
-        description: 'המשתמש נמחק בהצלחה',
-      });
-      // React Query + Realtime will auto-refresh
+      if (!response.ok) throw new Error('Failed to delete');
+      
+      toast({ title: 'הצלחה', description: 'המשתמש נמחק' });
+      handleRefresh();
     } catch (error: any) {
-      console.error('Error deleting user:', error);
-      toast({
-        title: 'שגיאה',
-        description: error.message || 'אירעה שגיאה במחיקת המשתמש',
-        variant: 'destructive',
-      });
+      toast({ title: 'שגיאה', description: error.message, variant: 'destructive' });
     }
   };
 
+  // --- Helper Functions ---
   const openEditDialog = (user: ManagedUser) => {
     setSelectedUser(user);
     editForm.reset({
@@ -522,19 +314,6 @@ export default function UsersPage() {
       is_active: user.is_active,
     });
     setIsEditDialogOpen(true);
-  };
-
-  const openPasswordDialog = (user: ManagedUser) => {
-    setSelectedUser(user);
-    passwordForm.reset();
-    setIsPasswordDialogOpen(true);
-  };
-
-  const openStatsDialog = async (user: ManagedUser) => {
-    setSelectedUser(user);
-    setUserStats(null);
-    setIsStatsDialogOpen(true);
-    await fetchUserStats(user);
   };
 
   const getRoleBadge = (role: string) => {
@@ -553,111 +332,54 @@ export default function UsersPage() {
     );
   };
 
-  if (isLoading) {
+  // --- Render ---
+
+  if (isLoading && page === 1) {
     return <UsersPageSkeleton />;
   }
 
   return (
     <div className="space-y-6">
-      {/* Background refresh indicator */}
-      <BackgroundRefreshIndicator
-        isFetching={isFetching}
-        isLoading={isLoading}
-      />
+      {/* Background Fetch Indicator */}
+      <BackgroundRefreshIndicator isFetching={isFetching} isLoading={isLoading} />
 
+      {/* Header */}
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">ניהול משתמשים</h2>
-          <p className="text-muted-foreground">
-            ניהול משתמשי המערכת והרשאות
-          </p>
+          <p className="text-muted-foreground">ניהול משתמשי המערכת והרשאות</p>
         </div>
         <Button onClick={() => setIsCreateDialogOpen(true)}>
-          הוסף משתמש
-          <Plus className="ms-2 h-4 w-4" />
+          הוסף משתמש <Plus className="ms-2 h-4 w-4" />
         </Button>
       </div>
 
-      {/* Stats Cards */}
+      {/* Global Stats Cards */}
       <div className="grid gap-4 md:grid-cols-6">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
-            <Users className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-sm font-medium">סה"כ משתמשים</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-right">{stats.total}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
-            <Shield className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-sm font-medium">מנהלים</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-right">{stats.admins}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
-            <Store className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-sm font-medium">חנויות</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-right">{stats.stores}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
-            <Wrench className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-sm font-medium">מעבדות</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-right">{stats.labs}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
-            <UserCheck className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-sm font-medium">פעילים</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-right">{stats.active}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
-            <UserX className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-sm font-medium">מושעים</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-right">{stats.inactive}</div>
-          </CardContent>
-        </Card>
+        <StatCard title='סה"כ משתמשים' value={globalStats.total} icon={Users} />
+        <StatCard title='מנהלים' value={globalStats.admins} icon={Shield} />
+        <StatCard title='חנויות' value={globalStats.stores} icon={Store} />
+        <StatCard title='מעבדות' value={globalStats.labs} icon={Wrench} />
+        <StatCard title='פעילים' value={globalStats.active} icon={UserCheck} />
+        <StatCard title='מושעים' value={globalStats.inactive} icon={UserX} />
       </div>
 
+      {/* Filters & Search */}
       <Card>
         <CardContent className="p-4">
           <div className="flex flex-col sm:flex-row gap-4">
             <div className="relative flex-1">
               <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="חפש לפי שם, אימייל או טלפון..."
-                  value={searchQuery}
-                  onChange={(e) => handleSearchChange(e.target.value)}
-                  dir="rtl"
-                  className="pr-8"
-                />
+              <Input
+                placeholder="חפש לפי שם, אימייל או טלפון..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                dir="rtl"
+                className="pr-8"
+              />
             </div>
-            <Select value={roleFilter} onValueChange={handleRoleFilterChange}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue />
-              </SelectTrigger>
+            <Select value={roleFilter} onValueChange={(val) => setRoleFilter(val as any)}>
+              <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">כל התפקידים</SelectItem>
                 <SelectItem value="admin">מנהלים</SelectItem>
@@ -665,10 +387,8 @@ export default function UsersPage() {
                 <SelectItem value="lab">מעבדות</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={statusFilter} onValueChange={handleStatusFilterChange}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue />
-              </SelectTrigger>
+            <Select value={statusFilter} onValueChange={(val) => setStatusFilter(val as any)}>
+              <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">כל הסטטוסים</SelectItem>
                 <SelectItem value="active">פעילים</SelectItem>
@@ -679,59 +399,49 @@ export default function UsersPage() {
         </CardContent>
       </Card>
 
+      {/* Main Users Table */}
       <Card>
         <CardHeader>
           <CardTitle>רשימת משתמשים</CardTitle>
           <CardDescription>
-            {filteredUsers.length} משתמשים במערכת
+            {totalCount} משתמשים במערכת 
+            {debouncedSearch && ` (תוצאות חיפוש עבור "${debouncedSearch}")`}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {/* Pagination - Above Table */}
-          {Math.ceil(filteredUsers.length / itemsPerPage) > 1 && (
-            <div className="flex items-center justify-between mb-4 pb-4 border-b">
-              <div className="text-sm text-muted-foreground">
-                מציג {((currentPage - 1) * itemsPerPage) + 1}-{Math.min(currentPage * itemsPerPage, filteredUsers.length)} מתוך {filteredUsers.length} משתמשים
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(1)}
-                  disabled={currentPage === 1}
-                >
-                  ראשון
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={currentPage === 1}
-                >
-                  הקודם
-                </Button>
-                <div className="text-sm">
-                  עמוד {currentPage} מתוך {Math.ceil(filteredUsers.length / itemsPerPage)}
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(prev => Math.min(Math.ceil(filteredUsers.length / itemsPerPage), prev + 1))}
-                  disabled={currentPage === Math.ceil(filteredUsers.length / itemsPerPage)}
-                >
-                  הבא
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(Math.ceil(filteredUsers.length / itemsPerPage))}
-                  disabled={currentPage === Math.ceil(filteredUsers.length / itemsPerPage)}
-                >
-                  אחרון
-                </Button>
-              </div>
+          {/* Pagination Top Controls */}
+          <div className="flex items-center justify-between mb-4 pb-4 border-b">
+            <span className="text-sm text-muted-foreground">
+              מציג {((page - 1) * pageSize) + 1}-{Math.min(page * pageSize, totalCount)} מתוך {totalCount}
+            </span>
+            <div className="flex gap-2 items-center">
+               <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setPage(1)} 
+                disabled={page === 1}
+              >
+                ראשון
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setPage(p => Math.max(1, p - 1))} 
+                disabled={page === 1}
+              >
+                <ChevronRight className="h-4 w-4" /> הקודם
+              </Button>
+              <span className="text-sm px-2">עמוד {page} מתוך {totalPages}</span>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))} 
+                disabled={page >= totalPages}
+              >
+                הבא <ChevronLeft className="h-4 w-4" />
+              </Button>
             </div>
-          )}
+          </div>
 
           <Table>
             <TableHeader>
@@ -744,186 +454,123 @@ export default function UsersPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paginatedUsers.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell>
-                    <div>
-                      <div className="font-medium">{user.full_name || user.email}</div>
-                      <div className="text-sm text-muted-foreground">{user.email}</div>
-                      {user.phone && (
-                        <div className="text-sm text-muted-foreground">{user.phone}</div>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>{getRoleBadge(user.role)}</TableCell>
-                  <TableCell>
-                    <Badge variant={user.is_active ? 'default' : 'secondary'}>
-                      {user.is_active ? 'פעיל' : 'מושעה'}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{formatDate(user.created_at)}</TableCell>
-                  <TableCell>
-                    <div className="flex gap-2">
-                      {(user.role === 'store' || user.role === 'lab') && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => openStatsDialog(user)}
-                          title="סטטיסטיקות"
-                        >
-                          <BarChart3 className="h-4 w-4" />
-                        </Button>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => openEditDialog(user)}
-                        title="עריכה"
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => openPasswordDialog(user)}
-                        title="שינוי סיסמה"
-                      >
-                        <Key className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => toggleUserStatus(user.id, user.is_active)}
-                        title={user.is_active ? 'השעה' : 'הפעל'}
-                      >
-                        {user.is_active ?
-                          <UserX className="h-4 w-4" /> :
-                          <UserCheck className="h-4 w-4" />
-                        }
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleDeleteUser(user.id)}
-                        title="מחיקה"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
+              {users.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center h-24 text-muted-foreground">
+                    לא נמצאו משתמשים
                   </TableCell>
                 </TableRow>
-              ))}
+              ) : (
+                users.map((user) => (
+                  <TableRow key={user.id}>
+                    <TableCell>
+                      <div>
+                        <div className="font-medium">{user.full_name || user.email}</div>
+                        <div className="text-sm text-muted-foreground">{user.email}</div>
+                        {user.phone && <div className="text-sm text-muted-foreground">{user.phone}</div>}
+                      </div>
+                    </TableCell>
+                    <TableCell>{getRoleBadge(user.role)}</TableCell>
+                    <TableCell>
+                      <Badge variant={user.is_active ? 'default' : 'secondary'}>
+                        {user.is_active ? 'פעיל' : 'מושעה'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{formatDate(user.created_at)}</TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        {(user.role === 'store' || user.role === 'lab') && (
+                          <Button 
+                            size="sm" 
+                            variant="ghost" 
+                            onClick={() => { setSelectedUser(user); setIsStatsDialogOpen(true); }}
+                            title="סטטיסטיקות"
+                          >
+                            <BarChart3 className="h-4 w-4" />
+                          </Button>
+                        )}
+                        <Button size="sm" variant="ghost" onClick={() => openEditDialog(user)} title="עריכה">
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="ghost" 
+                          onClick={() => { setSelectedUser(user); passwordForm.reset(); setIsPasswordDialogOpen(true); }}
+                          title="שינוי סיסמה"
+                        >
+                          <Key className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="ghost" 
+                          onClick={() => toggleUserStatus(user.id, user.is_active)}
+                          title={user.is_active ? 'השעה' : 'הפעל'}
+                        >
+                          {user.is_active ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => handleDeleteUser(user.id)} title="מחיקה">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
+
+      {/* --- Dialogs --- */}
 
       {/* Create User Dialog */}
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>הוספת משתמש חדש</DialogTitle>
-            <DialogDescription>
-              צור משתמש חדש במערכת
-            </DialogDescription>
+            <DialogDescription>צור משתמש חדש במערכת</DialogDescription>
           </DialogHeader>
           <form onSubmit={createForm.handleSubmit(handleCreateUser)} className="space-y-4">
             <div>
-              <Label htmlFor="create-email">אימייל</Label>
-              <Input
-                id="create-email"
-                type="email"
-                {...createForm.register('email')}
-              />
-              {createForm.formState.errors.email && (
-                <p className="text-sm text-red-500 mt-1">
-                  {createForm.formState.errors.email.message}
-                </p>
-              )}
+              <Label>אימייל</Label>
+              <Input {...createForm.register('email')} type="email" />
+              {createForm.formState.errors.email && <p className="text-red-500 text-xs mt-1">{createForm.formState.errors.email.message}</p>}
             </div>
-
             <div>
-              <Label htmlFor="create-password">סיסמה</Label>
-              <Input
-                id="create-password"
-                type="password"
-                {...createForm.register('password')}
-              />
-              {createForm.formState.errors.password && (
-                <p className="text-sm text-red-500 mt-1">
-                  {createForm.formState.errors.password.message}
-                </p>
-              )}
+              <Label>סיסמה</Label>
+              <Input {...createForm.register('password')} type="password" />
+              {createForm.formState.errors.password && <p className="text-red-500 text-xs mt-1">{createForm.formState.errors.password.message}</p>}
             </div>
-
             <div>
-              <Label htmlFor="create-confirmPassword">אישור סיסמה</Label>
-              <Input
-                id="create-confirmPassword"
-                type="password"
-                {...createForm.register('confirmPassword')}
-              />
-              {createForm.formState.errors.confirmPassword && (
-                <p className="text-sm text-red-500 mt-1">
-                  {createForm.formState.errors.confirmPassword.message}
-                </p>
-              )}
+              <Label>אישור סיסמה</Label>
+              <Input {...createForm.register('confirmPassword')} type="password" />
+              {createForm.formState.errors.confirmPassword && <p className="text-red-500 text-xs mt-1">{createForm.formState.errors.confirmPassword.message}</p>}
             </div>
-
             <div>
-              <Label htmlFor="create-full_name">שם מלא</Label>
-              <Input
-                id="create-full_name"
-                {...createForm.register('full_name')}
-              />
-              {createForm.formState.errors.full_name && (
-                <p className="text-sm text-red-500 mt-1">
-                  {createForm.formState.errors.full_name.message}
-                </p>
-              )}
+              <Label>שם מלא</Label>
+              <Input {...createForm.register('full_name')} />
+              {createForm.formState.errors.full_name && <p className="text-red-500 text-xs mt-1">{createForm.formState.errors.full_name.message}</p>}
             </div>
-
             <div>
-              <Label htmlFor="create-phone">טלפון</Label>
-              <Input
-                id="create-phone"
-                {...createForm.register('phone')}
-              />
+              <Label>טלפון</Label>
+              <Input {...createForm.register('phone')} />
             </div>
-
             <div>
-              <Label htmlFor="create-role">תפקיד</Label>
-              <Select
-                value={selectedRoleCreate}
-                onValueChange={(value) => createForm.setValue('role', value as any)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
+              <Label>תפקיד</Label>
+              <Select value={selectedRoleCreate} onValueChange={(v: any) => createForm.setValue('role', v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="admin">מנהל</SelectItem>
                   <SelectItem value="store">חנות</SelectItem>
                   <SelectItem value="lab">מעבדה</SelectItem>
                 </SelectContent>
               </Select>
-              {createForm.formState.errors.role && (
-                <p className="text-sm text-red-500 mt-1">
-                  {createForm.formState.errors.role.message}
-                </p>
-              )}
             </div>
-
             <div className="flex gap-2 pt-4">
-              <Button type="submit" disabled={isSubmitting}>
+              <Button type="submit" disabled={isSubmitting} className="flex-1">
                 {isSubmitting ? 'יוצר...' : 'צור משתמש'}
               </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsCreateDialogOpen(false)}
-              >
-                ביטול
-              </Button>
+              <Button type="button" variant="outline" onClick={() => setIsCreateDialogOpen(false)}>ביטול</Button>
             </div>
           </form>
         </DialogContent>
@@ -934,51 +581,26 @@ export default function UsersPage() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>עריכת משתמש</DialogTitle>
-            <DialogDescription>
-              ערוך את פרטי המשתמש
-            </DialogDescription>
+            <DialogDescription>ערוך את פרטי המשתמש</DialogDescription>
           </DialogHeader>
           <form onSubmit={editForm.handleSubmit(handleUpdateUser)} className="space-y-4">
             <div>
-              <Label htmlFor="edit-email">אימייל</Label>
-              <Input
-                id="edit-email"
-                type="email"
-                disabled
-                {...editForm.register('email')}
-              />
+              <Label>אימייל</Label>
+              <Input {...editForm.register('email')} disabled className="bg-muted" />
             </div>
-
             <div>
-              <Label htmlFor="edit-full_name">שם מלא</Label>
-              <Input
-                id="edit-full_name"
-                {...editForm.register('full_name')}
-              />
-              {editForm.formState.errors.full_name && (
-                <p className="text-sm text-red-500 mt-1">
-                  {editForm.formState.errors.full_name.message}
-                </p>
-              )}
+              <Label>שם מלא</Label>
+              <Input {...editForm.register('full_name')} />
+              {editForm.formState.errors.full_name && <p className="text-red-500 text-xs mt-1">{editForm.formState.errors.full_name.message}</p>}
             </div>
-
             <div>
-              <Label htmlFor="edit-phone">טלפון</Label>
-              <Input
-                id="edit-phone"
-                {...editForm.register('phone')}
-              />
+              <Label>טלפון</Label>
+              <Input {...editForm.register('phone')} />
             </div>
-
             <div>
-              <Label htmlFor="edit-role">תפקיד</Label>
-              <Select
-                value={editForm.watch('role')}
-                onValueChange={(value) => editForm.setValue('role', value as any)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
+              <Label>תפקיד</Label>
+              <Select value={editForm.watch('role')} onValueChange={(v: any) => editForm.setValue('role', v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="admin">מנהל</SelectItem>
                   <SelectItem value="store">חנות</SelectItem>
@@ -986,82 +608,43 @@ export default function UsersPage() {
                 </SelectContent>
               </Select>
             </div>
-
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="edit-is_active"
-                {...editForm.register('is_active')}
-                className="h-4 w-4"
-              />
-              <Label htmlFor="edit-is_active">משתמש פעיל</Label>
+            <div className="flex items-center gap-2 pt-2">
+               <input type="checkbox" id="edit-active" {...editForm.register('is_active')} className="h-4 w-4" />
+               <Label htmlFor="edit-active">משתמש פעיל</Label>
             </div>
-
             <div className="flex gap-2 pt-4">
-              <Button type="submit" disabled={isSubmitting}>
+              <Button type="submit" disabled={isSubmitting} className="flex-1">
                 {isSubmitting ? 'מעדכן...' : 'עדכן'}
               </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsEditDialogOpen(false)}
-              >
-                ביטול
-              </Button>
+              <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>ביטול</Button>
             </div>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Password Dialog */}
+      {/* Password Reset Dialog */}
       <Dialog open={isPasswordDialogOpen} onOpenChange={setIsPasswordDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>איפוס סיסמה</DialogTitle>
-            <DialogDescription>
-              הגדר סיסמה חדשה עבור {selectedUser?.full_name || selectedUser?.email}
-            </DialogDescription>
+            <DialogDescription>הגדר סיסמה חדשה עבור {selectedUser?.full_name}</DialogDescription>
           </DialogHeader>
           <form onSubmit={passwordForm.handleSubmit(handleResetPassword)} className="space-y-4">
             <div>
-              <Label htmlFor="password">סיסמה חדשה</Label>
-              <Input
-                id="password"
-                type="password"
-                {...passwordForm.register('password')}
-              />
-              {passwordForm.formState.errors.password && (
-                <p className="text-sm text-red-500 mt-1">
-                  {passwordForm.formState.errors.password.message}
-                </p>
-              )}
+              <Label>סיסמה חדשה</Label>
+              <Input {...passwordForm.register('password')} type="password" />
+              {passwordForm.formState.errors.password && <p className="text-red-500 text-xs mt-1">{passwordForm.formState.errors.password.message}</p>}
             </div>
-
             <div>
-              <Label htmlFor="confirmPassword">אישור סיסמה</Label>
-              <Input
-                id="confirmPassword"
-                type="password"
-                {...passwordForm.register('confirmPassword')}
-              />
-              {passwordForm.formState.errors.confirmPassword && (
-                <p className="text-sm text-red-500 mt-1">
-                  {passwordForm.formState.errors.confirmPassword.message}
-                </p>
-              )}
+              <Label>אישור סיסמה</Label>
+              <Input {...passwordForm.register('confirmPassword')} type="password" />
+              {passwordForm.formState.errors.confirmPassword && <p className="text-red-500 text-xs mt-1">{passwordForm.formState.errors.confirmPassword.message}</p>}
             </div>
-
             <div className="flex gap-2 pt-4">
-              <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? 'מעדכן...' : 'עדכן סיסמה'}
+              <Button type="submit" disabled={isSubmitting} className="flex-1">
+                {isSubmitting ? 'מעדכן...' : 'שנה סיסמה'}
               </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsPasswordDialogOpen(false)}
-              >
-                ביטול
-              </Button>
+              <Button type="button" variant="outline" onClick={() => setIsPasswordDialogOpen(false)}>ביטול</Button>
             </div>
           </form>
         </DialogContent>
@@ -1071,86 +654,70 @@ export default function UsersPage() {
       <Dialog open={isStatsDialogOpen} onOpenChange={setIsStatsDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>סטטיסטיקות - {selectedUser?.full_name || selectedUser?.email}</DialogTitle>
+            <DialogTitle>סטטיסטיקות - {selectedUser?.full_name}</DialogTitle>
             <DialogDescription>
               {selectedUser?.role === 'store' ? 'סטטיסטיקות החנות' : 'סטטיסטיקות המעבדה'}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            {loadingStats ? (
-              <div className="text-center py-8">טוען נתונים...</div>
-            ) : userStats ? (
-              <div className="grid gap-4 md:grid-cols-3">
-                {selectedUser?.role === 'store' ? (
-                  <>
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium">סה"כ אחריות</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-2xl font-bold">{userStats.totalWarranties}</div>
-                        <p className="text-xs text-muted-foreground">מאז ההצטרפות</p>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium">אחריות פעילות</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-2xl font-bold">{userStats.activeWarranties}</div>
-                        <p className="text-xs text-muted-foreground">כרגע</p>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium">הפעלות החודש</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-2xl font-bold">{userStats.monthlyActivations}</div>
-                        <p className="text-xs text-muted-foreground">החודש הנוכחי</p>
-                      </CardContent>
-                    </Card>
-                  </>
-                ) : (
-                  <>
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium">סה"כ תיקונים</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-2xl font-bold">{userStats.totalRepairs}</div>
-                        <p className="text-xs text-muted-foreground">מאז ההצטרפות</p>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium">תיקונים פעילים</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-2xl font-bold">{userStats.pendingRepairs}</div>
-                        <p className="text-xs text-muted-foreground">כרגע</p>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium">הושלמו החודש</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-2xl font-bold">{userStats.completedRepairs}</div>
-                        <p className="text-xs text-muted-foreground">החודש הנוכחי</p>
-                      </CardContent>
-                    </Card>
-                  </>
-                )}
-              </div>
-            ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                לא ניתן לטעון סטטיסטיקות
-              </div>
-            )}
-          </div>
+          
+          {loadingStats ? (
+            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+              <Loader2 className="h-8 w-8 animate-spin mb-2" />
+              <p>טוען נתונים...</p>
+            </div>
+          ) : userStats ? (
+            <div className="grid gap-4 md:grid-cols-3">
+              {selectedUser?.role === 'store' ? (
+                <>
+                  <StatDetailCard title='סה"כ אחריות' value={userStats.totalWarranties} subtitle="מאז ההצטרפות" />
+                  <StatDetailCard title='אחריות פעילות' value={userStats.activeWarranties} subtitle="כרגע" />
+                  <StatDetailCard title='הפעלות החודש' value={userStats.monthlyActivations} subtitle="החודש הנוכחי" />
+                </>
+              ) : (
+                <>
+                  <StatDetailCard title='סה"כ תיקונים' value={userStats.totalRepairs} subtitle="מאז ההצטרפות" />
+                  <StatDetailCard title='תיקונים פעילים' value={userStats.pendingRepairs} subtitle="כרגע" />
+                  <StatDetailCard title='הושלמו החודש' value={userStats.completedRepairs} subtitle="החודש הנוכחי" />
+                </>
+              )}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              לא ניתן לטעון סטטיסטיקות או אין נתונים
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+// --- Sub Components ---
+
+function StatCard({ title, value, icon: Icon }: any) {
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
+        <Icon className="h-4 w-4 text-muted-foreground" />
+        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="text-2xl font-bold text-right">{value}</div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function StatDetailCard({ title, value, subtitle }: any) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="text-2xl font-bold">{value}</div>
+        <p className="text-xs text-muted-foreground">{subtitle}</p>
+      </CardContent>
+    </Card>
   );
 }

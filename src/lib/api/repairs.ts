@@ -1,5 +1,7 @@
 import { createClient } from '@/lib/supabase/client';
+import type { Database } from '@/lib/supabase/database.types';
 
+type RepairStatus = Database["public"]["Enums"]["repair_status"];
 /**
  * API Functions for Repairs
  *
@@ -64,6 +66,72 @@ export interface Repair {
   } | null;
 }
 
+// Interface לפילטרים
+export interface RepairFilters {
+  status?: string;
+  labId?: string;
+  search?: string;
+}
+
+export async function fetchRepairsWithPagination(
+  page: number = 1,
+  pageSize: number = 50,
+  filters: RepairFilters = {}
+) {
+  const supabase = createClient();
+  const startIndex = (page - 1) * pageSize;
+  const endIndex = startIndex + pageSize - 1;
+
+  // בניית השאילתה
+  let query = supabase
+    .from('repairs')
+    .select(`
+      *,
+      device:devices(
+        id, imei, imei2,
+        device_models(model_name),
+        device_model:device_models(model_name)
+      ),
+      lab:users!repairs_lab_id_fkey(id, full_name, email),
+      warranty:warranties!repairs_warranty_id_fkey(
+        customer_name,
+        customer_phone,
+        activation_date,
+        expiry_date,
+        store:users!warranties_store_id_fkey(full_name, email)
+      ),
+      repair_type:repair_types(id, name)
+    `, { count: 'exact' });
+
+  // החלת פילטרים בצד השרת
+  if (filters.status && filters.status !== 'all') {
+    query = query.eq('status', filters.status as RepairStatus);
+  }
+
+  if (filters.labId && filters.labId !== 'all') {
+    query = query.eq('lab_id', filters.labId);
+  }
+
+  // חיפוש (Search)
+  if (filters.search) {
+    query = query.or(`fault_description.ilike.%${filters.search}%,notes.ilike.%${filters.search}%`);
+  }
+
+  // מיון ודיפדוף
+  const { data, error, count } = await query
+    .order('created_at', { ascending: false })
+    .range(startIndex, endIndex);
+
+  if (error) {
+    throw new Error(`Failed to fetch repairs: ${error.message}`);
+  }
+
+  return { 
+    data: (data || []) as any as Repair[], 
+    count: count || 0 
+  };
+}
+
 /**
  * שליפת כל התיקונים של מעבדה
  */
@@ -109,15 +177,11 @@ export async function fetchLabRepairs(labId: string): Promise<Repair[]> {
 }
 
 /**
- * שליפת סוגי תיקונים זמינים למעבדה (עם מחירים)
- *
- * אופטימיזציה: שימוש ב-JOIN של Supabase במקום שתי queries נפרדות
- * מפחית ב-50% את מספר השאילתות למסד הנתונים
+ * שליפת סוגי תיקונים זמינים למעבדה
  */
 export async function fetchLabRepairTypes(labId: string): Promise<RepairType[]> {
   const supabase = createClient();
 
-  // ✅ Single query with JOIN instead of 2 separate queries
   const { data, error } = await supabase
     .from('lab_repair_prices')
     .select(`
@@ -136,7 +200,6 @@ export async function fetchLabRepairTypes(labId: string): Promise<RepairType[]> 
     throw new Error(`Failed to fetch lab repair types: ${error.message}`);
   }
 
-  // Transform data to match expected format
   const repairTypesWithPrices = (data || []).map((item: any) => ({
     id: item.repair_type.id,
     name: item.repair_type.name,
@@ -145,46 +208,4 @@ export async function fetchLabRepairTypes(labId: string): Promise<RepairType[]> 
   }));
 
   return repairTypesWithPrices;
-}
-
-/**
- * שליפת כל התיקונים (למנהל)
- */
-export async function fetchAllRepairs(): Promise<Repair[]> {
-  const supabase = createClient();
-
-  const { data, error } = await supabase
-    .from('repairs')
-    .select(`
-      *,
-      device:devices(
-        id,
-        imei,
-        imei2,
-        device_models(model_name)
-      ),
-      lab:users!repairs_lab_id_fkey(
-        id,
-        full_name,
-        email
-      ),
-      warranty:warranties!repairs_warranty_id_fkey(
-        customer_name,
-        customer_phone,
-        activation_date,
-        expiry_date,
-        store:users!warranties_store_id_fkey(full_name, email)
-      ),
-      repair_type:repair_types(
-        id,
-        name
-      )
-    `)
-    .order('created_at', { ascending: false });
-
-  if (error) {
-    throw new Error(`Failed to fetch repairs: ${error.message}`);
-  }
-
-  return (data || []) as any as Repair[];
 }

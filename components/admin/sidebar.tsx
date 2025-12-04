@@ -46,7 +46,7 @@ const navigationSections = [
     items: [
       { name: 'הגדרות כלליות', href: '/admin/settings', icon: Settings },
       { name: 'דגמי מכשירים', href: '/admin/dashboard?dialog=models', icon: Smartphone },
-      { name: 'סוגי תיקונים', href: '/admin/dashboard?dialog=repair-types', icon: Wrench },
+      { name: 'סוגי תיקונים', href: '/admin/repair-types', icon: Wrench },
       { name: 'מחירי תיקון', href: '/admin/dashboard?dialog=lab-prices', icon: ShekelIcon },
     ],
   },

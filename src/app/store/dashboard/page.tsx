@@ -508,7 +508,7 @@ export default function StoreDashboard() {
       {/* Background refresh indicator */}
       <BackgroundRefreshIndicator
         isFetching={isStatsFetching}
-        isLoading={isUserLoading || isStatsLoading}
+        isLoading={isUserLoading || !storeId || isStatsLoading}
       />
 
       {/* === שורות שהשתנו === */}

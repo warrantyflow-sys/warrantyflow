@@ -829,6 +829,141 @@ BEGIN
   RAISE NOTICE '🚀 Creating business logic functions...';
 END $$;
 
+-- Get dashboard counts (Optimized)
+CREATE OR REPLACE FUNCTION get_dashboard_counts()
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_total BIGINT;
+  v_new BIGINT;
+  v_active BIGINT;
+  v_expired BIGINT;
+  v_replaced BIGINT;
+  v_in_repair BIGINT;
+BEGIN
+  -- ספירת מכשירים לפי סטטוס (שימוש ב-View הקיים אבל אגרגציה בשרת)
+  SELECT
+    COUNT(*),
+    COUNT(*) FILTER (WHERE warranty_status = 'new'),
+    COUNT(*) FILTER (WHERE warranty_status = 'active'),
+    COUNT(*) FILTER (WHERE warranty_status = 'expired'),
+    COUNT(*) FILTER (WHERE warranty_status = 'replaced')
+  INTO
+    v_total, v_new, v_active, v_expired, v_replaced
+  FROM devices_with_status;
+
+  -- ספירת תיקונים פעילים
+  SELECT COUNT(*) INTO v_in_repair
+  FROM repairs
+  WHERE status IN ('received', 'in_progress');
+
+  -- החזרת אובייקט JSON קליל
+  RETURN json_build_object(
+    'total', v_total,
+    'new', v_new,
+    'active', v_active,
+    'expired', v_expired,
+    'replaced', v_replaced,
+    'inRepair', v_in_repair
+  );
+END;
+$$;
+
+-- Get repair statistics (Admin)
+CREATE OR REPLACE FUNCTION get_repair_stats()
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_total BIGINT;
+  v_received BIGINT;
+  v_in_progress BIGINT;
+  v_completed BIGINT;
+  v_replacement_requested BIGINT;
+  v_total_cost NUMERIC;
+BEGIN
+  SELECT
+    COUNT(*),
+    COUNT(*) FILTER (WHERE status = 'received'),
+    COUNT(*) FILTER (WHERE status = 'in_progress'),
+    COUNT(*) FILTER (WHERE status = 'completed'),
+    COUNT(*) FILTER (WHERE status = 'replacement_requested'),
+    COALESCE(SUM(cost), 0)
+  INTO
+    v_total, v_received, v_in_progress, v_completed, v_replacement_requested, v_total_cost
+  FROM repairs;
+
+  RETURN json_build_object(
+    'total', v_total,
+    'received', v_received,
+    'in_progress', v_in_progress,
+    'completed', v_completed,
+    'replacement_requested', v_replacement_requested,
+    'totalCost', v_total_cost
+  );
+END;
+$$;
+
+-- Get warranty statistics
+CREATE OR REPLACE FUNCTION get_warranty_stats()
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_total BIGINT;
+  v_active BIGINT;
+  v_expired BIGINT;
+BEGIN
+  SELECT
+    COUNT(*),
+    COUNT(*) FILTER (WHERE is_active = true AND expiry_date > CURRENT_DATE),
+    COUNT(*) FILTER (WHERE is_active = false OR expiry_date <= CURRENT_DATE)
+  INTO
+    v_total, v_active, v_expired
+  FROM warranties;
+
+  RETURN json_build_object(
+    'total', v_total,
+    'active', v_active,
+    'expired', v_expired
+  );
+END;
+$$;
+
+-- Get replacement request statistics
+CREATE OR REPLACE FUNCTION get_replacement_stats()
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_total BIGINT;
+  v_pending BIGINT;
+  v_approved BIGINT;
+  v_rejected BIGINT;
+BEGIN
+  SELECT
+    COUNT(*),
+    COUNT(*) FILTER (WHERE status = 'pending'),
+    COUNT(*) FILTER (WHERE status = 'approved'),
+    COUNT(*) FILTER (WHERE status = 'rejected')
+  INTO
+    v_total, v_pending, v_approved, v_rejected
+  FROM replacement_requests;
+
+  RETURN json_build_object(
+    'total', v_total,
+    'pending', v_pending,
+    'approved', v_approved,
+    'rejected', v_rejected
+  );
+END;
+$$;
+
 -- Get lab dashboard stats
 CREATE OR REPLACE FUNCTION get_lab_dashboard_stats()
 RETURNS json
@@ -1361,7 +1496,7 @@ BEGIN
     IF v_user_role = 'store' THEN
         -- A store can only request replacement for a device they activated.
         IF v_store_id IS NULL OR v_store_id <> v_user_id THEN
-            RETURN QUERY SELECT false, 'Permission denied. You can only request replacements for devices you activated.'::text, NULL::uuid;
+            RETURN QUERY SELECT false, 'אתה יכול לבקש החלפה רק למכשיר שאתה הפעלת לו אחריות'::text, NULL::uuid;
             RETURN;
         END IF;
     ELSIF v_user_role = 'lab' THEN
@@ -1921,6 +2056,44 @@ DO $$
 BEGIN
   RAISE NOTICE '👁️  Creating views...';
 END $$;
+
+
+
+-- Rich Devices View (For Admin Table)
+CREATE OR REPLACE VIEW devices_rich_view AS
+WITH latest_warranties AS (
+    -- שליפת האחריות העדכנית ביותר לכל מכשיר
+    SELECT DISTINCT ON (device_id) *
+    FROM warranties
+    ORDER BY device_id, created_at DESC
+)
+SELECT
+  d.id, d.imei, d.imei2, d.model_id, d.warranty_months, d.is_replaced, d.replaced_at, d.import_batch, d.created_at, d.updated_at,
+  dm.model_name,
+  dm.manufacturer,
+  -- פרטי אחריות ולקוח
+  lw.id as warranty_id,
+  lw.customer_name,
+  lw.customer_phone,
+  lw.activation_date,
+  lw.expiry_date,
+  lw.is_active as warranty_is_active,
+  -- פרטי חנות
+  u.id as store_id,
+  u.full_name as store_name,
+  u.email as store_email,
+  -- חישוב סטטוס חכם
+  CASE
+    WHEN d.is_replaced THEN 'replaced'
+    WHEN lw.id IS NOT NULL AND lw.is_active AND lw.expiry_date >= CURRENT_DATE THEN 'active'
+    WHEN lw.id IS NOT NULL THEN 'expired'
+    ELSE 'new'
+  END AS warranty_status
+FROM devices d
+LEFT JOIN device_models dm ON d.model_id = dm.id
+LEFT JOIN latest_warranties lw ON d.id = lw.device_id
+LEFT JOIN users u ON lw.store_id = u.id;
+
 
 -- IMEI Lookup View
 CREATE OR REPLACE VIEW devices_imei_lookup AS

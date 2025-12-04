@@ -17,80 +17,86 @@ interface DevicesResponse {
   count: number;
 }
 
-/**
- * שליפת מכשירים עם סינון ודיפדוף (Server-Side Pagination)
- */
 async function fetchDevices(filters: DevicesFilter): Promise<DevicesResponse> {
   const supabase = createClient();
   const { page, pageSize, search, model, warrantyStatus } = filters;
 
-  // חישוב הטווח לשליפה (0-49, 50-99 וכו')
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
-  let query = supabase
-    .from('devices')
-    .select(`
-      *,
-      device_model:device_models(id, model_name),
-      warranty:warranties(
-        id, 
-        warranty_status, 
-        start_date, 
-        end_date,
-        store:users!warranties_store_id_fkey(full_name)
-      )
-    `, { count: 'exact' }); // בקשת ספירה כוללת לצורך ה-Pagination
+  // שימוש ב-View החדש והיעיל
+  let query = (supabase as any)
+    .from('devices_rich_view')
+    .select('*', { count: 'exact' });
 
-  // סינונים
-  if (search) {
-    // חיפוש לפי IMEI או IMEI2
-    query = query.or(`imei.ilike.%${search}%,imei2.ilike.%${search}%`);
+  // 1. סינון לפי סטטוס (עכשיו זה עובד כי העמודה קיימת ב-View)
+  if (warrantyStatus && warrantyStatus !== 'all') {
+    query = query.eq('warranty_status', warrantyStatus);
   }
 
+  // 2. סינון לפי דגם
   if (model && model !== 'all') {
-    query = query.eq('model_id', model);
+    // ה-View מכיל את שם הדגם, אז אפשר לסנן לפיו ישירות
+    query = query.eq('model_name', model);
   }
 
-  // סינון לפי סטטוס אחריות דורש לוגיקה מורכבת יותר, 
-  // לרוב עושים זאת בצד לקוח או באמצעות View ב-DB. 
-  // כאן נתמקד בסינון בסיסי יעיל.
+  // 3. חיפוש חכם (כולל שם לקוח!)
+  if (search) {
+    query = query.or(`imei.ilike.%${search}%,imei2.ilike.%${search}%,customer_name.ilike.%${search}%`);
+  }
 
-  // מיון ודיפדוף
-  query = query
+  const { data, error, count } = await query
     .order('created_at', { ascending: false })
     .range(from, to);
-
-  const { data, error, count } = await query;
 
   if (error) {
     throw new Error(`Failed to fetch devices: ${error.message}`);
   }
 
-  return { data: data || [], count: count || 0 };
+  // המרת המידע השטוח למבנה המקונן שה-UI מצפה לו
+  const mappedData = (data || []).map((row: any) => ({
+    ...row,
+    // שחזור מבנה device_models
+    device_models: {
+      id: row.model_id,
+      model_name: row.model_name,
+      manufacturer: row.manufacturer
+    },
+    // שחזור מבנה warranties (מערך עם איבר אחד)
+    warranties: row.warranty_id ? [{
+      id: row.warranty_id,
+      customer_name: row.customer_name,
+      customer_phone: row.customer_phone,
+      activation_date: row.activation_date,
+      expiry_date: row.expiry_date,
+      is_active: row.warranty_is_active,
+      store: row.store_id ? {
+        id: row.store_id,
+        full_name: row.store_name,
+        email: row.store_email
+      } : null
+    }] : []
+  }));
+
+  return { data: mappedData, count: count || 0 };
 }
 
-/**
- * Hook ראשי לניהול מכשירים
- */
 export function useDevices(filters: DevicesFilter) {
   const queryClient = useQueryClient();
 
   const query = useQuery({
-    queryKey: ['devices', filters], // המפתח כולל את הפילטרים כדי לרענן בשינוי
+    queryKey: ['devices', filters.page, filters.pageSize, filters.search, filters.model, filters.warrantyStatus],
     queryFn: () => fetchDevices(filters),
-    placeholderData: keepPreviousData, // מונע הבהוב בזמן מעבר עמוד
-    staleTime: 1000 * 60, // דקה אחת של Cache
+    placeholderData: keepPreviousData,
+    staleTime: 1000 * 60,
   });
 
-  // Realtime Subscription
-  // מאזין לשינויים כדי לרענן את הטבלה אוטומטית
   useEffect(() => {
     const supabase = createClient();
-    const channel = supabase.channel('devices-list')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'devices' }, () => {
-        queryClient.invalidateQueries({ queryKey: ['devices'] });
-      })
+    // האזנה לשינויים בכל הטבלאות הרלוונטיות
+    const channel = supabase.channel('devices-list-updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'devices' }, () => queryClient.invalidateQueries({ queryKey: ['devices'] }))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'warranties' }, () => queryClient.invalidateQueries({ queryKey: ['devices'] }))
       .subscribe();
 
     return () => {
@@ -99,26 +105,4 @@ export function useDevices(filters: DevicesFilter) {
   }, [queryClient]);
 
   return query;
-}
-
-// --- הקוד הישן שלך נשאר כאן למטה ללא שינוי ---
-
-async function fetchDevicesWithoutWarranty() {
-  const supabase = createClient();
-  const { data, error } = await supabase
-    .from('devices_with_status')
-    .select('*')
-    .eq('warranty_status', 'new');
-
-  if (error) throw new Error(error.message);
-  return data || [];
-}
-
-export function useDevicesWithoutWarranty() {
-  const queryClient = useQueryClient();
-  // ... (הקוד המקורי שלך)
-  return useQuery({
-    queryKey: ['devices', 'without-warranty'],
-    queryFn: fetchDevicesWithoutWarranty,
-  });
 }

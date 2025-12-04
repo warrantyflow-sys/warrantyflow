@@ -3,7 +3,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { fetchLabRepairs, fetchAllRepairs, type Repair } from '@/lib/api/repairs';
+import { fetchRepairsWithPagination, fetchLabRepairs } from '@/lib/api/repairs';
 
 /**
  * Hook לשליפת תיקונים של מעבדה עם Realtime updates
@@ -73,52 +73,56 @@ export function useLabRepairs(labId: string | null) {
  *
  * @returns תיקונים, מצב טעינה ואינדיקטור רענון רקע
  */
-export function useAllRepairs() {
-  const queryClient = useQueryClient();
 
+export function useRepairsStats() {
+  const queryClient = useQueryClient();
   const query = useQuery({
-    queryKey: ['repairs', 'all'],
-    queryFn: fetchAllRepairs,
-    // ✅ No refetchInterval needed - Realtime subscription handles updates
-    refetchInterval: 60 * 1000, // 60 seconds as backup to Realtime
+    queryKey: ['repairs', 'stats'],
+    queryFn: async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase.rpc('get_repair_stats');
+      if (error) throw error;
+      return data as any;
+    },
+    staleTime: 1000 * 60 * 5, // 5 דקות
   });
 
-  // Supabase Realtime subscription
+  // Realtime לסטטיסטיקות
   useEffect(() => {
     const supabase = createClient();
-
-    // Subscribe to all repairs changes
-    const channel = supabase
-      .channel('repairs-all')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'repairs',
-        },
-        (payload) => {
-          console.log('Repair changed:', payload);
-
-          // Invalidate and refetch
-          queryClient.invalidateQueries({
-            queryKey: ['repairs', 'all'],
-          });
-        }
-      )
+    const channel = supabase.channel('repairs-stats-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'repairs' }, 
+          () => queryClient.invalidateQueries({ queryKey: ['repairs', 'stats'] }))
       .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, [queryClient]);
 
-  return {
-    repairs: query.data || [],
-    isLoading: query.isLoading,
-    isFetching: query.isFetching,
-    isError: query.isError,
-    error: query.error,
-    refetch: query.refetch,
-  };
+  return query;
+}
+
+// Hook לטבלה (עם דיפדוף)
+export function useRepairsTable(
+  page: number, 
+  pageSize: number, 
+  filters: { status: string; labId: string; search: string }
+) {
+  const queryClient = useQueryClient();
+  
+  const query = useQuery({
+    queryKey: ['repairs', 'list', page, pageSize, filters],
+    queryFn: () => fetchRepairsWithPagination(page, pageSize, filters),
+    placeholderData: (prev) => prev, // מונע הבהוב במעבר עמוד
+  });
+
+  // Realtime לטבלה
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase.channel('repairs-list-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'repairs' }, 
+          () => queryClient.invalidateQueries({ queryKey: ['repairs', 'list'] }))
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [queryClient]);
+
+  return query;
 }

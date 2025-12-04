@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import type { User, Device, DeviceModel, Warranty, Repair, RepairType } from '@/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import {
   Table,
   TableBody,
@@ -25,29 +26,58 @@ import {
 import { useToast } from '@/components/ui/use-toast';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import {
-  Filter,
   Download,
   Wrench,
   Building2,
-  Calendar,
   TrendingUp,
-  ArrowRight
+  ArrowRight,
+  PieChart as PieChartIcon,
+  BarChart as BarChartIcon,
+  Activity,
+  CheckCircle2,
+  Clock,
+  Wallet
 } from 'lucide-react';
-import ShekelIcon from '@/components/ui/shekel-icon';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  AreaChart,
+  Area
+} from 'recharts';
 
+// Types
 type FaultType = 'screen' | 'charging_port' | 'flash' | 'speaker' | 'board' | 'other';
 
-interface RepairReport {
-  repairs: any[];
-  byLab: Record<string, { count: number; revenue: number }>;
-  byRepairType: Record<string, { count: number; revenue: number }>;
-  byMonth: Record<string, { count: number; revenue: number }>;
-  totalRepairs: number;
-  totalRevenue: number;
-}
+type AdminRepair = Repair & {
+  device?: (Pick<Device, 'imei'> & {
+    device_models?: Pick<DeviceModel, 'model_name'> | null;
+  }) | null;
+  lab?: Pick<User, 'full_name' | 'email'> | null;
+  warranty?: (Warranty & {
+    store?: Pick<User, 'full_name' | 'email'> | null;
+  }) | null;
+  repair_type?: Pick<RepairType, 'id' | 'name'> | null;
+  custom_repair_description?: string | null;
+  custom_repair_price?: number | null;
+};
 
-// Legacy fault type labels for backwards compatibility
-const faultTypeLabels: Record<FaultType, string> = {
+type LabRow = Pick<User, 'id' | 'full_name' | 'email' | 'phone'>;
+type RepairTypeRow = Pick<RepairType, 'id' | 'name' | 'is_active'>;
+type DateRangeOption = 'week' | 'month' | 'quarter' | 'year' | 'custom';
+
+// Constants
+const COLORS = ['#3b82f6', '#22c55e', '#f97316', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
+
+const faultTypeLabels: Record<string, string> = {
   screen: 'מסך',
   charging_port: 'שקע טעינה',
   flash: 'פנס',
@@ -65,66 +95,64 @@ const statusLabels: Record<string, string> = {
 };
 
 export default function AdminRepairsReportPage() {
-  const [report, setReport] = useState<RepairReport>({
-    repairs: [],
-    byLab: {},
-    byRepairType: {},
-    byMonth: {},
-    totalRepairs: 0,
-    totalRevenue: 0
-  });
-  type AdminRepair = Repair & {
-    device?: (Pick<Device, 'imei'> & {
-      device_models?: Pick<DeviceModel, 'model_name'> | null;
-    }) | null;
-    lab?: Pick<User, 'full_name' | 'email'> | null;
-    warranty?: (Warranty & {
-      store?: Pick<User, 'full_name' | 'email'> | null;
-    }) | null;
-    repair_type?: Pick<RepairType, 'id' | 'name'> | null;
-  };
-
-  type LabRow = Pick<User, 'id' | 'full_name' | 'email' | 'phone'>;
-  type RepairTypeRow = Pick<RepairType, 'id' | 'name' | 'is_active'>;
-
-  const [allRepairs, setAllRepairs] = useState<AdminRepair[]>([]);
-  const [labs, setLabs] = useState<LabRow[]>([]);
-  const [repairTypes, setRepairTypes] = useState<RepairTypeRow[]>([]);
-  const [filterLab, setFilterLab] = useState<string>('all');
-  const [filterRepairType, setFilterRepairType] = useState<string>('all');
-  const [filterMonth, setFilterMonth] = useState<string>('all');
-  const [availableMonths, setAvailableMonths] = useState<string[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
   const supabase = createClient();
   const { toast } = useToast();
 
-  const fetchData = useCallback(async () => {
+  // State
+  const [isLoading, setIsLoading] = useState(true);
+  const [allRepairs, setAllRepairs] = useState<AdminRepair[]>([]);
+  const [labs, setLabs] = useState<LabRow[]>([]);
+  const [repairTypes, setRepairTypes] = useState<RepairTypeRow[]>([]);
+  
+  // Filters
+  const [filterLab, setFilterLab] = useState<string>('all');
+  const [filterRepairType, setFilterRepairType] = useState<string>('all');
+  const [dateRange, setDateRange] = useState<DateRangeOption>('month');
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+
+  // Initialize Dates
+  useEffect(() => {
+    const now = new Date();
+    const start = new Date();
+    
+    switch (dateRange) {
+      case 'week': start.setDate(now.getDate() - 7); break;
+      case 'month': start.setMonth(now.getMonth() - 1); break;
+      case 'quarter': start.setMonth(now.getMonth() - 3); break;
+      case 'year': start.setFullYear(now.getFullYear() - 1); break;
+      case 'custom': return; // Don't change dates automatically
+    }
+    
+    setStartDate(start.toISOString().split('T')[0]);
+    setEndDate(now.toISOString().split('T')[0]);
+  }, [dateRange]);
+
+  // Initial Data Fetch (Labs & Types)
+  useEffect(() => {
+    const fetchMetaData = async () => {
+      try {
+        const [labsRes, typesRes] = await Promise.all([
+          supabase.from('users').select('id, full_name, email').eq('role', 'lab').order('full_name'),
+          supabase.from('repair_types').select('id, name, is_active').order('name')
+        ]);
+
+        if (labsRes.data) setLabs(labsRes.data as LabRow[]);
+        if (typesRes.data) setRepairTypes(typesRes.data as RepairTypeRow[]);
+      } catch (error) {
+        console.error('Error fetching metadata:', error);
+      }
+    };
+    fetchMetaData();
+  }, [supabase]);
+
+  // Fetch Repairs based on filters
+  const fetchRepairs = useCallback(async () => {
+    if (!startDate || !endDate) return;
+
     try {
       setIsLoading(true);
-
-      // Fetch all labs
-      const { data: labsData } = await supabase
-        .from('users')
-        .select('id, full_name, email, phone')
-        .eq('role', 'lab')
-        .order('full_name')
-        .returns<LabRow[]>();
-
-      setLabs(labsData || []);
-
-      // Fetch all repair types
-      const { data: repairTypesData } = await supabase
-        .from('repair_types')
-        .select('id, name, is_active')
-        .eq('is_active', true)
-        .order('name')
-        .returns<RepairTypeRow[]>();
-
-      setRepairTypes(repairTypesData || []);
-
-      // Fetch all repairs with related data
-      const { data: repairsData } = await supabase
+      let query = supabase
         .from('repairs')
         .select(`
           *,
@@ -137,275 +165,193 @@ export default function AdminRepairsReportPage() {
           ),
           repair_type:repair_types(id, name)
         `)
-        .order('created_at', { ascending: false })
-        .returns<AdminRepair[]>();
+        .gte('created_at', startDate)
+        .lte('created_at', endDate + 'T23:59:59');
 
-      setAllRepairs(repairsData || []);
+      if (filterLab !== 'all') query = query.eq('lab_id', filterLab);
+      if (filterRepairType !== 'all') query = query.eq('repair_type_id', filterRepairType);
 
-      // Extract available months
-      const months = new Set<string>();
-      (repairsData || []).forEach(repair => {
-        const month = repair.created_at.substring(0, 7);
-        months.add(month);
-      });
-      setAvailableMonths(Array.from(months).sort((a, b) => b.localeCompare(a)));
+      const { data, error } = await query.order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setAllRepairs((data || []) as AdminRepair[]);
 
     } catch (error) {
-      console.error('Error fetching data:', error);
-      toast({
-        title: 'שגיאה',
-        description: 'לא ניתן לטעון את הנתונים',
-        variant: 'destructive',
-      });
+      console.error('Error fetching repairs:', error);
+      toast({ title: 'שגיאה', description: 'לא ניתן לטעון נתונים', variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }
-  }, [supabase, toast]);
-
-  const processReport = useCallback(() => {
-    let filteredRepairs = [...allRepairs];
-
-    // Apply filters
-    if (filterLab !== 'all') {
-      filteredRepairs = filteredRepairs.filter(r => r.lab_id === filterLab);
-    }
-    if (filterRepairType !== 'all') {
-      filteredRepairs = filteredRepairs.filter(r => r.repair_type_id === filterRepairType);
-    }
-    if (filterMonth !== 'all') {
-      filteredRepairs = filteredRepairs.filter(r => r.created_at.startsWith(filterMonth));
-    }
-
-    // Process statistics
-    const byLab: Record<string, { count: number; revenue: number }> = {};
-    const byRepairType: Record<string, { count: number; revenue: number }> = {};
-    const byMonth: Record<string, { count: number; revenue: number }> = {};
-    let totalRevenue = 0;
-
-    filteredRepairs.forEach(repair => {
-      const revenue = repair.cost || 0;
-      totalRevenue += revenue;
-
-      // By Lab
-      const labName = repair.lab?.full_name || repair.lab?.email || 'לא ידוע';
-      if (!byLab[labName]) {
-        byLab[labName] = { count: 0, revenue: 0 };
-      }
-      byLab[labName].count++;
-      byLab[labName].revenue += revenue;
-
-      // By Repair Type
-      const repairTypeName = repair.repair_type?.name || faultTypeLabels[repair.fault_type as FaultType] || 'לא ידוע';
-      if (!byRepairType[repairTypeName]) {
-        byRepairType[repairTypeName] = { count: 0, revenue: 0 };
-      }
-      byRepairType[repairTypeName].count++;
-      byRepairType[repairTypeName].revenue += revenue;
-
-      // By Month
-      const month = repair.created_at.substring(0, 7);
-      if (!byMonth[month]) {
-        byMonth[month] = { count: 0, revenue: 0 };
-      }
-      byMonth[month].count++;
-      byMonth[month].revenue += revenue;
-    });
-
-    setReport({
-      repairs: filteredRepairs,
-      byLab,
-      byRepairType,
-      byMonth,
-      totalRepairs: filteredRepairs.length,
-      totalRevenue
-    });
-  }, [allRepairs, filterLab, filterRepairType, filterMonth]);
+  }, [supabase, startDate, endDate, filterLab, filterRepairType, toast]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    fetchRepairs();
+  }, [fetchRepairs]);
 
-  useEffect(() => {
-    processReport();
-  }, [processReport]);
+  // Derived Stats & Charts Data
+  const stats = useMemo(() => {
+    const total = allRepairs.length;
+    const completed = allRepairs.filter(r => r.status === 'completed').length;
+    // Changed semantic from revenue to cost
+    const totalCost = allRepairs.reduce((sum, r) => sum + (r.cost || 0), 0);
+    const pending = allRepairs.filter(r => ['received', 'in_progress'].includes(r.status)).length;
 
-  const exportToCSV = () => {
-    const selectedLab = filterLab === 'all' ? null : labs.find(l => l.id === filterLab);
-    const labLabel = filterLab === 'all' ? 'הכל' : (selectedLab?.full_name || selectedLab?.email || '');
-    const selectedRepairType = filterRepairType === 'all' ? null : repairTypes.find(rt => rt.id === filterRepairType);
-    const repairTypeLabel = filterRepairType === 'all' ? 'הכל' : (selectedRepairType?.name || '');
+    return { total, completed, totalCost, pending };
+  }, [allRepairs]);
+
+  const chartData = useMemo(() => {
+    // 1. Daily Trend (Cost & Count)
+    const dailyMap = new Map<string, { date: string; cost: number; count: number }>();
+    
+    allRepairs.forEach(r => {
+      const date = new Date(r.created_at).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' });
+      const current = dailyMap.get(date) || { date, cost: 0, count: 0 };
+      dailyMap.set(date, {
+        date,
+        cost: current.cost + (r.cost || 0),
+        count: current.count + 1
+      });
+    });
+
+    const trendData = Array.from(dailyMap.values()).reverse(); 
+
+    // 2. Status Distribution
+    const statusMap = new Map<string, number>();
+    allRepairs.forEach(r => {
+      const label = statusLabels[r.status] || r.status;
+      statusMap.set(label, (statusMap.get(label) || 0) + 1);
+    });
+    const statusData = Array.from(statusMap.entries()).map(([name, value]) => ({ name, value }));
+
+    // 3. Repair Type Distribution
+    const typeMap = new Map<string, number>();
+    allRepairs.forEach(r => {
+      let label = 'אחר';
+      if (r.repair_type?.name) label = r.repair_type.name;
+      else if (r.custom_repair_description) label = 'מותאם אישית';
+      else if (r.fault_type) label = faultTypeLabels[r.fault_type] || r.fault_type;
+      
+      typeMap.set(label, (typeMap.get(label) || 0) + 1);
+    });
+    const typeData = Array.from(typeMap.entries())
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 6); // Top 6 types
+
+    // 4. Lab Performance
+    const labMap = new Map<string, { name: string; count: number; cost: number }>();
+    allRepairs.forEach(r => {
+      const name = r.lab?.full_name || r.lab?.email || 'לא משויך';
+      const current = labMap.get(name) || { name, count: 0, cost: 0 };
+      labMap.set(name, {
+        name,
+        count: current.count + 1,
+        cost: current.cost + (r.cost || 0)
+      });
+    });
+    const labData = Array.from(labMap.values()).sort((a, b) => b.cost - a.cost);
+
+    return { trendData, statusData, typeData, labData };
+  }, [allRepairs]);
+
+  const handleExport = () => {
     const csvContent = [
-      ['דוח תיקונים מפורט'],
-      ['תאריך הפקה: ' + new Date().toLocaleDateString('he-IL')],
-      [''],
-      ['סינונים:'],
-      ['מעבדה: ' + labLabel],
-      ['סוג תיקון: ' + repairTypeLabel],
-      ['חודש: ' + (filterMonth === 'all' ? 'הכל' : filterMonth)],
-      [''],
-      ['סיכום כללי'],
-      ['סה"כ תיקונים', 'סה"כ עלות', 'מחיר ממוצע'],
-      [report.totalRepairs, formatCurrency(report.totalRevenue), formatCurrency(report.totalRepairs > 0 ? report.totalRevenue / report.totalRepairs : 0)],
-      [''],
-      ['פילוח לפי מעבדה'],
-      ['מעבדה', 'כמות', 'הכנסה', 'ממוצע'],
-      ...Object.entries(report.byLab)
-        .sort((a, b) => b[1].revenue - a[1].revenue)
-        .map(([lab, data]) => [
-          lab,
-          data.count,
-          formatCurrency(data.revenue),
-          formatCurrency(data.revenue / data.count)
-        ]),
-      [''],
-      ['פילוח לפי סוג תיקון'],
-      ['סוג תיקון', 'כמות', 'הכנסה', 'ממוצע'],
-      ...Object.entries(report.byRepairType)
-        .sort((a, b) => b[1].count - a[1].count)
-        .map(([type, data]) => [
-          type,
-          data.count,
-          formatCurrency(data.revenue),
-          formatCurrency(data.revenue / data.count)
-        ]),
-      [''],
-      ['פילוח לפי חודש'],
-      ['חודש', 'כמות', 'הכנסה', 'ממוצע'],
-      ...Object.entries(report.byMonth)
-        .sort((a, b) => b[0].localeCompare(a[0]))
-        .map(([month, data]) => [
-          month,
-          data.count,
-          formatCurrency(data.revenue),
-          formatCurrency(data.revenue / data.count)
-        ]),
-      [''],
-      ['פירוט תיקונים'],
       ['תאריך', 'מכשיר', 'תיקון', 'מעבדה', 'חנות', 'סטטוס', 'עלות'],
-      ...report.repairs.map(repair => [
-        formatDate(repair.created_at),
-        `${repair.device?.device_models?.model_name || 'לא ידוע'} - ${repair.device?.imei}`,
-        repair.repair_type?.name || faultTypeLabels[repair.fault_type as FaultType] || 'לא ידוע',
-        repair.lab?.full_name || repair.lab?.email || '',
-        repair.warranty?.store?.full_name || repair.warranty?.store?.email || '',
-        statusLabels[repair.status] || repair.status,
-        formatCurrency(repair.cost || 0)
+      ...allRepairs.map(r => [
+        formatDate(r.created_at),
+        `${r.device?.device_models?.model_name || ''} - ${r.device?.imei || ''}`,
+        r.repair_type?.name || r.custom_repair_description || faultTypeLabels[r.fault_type as string] || '',
+        r.lab?.full_name || '',
+        r.warranty?.store?.full_name || '',
+        statusLabels[r.status] || r.status,
+        (r.cost || 0).toString()
       ])
-    ].map(row => row.join(',')).join('\n');
+    ].map(e => e.join(',')).join('\n');
 
     const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `repairs_report_${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `repairs_report_${startDate}_${endDate}.csv`;
     link.click();
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
+    <div className="space-y-6 pb-10" dir="rtl">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex items-center gap-2 mb-1">
             <Link href="/admin/reports">
-              <Button variant="ghost" size="sm">
-                <ArrowRight className="ms-1 h-4 w-4" />
+              <Button variant="ghost" size="sm" className="p-0 h-auto hover:bg-transparent text-muted-foreground hover:text-primary">
+                <ArrowRight className="h-4 w-4 ml-1" />
                 חזרה לדוחות
               </Button>
             </Link>
           </div>
-          <h1 className="text-3xl font-bold tracking-tight">דוח תיקונים מפורט</h1>
-          <p className="text-muted-foreground">
-            ניתוח מעמיק של תיקונים לפי מעבדות, סוגי תקלות וחודשים
-          </p>
+          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+            <Activity className="h-8 w-8 text-primary" />
+            דוח תיקונים ועלויות
+          </h1>
+          <p className="text-muted-foreground">מעקב אחר ביצועי מעבדות והוצאות תיקונים</p>
         </div>
-        <Button onClick={exportToCSV} variant="outline">
+        <Button onClick={handleExport} variant="outline" className="gap-2">
+          <Download className="h-4 w-4" />
           ייצוא לאקסל
-          <Download className="ms-2 h-4 w-4" />
         </Button>
       </div>
 
       {/* Filters */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-end" dir="rtl">
-          <div className="flex items-center gap-2">
-            <CardTitle>סינונים</CardTitle>
-            <Filter className="h-5 w-5" />
-            {(filterLab !== 'all' || filterRepairType !== 'all' || filterMonth !== 'all') && (
-              <Badge variant="secondary" className="mr-2">
-                {[filterLab !== 'all', filterRepairType !== 'all', filterMonth !== 'all'].filter(Boolean).length} פעילים
-              </Badge>
+        <CardContent className="p-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
+            
+            {/* Date Filters */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">טווח תאריכים</label>
+              <Select value={dateRange} onValueChange={(v: any) => setDateRange(v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent dir="rtl">
+                  <SelectItem value="week">שבוע אחרון</SelectItem>
+                  <SelectItem value="month">חודש אחרון</SelectItem>
+                  <SelectItem value="quarter">רבעון אחרון</SelectItem>
+                  <SelectItem value="year">שנה אחרונה</SelectItem>
+                  <SelectItem value="custom">מותאם אישית</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {dateRange === 'custom' && (
+              <>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">מתאריך</label>
+                  <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">עד תאריך</label>
+                  <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+                </div>
+              </>
             )}
-          </div>
-          {(filterLab !== 'all' || filterRepairType !== 'all' || filterMonth !== 'all') && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setFilterLab('all');
-                setFilterRepairType('all');
-                setFilterMonth('all');
-              }}
-            >
-              איפוס סינונים
-            </Button>
-          )}
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-3">
-            <div>
+
+            {/* Other Filters */}
+            <div className="space-y-2">
               <label className="text-sm font-medium">מעבדה</label>
               <Select value={filterLab} onValueChange={setFilterLab}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
+                <SelectTrigger><SelectValue placeholder="כל המעבדות" /></SelectTrigger>
+                <SelectContent dir="rtl">
                   <SelectItem value="all">כל המעבדות</SelectItem>
-                  {labs.map((lab) => (
-                    <SelectItem key={lab.id} value={lab.id}>
-                      {lab.full_name || lab.email}
-                    </SelectItem>
-                  ))}
+                  {labs.map(l => <SelectItem key={l.id} value={l.id}>{l.full_name || l.email}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
 
-            <div>
+            <div className="space-y-2">
               <label className="text-sm font-medium">סוג תיקון</label>
               <Select value={filterRepairType} onValueChange={setFilterRepairType}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">כל סוגי התיקונים</SelectItem>
-                  {repairTypes.map((repairType) => (
-                    <SelectItem key={repairType.id} value={repairType.id}>
-                      {repairType.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium">חודש</label>
-              <Select value={filterMonth} onValueChange={setFilterMonth}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">כל החודשים</SelectItem>
-                  {availableMonths.map((month) => (
-                    <SelectItem key={month} value={month}>
-                      {month}
-                    </SelectItem>
-                  ))}
+                <SelectTrigger><SelectValue placeholder="כל הסוגים" /></SelectTrigger>
+                <SelectContent dir="rtl">
+                  <SelectItem value="all">כל הסוגים</SelectItem>
+                  {repairTypes.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -413,241 +359,296 @@ export default function AdminRepairsReportPage() {
         </CardContent>
       </Card>
 
-      {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
-            <Wrench className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-sm font-medium">סה"כ תיקונים</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-right">{report.totalRepairs}</div>
-          </CardContent>
-        </Card>
+      {isLoading ? (
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        </div>
+      ) : (
+        <>
+          {/* Metrics Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card className="border-l-4 border-l-blue-500">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">סה"כ תיקונים</p>
+                    <h3 className="text-2xl font-bold mt-1">{stats.total}</h3>
+                  </div>
+                  <div className="h-10 w-10 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center">
+                    <Wrench className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
-            <TrendingUp className="h-4 w-4 text-green-600" />
-            <CardTitle className="text-sm font-medium">סה"כ עלות</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-right">{formatCurrency(report.totalRevenue)}</div>
-          </CardContent>
-        </Card>
+            {/* CHANGED: Color to Red/Orange to indicate Expense */}
+            <Card className="border-l-4 border-l-red-500">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    {/* CHANGED: Label to Expenses */}
+                    <p className="text-sm font-medium text-muted-foreground">סה״כ עלות למעבדות</p>
+                    <h3 className="text-2xl font-bold mt-1 text-red-600 dark:text-red-400">{formatCurrency(stats.totalCost)}</h3>
+                  </div>
+                  <div className="h-10 w-10 bg-red-100 dark:bg-red-900 rounded-full flex items-center justify-center">
+                    <Wallet className="h-5 w-5 text-red-600 dark:text-red-400" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
-            <Building2 className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-sm font-medium">מעבדות פעילות</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-right">{Object.keys(report.byLab).length}</div>
-          </CardContent>
-        </Card>
+            <Card className="border-l-4 border-l-purple-500">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">הושלמו</p>
+                    <h3 className="text-2xl font-bold mt-1">{stats.completed}</h3>
+                  </div>
+                  <div className="h-10 w-10 bg-purple-100 dark:bg-purple-900 rounded-full flex items-center justify-center">
+                    <CheckCircle2 className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2" dir="rtl">
-            <ShekelIcon className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-sm font-medium">מחיר ממוצע</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-right">
-              {formatCurrency(report.totalRepairs > 0 ? report.totalRevenue / report.totalRepairs : 0)}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+            <Card className="border-l-4 border-l-orange-500">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">בטיפול / ממתין</p>
+                    <h3 className="text-2xl font-bold mt-1">{stats.pending}</h3>
+                  </div>
+                  <div className="h-10 w-10 bg-orange-100 dark:bg-orange-900 rounded-full flex items-center justify-center">
+                    <Clock className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
 
-      {/* Statistics Tables */}
-      <div className="grid gap-6 md:grid-cols-3">
-        {/* By Lab */}
-        <Card>
-          <CardHeader>
-            <CardTitle>פילוח לפי מעבדה</CardTitle>
-            <CardDescription>סה"כ {Object.keys(report.byLab).length} מעבדות</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-right">מעבדה</TableHead>
-                  <TableHead className="text-right">תיקונים</TableHead>
-                  <TableHead className="text-right">הכנסה</TableHead>
-                  <TableHead className="text-right">ממוצע</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {Object.entries(report.byLab)
-                  .sort((a, b) => b[1].revenue - a[1].revenue)
-                  .map(([lab, data]) => (
-                    <TableRow key={lab}>
-                      <TableCell className="font-medium">{lab}</TableCell>
-                      <TableCell>{data.count}</TableCell>
-                      <TableCell>{formatCurrency(data.revenue)}</TableCell>
-                      <TableCell>{formatCurrency(data.revenue / data.count)}</TableCell>
+          {/* Charts Section */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Cost Trend */}
+            <Card className="col-span-1 lg:col-span-2">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5 text-primary" />
+                  מגמת עלויות תיקונים
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="h-[350px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartData.trendData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                    <defs>
+                      {/* CHANGED: Gradient to Red */}
+                      <linearGradient id="colorCost" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#ef4444" stopOpacity={0.1}/>
+                        <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    {/* FIXED: XAxis overlapping by adding minTickGap */}
+                    <XAxis dataKey="date" minTickGap={30} tick={{ fontSize: 12 }} />
+                    <YAxis yAxisId="left" orientation="right" tickFormatter={(v) => `₪${v}`} tick={{ fontSize: 12 }} />
+                    <YAxis yAxisId="right" orientation="left" tick={{ fontSize: 12 }} />
+                    <Tooltip 
+                      formatter={(value: any, name: any) => {
+                        if (name === 'עלות') return formatCurrency(value);
+                        return value;
+                      }}
+                      labelStyle={{ textAlign: 'right', direction: 'rtl' }}
+                    />
+                    <Legend />
+                    {/* CHANGED: Semantic names and colors */}
+                    <Area yAxisId="left" type="monotone" dataKey="cost" name="עלות" stroke="#ef4444" fillOpacity={1} fill="url(#colorCost)" />
+                    <Bar yAxisId="right" dataKey="count" name="כמות תיקונים" barSize={20} fill="#3b82f6" opacity={0.5} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            {/* Repair Types Distribution - LTR FIX */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <BarChartIcon className="h-5 w-5 text-primary" />
+                  סוגי תיקונים נפוצים
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="h-[350px]" dir="ltr"> {/* Force LTR for the chart container */}
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart 
+                    layout="vertical" 
+                    data={chartData.typeData} 
+                    margin={{ left: 0, right: 30, bottom: 20, top: 10 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
+                    
+                    {/* ציר X רגיל (מספרים משמאל לימין) */}
+                    <XAxis type="number" />
+                    
+                    {/* ציר Y בצד שמאל (ברירת מחדל)
+                        width={100} - שומר מקום לטקסט בעברית בצד שמאל
+                    */}
+                    <YAxis 
+                      dataKey="name" 
+                      type="category" 
+                      width={100} 
+                      tick={{ fontSize: 12, fill: '#6b7280' }} 
+                      interval={0}
+                    />
+                    
+                    {/* הטולטיפ עדיין מיושר לימין כדי שיהיה קריא בעברית */}
+                    <Tooltip 
+                      cursor={{fill: '#f3f4f6'}}
+                      formatter={(value: any) => [value, 'כמות']}
+                      contentStyle={{ direction: 'rtl', textAlign: 'right', borderRadius: '8px' }}
+                    />
+                    
+                    {/* הברים צומחים ימינה, אז נעגל את הפינות הימניות: [0, 4, 4, 0] */}
+                    <Bar dataKey="value" name="כמות" fill="#8b5cf6" radius={[0, 4, 4, 0]} barSize={32}>
+                      {chartData.typeData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            {/* Status Distribution */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <PieChartIcon className="h-5 w-5 text-primary" />
+                  התפלגות סטטוסים
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="h-[350px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={chartData.statusData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={80}
+                      paddingAngle={5}
+                      dataKey="value"
+                      nameKey="name"
+                    >
+                      {chartData.statusData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                    <Legend verticalAlign="bottom" height={36} iconType="circle" />
+                  </PieChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Lab Performance Table */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <Card className="lg:col-span-3">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Building2 className="h-5 w-5 text-primary" />
+                  ביצועי מעבדות ועלויות
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-right">שם המעבדה</TableHead>
+                      <TableHead className="text-center">כמות תיקונים</TableHead>
+                      <TableHead className="text-left">סה"כ לתשלום</TableHead>
+                      <TableHead className="text-left">ממוצע לתיקון</TableHead>
                     </TableRow>
-                  ))}
-                {Object.keys(report.byLab).length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={4} className="text-center text-muted-foreground">
-                      אין נתונים להצגה
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {chartData.labData.map((lab, idx) => (
+                      <TableRow key={idx}>
+                        <TableCell className="font-medium">{lab.name}</TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant="secondary">{lab.count}</Badge>
+                        </TableCell>
+                        <TableCell className="text-left font-medium text-red-600">
+                          {formatCurrency(lab.cost)}
+                        </TableCell>
+                        <TableCell className="text-left text-muted-foreground">
+                          {formatCurrency(lab.count > 0 ? lab.cost / lab.count : 0)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </div>
 
-        {/* By Repair Type */}
-        <Card>
-          <CardHeader>
-            <CardTitle>פילוח לפי סוג תיקון</CardTitle>
-            <CardDescription>התפלגות סוגי התיקונים</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-right">סוג תיקון</TableHead>
-                  <TableHead className="text-right">תיקונים</TableHead>
-                  <TableHead className="text-right">הכנסה</TableHead>
-                  <TableHead className="text-right">ממוצע</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {Object.entries(report.byRepairType)
-                  .sort((a, b) => b[1].count - a[1].count)
-                  .map(([type, data]) => (
-                    <TableRow key={type}>
-                      <TableCell className="font-medium">
-                        {type}
-                      </TableCell>
-                      <TableCell>{data.count}</TableCell>
-                      <TableCell>{formatCurrency(data.revenue)}</TableCell>
-                      <TableCell>{formatCurrency(data.revenue / data.count)}</TableCell>
-                    </TableRow>
-                  ))}
-                {Object.keys(report.byRepairType).length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={4} className="text-center text-muted-foreground">
-                      אין נתונים להצגה
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-
-        {/* By Month */}
-        <Card>
-          <CardHeader>
-            <CardTitle>פילוח לפי חודש</CardTitle>
-            <CardDescription>מגמה חודשית</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-right">חודש</TableHead>
-                  <TableHead className="text-right">תיקונים</TableHead>
-                  <TableHead className="text-right">הכנסה</TableHead>
-                  <TableHead className="text-right">ממוצע</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {Object.entries(report.byMonth)
-                  .sort((a, b) => b[0].localeCompare(a[0]))
-                  .map(([month, data]) => (
-                    <TableRow key={month}>
-                      <TableCell className="font-medium">{month}</TableCell>
-                      <TableCell>{data.count}</TableCell>
-                      <TableCell>{formatCurrency(data.revenue)}</TableCell>
-                      <TableCell>{formatCurrency(data.revenue / data.count)}</TableCell>
-                    </TableRow>
-                  ))}
-                {Object.keys(report.byMonth).length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={4} className="text-center text-muted-foreground">
-                      אין נתונים להצגה
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Detailed Repairs List */}
-      <Card>
-        <CardHeader>
-          <CardTitle>רשימת תיקונים מפורטת ({report.repairs.length})</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {report.repairs.length === 0 ? (
-            <div className="text-center py-12">
-              <Wrench className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">אין תיקונים להצגה</h3>
-              <p className="text-muted-foreground">
-                {(filterLab !== 'all' || filterRepairType !== 'all' || filterMonth !== 'all')
-                  ? 'נסה לשנות את הסינונים כדי לראות תוצאות'
-                  : 'עדיין לא בוצעו תיקונים במערכת'}
-              </p>
-            </div>
-          ) : (
-            <>
+          {/* Detailed List */}
+          <Card>
+            <CardHeader>
+              <CardTitle>פירוט תיקונים</CardTitle>
+              <CardDescription>
+                רשימת התיקונים בטווח הנבחר ({allRepairs.length} רשומות)
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="text-right">תאריך</TableHead>
                     <TableHead className="text-right">מכשיר</TableHead>
-                    <TableHead className="text-right">תיקון</TableHead>
+                    <TableHead className="text-right">סוג תיקון</TableHead>
                     <TableHead className="text-right">מעבדה</TableHead>
                     <TableHead className="text-right">חנות</TableHead>
-                    <TableHead className="text-right">סטטוס</TableHead>
-                    <TableHead className="text-right">עלות</TableHead>
+                    <TableHead className="text-center">סטטוס</TableHead>
+                    <TableHead className="text-left">עלות (חוב)</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {report.repairs.slice(0, 50).map((repair) => (
-                    <TableRow key={repair.id}>
-                      <TableCell>{formatDate(repair.created_at)}</TableCell>
-                      <TableCell>
-                        <div>
-                          <div className="font-medium">{repair.device?.device_models?.model_name || 'לא ידוע'}</div>
-                          <div className="text-xs text-muted-foreground">{repair.device?.imei}</div>
+                  {allRepairs.slice(0, 50).map((repair) => (
+                    <TableRow key={repair.id} className="hover:bg-muted/50">
+                      <TableCell className="text-xs">
+                        {formatDate(repair.created_at)}
+                        <div className="text-muted-foreground text-[10px]">
+                          {new Date(repair.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
                         </div>
                       </TableCell>
-                      <TableCell>{repair.repair_type?.name || faultTypeLabels[repair.fault_type as FaultType] || 'לא ידוע'}</TableCell>
-                      <TableCell>{repair.lab?.full_name || repair.lab?.email || '-'}</TableCell>
-                      <TableCell>{repair.warranty?.store?.full_name || repair.warranty?.store?.email || '-'}</TableCell>
                       <TableCell>
-                        <Badge variant={
-                          repair.status === 'completed' ? 'default' :
-                            repair.status === 'in_progress' ? 'secondary' :
-                              repair.status === 'replacement_requested' ? 'destructive' :
-                                repair.status === 'cancelled' ? 'outline' :
-                                  'outline'
-                        }>
+                        <div className="text-sm font-medium">{repair.device?.device_models?.model_name || 'לא ידוע'}</div>
+                        <div className="text-xs text-muted-foreground font-mono">{repair.device?.imei}</div>
+                      </TableCell>
+                      <TableCell>
+                        {repair.repair_type?.name || repair.custom_repair_description || faultTypeLabels[repair.fault_type as string] || 'אחר'}
+                      </TableCell>
+                      <TableCell>{repair.lab?.full_name || 'לא משויך'}</TableCell>
+                      <TableCell>{repair.warranty?.store?.full_name || '-'}</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant={repair.status === 'completed' ? 'default' : 'outline'}>
                           {statusLabels[repair.status] || repair.status}
                         </Badge>
                       </TableCell>
-                      <TableCell className="font-medium">{formatCurrency(repair.cost || 0)}</TableCell>
+                      <TableCell className="text-left font-medium text-red-600">
+                        {repair.cost ? formatCurrency(repair.cost) : '-'}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
-              {report.repairs.length > 50 && (
-                <div className="text-center mt-4 text-sm text-muted-foreground">
-                  מוצגות 50 תוצאות ראשונות מתוך {report.repairs.length}
+              {allRepairs.length > 50 && (
+                <div className="text-center p-4 text-sm text-muted-foreground">
+                  מציג 50 מתוך {allRepairs.length} רשומות. השתמש בייצוא לאקסל לצפייה מלאה.
                 </div>
               )}
-            </>
-          )}
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        </>
+      )}
     </div>
   );
 }
