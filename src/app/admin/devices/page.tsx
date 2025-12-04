@@ -833,6 +833,51 @@ export default function DevicesPage() {
         </CardContent>
       </Card>
 
+      {/* Pagination Controls */}
+      <div className="flex items-center justify-between">
+        <div className="text-sm text-muted-foreground">
+          מציג {((page - 1) * pageSize) + 1}-{Math.min(page * pageSize, totalCount)} מתוך {totalCount} מכשירים
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage(1)}
+            disabled={page === 1 || isFetching}
+          >
+            « ראשון
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page === 1 || isFetching}
+          >
+            <ChevronRight className="h-4 w-4" />
+            הקודם
+          </Button>
+          <span className="text-sm px-2">
+            עמוד {page} מתוך {Math.max(1, totalPages)}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages || isFetching}
+          >
+            הבא
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage(totalPages)}
+            disabled={page >= totalPages || isFetching}
+          >
+            אחרון »
+          </Button>
+        </div>
+      </div>
       {/* Table */}
       <Card>
         <CardContent className="p-0">
