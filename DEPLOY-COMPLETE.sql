@@ -1680,16 +1680,20 @@ SET search_path TO 'public'
 AS $$
 BEGIN
   -- Insert bypassing RLS by using SECURITY DEFINER context
-  INSERT INTO public.users (id, email, full_name, phone, role, is_active, created_by)
-  VALUES (
-    NEW.id,
-    NEW.email,
-    NULLIF(TRIM(NEW.raw_user_meta_data->>'full_name'), ''),
-    NULLIF(TRIM(NEW.raw_user_meta_data->>'phone'), ''),
-    COALESCE((NEW.raw_user_meta_data->>'role')::user_role, 'store'),
-    true,
-    NULL
-  );
+-- קוד ישן (מסוכן - מפעיל את המשתמש מיד):
+INSERT INTO public.users (..., is_active, ...)
+VALUES (..., true, ...);
+
+INSERT INTO public.users (id, email, full_name, phone, role, is_active, created_by)
+VALUES (
+  NEW.id,
+  NEW.email,
+  NULLIF(TRIM(NEW.raw_user_meta_data->>'full_name'), ''),
+  NULLIF(TRIM(NEW.raw_user_meta_data->>'phone'), ''),
+  'store',
+  false,
+  NULL
+);
   RETURN NEW;
 EXCEPTION
   WHEN OTHERS THEN
@@ -2231,10 +2235,6 @@ CREATE POLICY "public_select" ON device_models FOR SELECT TO authenticated USING
 
 -- Devices Policies
 CREATE POLICY "admin_all" ON devices FOR ALL TO authenticated USING (is_admin()) WITH CHECK (is_admin());
--- ℹ️ NOTE: All authenticated users can view devices (IMEI lookup needed for warranty activation & repairs)
--- This is acceptable as devices table contains no customer PII - only technical device info (IMEI, model, etc)
--- Customer data is protected in warranties/repairs tables via their own RLS policies
-CREATE POLICY "authenticated_select" ON devices FOR SELECT TO authenticated USING (true);
 
 -- Repair Types Policies
 CREATE POLICY "admin_all" ON repair_types FOR ALL TO authenticated USING (is_admin()) WITH CHECK (is_admin());
