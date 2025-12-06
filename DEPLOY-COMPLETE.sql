@@ -2458,6 +2458,33 @@ CREATE POLICY "admin_all_access" ON public.audit_log FOR ALL USING (public.is_ad
 DROP POLICY IF EXISTS "service_role_insert" ON public.audit_log;
 CREATE POLICY "service_role_insert" ON public.audit_log FOR INSERT WITH CHECK (auth.role() = 'service_role');
 
+
+-- ===============================================
+-- SECTION 14: REALTIME CONFIGURATION
+-- ===============================================
+
+DO $$
+BEGIN
+  RAISE NOTICE '📡 Configuring Realtime publication...';
+END $$;
+
+BEGIN;
+  
+  -- הוספת הטבלאות למעקב Realtime
+  ALTER PUBLICATION supabase_realtime ADD TABLE 
+    devices, 
+    warranties, 
+    repairs, 
+    replacement_requests, 
+    notifications, 
+    payments;
+EXCEPTION
+  WHEN duplicate_object THEN
+    RAISE NOTICE 'Tables already in publication, skipping...';
+  WHEN undefined_object THEN
+    RAISE WARNING 'Publication supabase_realtime does not exist (are you running locally?)';
+END;
+
 -- ===============================================
 -- COMPLETION
 -- ===============================================

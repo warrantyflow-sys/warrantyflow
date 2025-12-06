@@ -173,7 +173,7 @@ export default function DevicesPage() {
     warrantyStatus: filterStatus
   });
 
-  const devices = devicesData?.data || [];
+  const devices = useMemo(() => devicesData?.data || [], [devicesData?.data]);
   const totalCount = devicesData?.count || 0;
   const totalPages = Math.ceil(totalCount / pageSize);
 

@@ -56,7 +56,7 @@ export default function ReplacementsPage() {
   const [selectedRequest, setSelectedRequest] = useState<any>(null);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
   const [isDecisionDialogOpen, setIsDecisionDialogOpen] = useState(false);
-  const [decision, setDecision] = useState<'approve' | 'reject'>('approve');
+  // decision state removed - dialog is now neutral
   const [adminNotes, setAdminNotes] = useState('');
 
   // User ID for audit log
@@ -82,11 +82,10 @@ export default function ReplacementsPage() {
   const totalCount = requestsData?.count || 0;
   const totalPages = Math.ceil(totalCount / pageSize);
   
-  const isLoading = isRequestsLoading; // Main loading state
+  const isLoading = isRequestsLoading;
 
   // --- Effects ---
 
-  // Debounce Search
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(searchQuery);
@@ -95,12 +94,10 @@ export default function ReplacementsPage() {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Reset page on filter change
   useEffect(() => {
     setPage(1);
   }, [filterStatus]);
 
-  // Load User ID once
   useEffect(() => {
     const loadUserId = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -125,7 +122,6 @@ export default function ReplacementsPage() {
   const handleRowClick = (request: any) => {
     setSelectedRequest(request);
     if (request.status === 'pending') {
-      setDecision('approve');
       setAdminNotes('');
       setIsDecisionDialogOpen(true);
     } else {
@@ -133,9 +129,10 @@ export default function ReplacementsPage() {
     }
   };
 
-  const handleDecision = async () => {
+  const handleDecision = async (action: 'approve' | 'reject') => {
     if (!selectedRequest) return;
-    if (decision === 'reject' && !adminNotes.trim()) {
+    
+    if (action === 'reject' && !adminNotes.trim()) {
       toast({
         title: 'שגיאה',
         description: 'יש לציין סיבת דחייה',
@@ -147,7 +144,7 @@ export default function ReplacementsPage() {
     try {
       if (!currentUserId) throw new Error('משתמש לא מחובר');
 
-      if (decision === 'approve') {
+      if (action === 'approve') {
         const { error } = await supabase.rpc('approve_replacement', {
           p_request_id: selectedRequest.id,
           p_admin_notes: adminNotes || null,
@@ -155,7 +152,6 @@ export default function ReplacementsPage() {
 
         if (error) throw error;
 
-        // Audit Log
         supabase.from('audit_log').insert({
           actor_user_id: currentUserId,
           action: 'replacement.approve',
@@ -180,7 +176,6 @@ export default function ReplacementsPage() {
 
         if (error) throw error;
 
-        // Audit Log
         supabase.from('audit_log').insert({
           actor_user_id: currentUserId,
           action: 'replacement.reject',
@@ -202,7 +197,6 @@ export default function ReplacementsPage() {
 
       setIsDecisionDialogOpen(false);
       setAdminNotes('');
-      // Data updates automatically via Realtime subscription in the hook
     } catch (error) {
       console.error('Error processing decision:', error);
       toast({
@@ -328,8 +322,6 @@ export default function ReplacementsPage() {
           </div>
         </CardHeader>
         <CardContent>
-          
-          {/* Pagination Top */}
           <PaginationControls 
              page={page} totalPages={totalPages} totalCount={totalCount} 
              pageSize={pageSize} onPageChange={setPage} isFetching={isFetching} 
@@ -419,32 +411,14 @@ export default function ReplacementsPage() {
                       </Button>
 
                       {request.status === 'pending' && (
-                        <>
-                          <Button
+                        <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => {
-                              setSelectedRequest(request);
-                              setDecision('approve');
-                              setIsDecisionDialogOpen(true);
-                            }}
-                            title="אשר"
+                            onClick={() => handleRowClick(request)} // Opens the unified decision dialog
+                            title="טפל בבקשה"
                           >
                             <CheckCircle className="h-4 w-4" />
                           </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => {
-                              setSelectedRequest(request);
-                              setDecision('reject');
-                              setIsDecisionDialogOpen(true);
-                            }}
-                            title="דחה"
-                          >
-                            <XCircle className="h-4 w-4" />
-                          </Button>
-                        </>
                       )}
                     </div>
                   </TableCell>
@@ -459,7 +433,6 @@ export default function ReplacementsPage() {
             </div>
           )}
 
-           {/* Pagination Bottom */}
            <div className="mt-4">
              <PaginationControls 
                page={page} totalPages={totalPages} totalCount={totalCount} 
@@ -469,13 +442,11 @@ export default function ReplacementsPage() {
         </CardContent>
       </Card>
 
-      {/* Decision Dialog */}
+      {/* Decision Dialog - Unified for Approve/Reject */}
       <Dialog open={isDecisionDialogOpen} onOpenChange={setIsDecisionDialogOpen}>
         <DialogContent className="sm:max-w-[500px]" dir="rtl">
           <DialogHeader>
-            <DialogTitle>
-              {decision === 'approve' ? 'אישור בקשת החלפה' : 'דחיית בקשת החלפה'}
-            </DialogTitle>
+            <DialogTitle>טיפול בבקשת החלפה</DialogTitle>
             <DialogDescription>
               {selectedRequest && (
                 <div className="mt-4 space-y-3 bg-muted/50 p-3 rounded-lg border text-sm">
@@ -495,41 +466,45 @@ export default function ReplacementsPage() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div>
-              <Label>הערות מנהל</Label>
+              <Label>הערות מנהל (חובה בדחייה)</Label>
               <textarea
                 className="w-full px-3 py-2 border rounded-md mt-1 min-h-[100px]"
-                placeholder={decision === 'approve' ? 'הערות לאישור...' : 'סיבת הדחייה (חובה)...'}
+                placeholder="הזן הערות..."
                 value={adminNotes}
                 onChange={(e) => setAdminNotes(e.target.value)}
               />
             </div>
-
-            {decision === 'approve' && (
-              <Alert>
+            
+            <Alert>
                 <AlertCircle className="h-4 w-4" />
                 <AlertTitle>שים לב</AlertTitle>
                 <AlertDescription>
-                  אישור הבקשה ישנה את סטטוס המכשיר ל"הוחלף"
+                  אישור הבקשה ישנה את סטטוס המכשיר ל"הוחלף" באופן אוטומטי.
                 </AlertDescription>
-              </Alert>
-            )}
+            </Alert>
           </div>
-          <DialogFooter>
+          <DialogFooter className="gap-2 sm:justify-between">
             <Button variant="outline" onClick={() => setIsDecisionDialogOpen(false)}>
               ביטול
             </Button>
-            <Button
-              onClick={handleDecision}
-              variant={decision === 'approve' ? 'default' : 'destructive'}
-              disabled={decision === 'reject' && !adminNotes}
-            >
-              {decision === 'approve' ? 'אשר החלפה' : 'דחה בקשה'}
-            </Button>
+            <div className="flex gap-2">
+                <Button 
+                    variant="destructive" 
+                    onClick={() => handleDecision('reject')}
+                    disabled={!adminNotes}
+                    title={!adminNotes ? "יש להזין הערות כדי לדחות" : ""}
+                >
+                דחה בקשה
+                </Button>
+                <Button onClick={() => handleDecision('approve')}>
+                אשר החלפה
+                </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Details Dialog */}
+      {/* Details Dialog - Read Only */}
       <Dialog open={isDetailsDialogOpen} onOpenChange={setIsDetailsDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
