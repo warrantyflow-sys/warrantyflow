@@ -1323,6 +1323,7 @@ export default function LabRepairsPage() {
             <div>
               <Label htmlFor="update-status">סטטוס חדש</Label>
               <select
+                title="בחר סטטוס"
                 id="update-status"
                 className="w-full px-3 py-2 border rounded-md mt-1"
                 value={updateStatus}

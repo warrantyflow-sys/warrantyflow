@@ -2,7 +2,6 @@ import { createClient } from '@/lib/supabase/client';
 import type { ReplacementRequestWithRelations } from '@/types';
 import type { Database } from '@/lib/supabase/database.types';
 
-// נגדיר טיפוס מקומי אם חסר, או נשתמש בקיים
 export type ReplacementRequest = ReplacementRequestWithRelations;
 
 type RequestStatus = Database["public"]["Enums"]["request_status"];
@@ -25,12 +24,16 @@ export async function fetchReplacementsWithPagination(
   const startIndex = (page - 1) * pageSize;
   const endIndex = startIndex + pageSize - 1;
 
-  // אנו משתמשים ב-query builder דינמי
+  // בדיקה האם יש חיפוש פעיל
+  const hasSearch = filters.search && filters.search.trim().length > 0;
+
+  const deviceJoinType = hasSearch ? '!inner' : '';
+
   let query = supabase
     .from('replacement_requests')
     .select(`
       *,
-      device:devices!inner(
+      device:devices${deviceJoinType}(
         *,
         device_model:device_models(model_name),
         warranty:warranties(*)
@@ -55,10 +58,8 @@ export async function fetchReplacementsWithPagination(
   }
 
   // חיפוש (IMEI או שם לקוח)
-  if (filters.search) {
+  if (hasSearch) {
     const s = filters.search;
-    // הערה: חיפוש בטבלאות מקושרות ב-Supabase דורש !inner על הקשר (כפי שעשינו ב-select למעלה עם devices)
-    // נחפש ב-IMEI של המכשיר, או בשם הלקוח שמופיע בבקשה עצמה
     query = query.or(`customer_name.ilike.%${s}%,device.imei.ilike.%${s}%`);
   }
 
@@ -67,6 +68,7 @@ export async function fetchReplacementsWithPagination(
     .range(startIndex, endIndex);
 
   if (error) {
+    console.error('Fetch Error:', error);
     throw new Error(`Failed to fetch replacement requests: ${error.message}`);
   }
 

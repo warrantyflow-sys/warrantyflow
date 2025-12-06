@@ -5,11 +5,12 @@ import { useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { fetchReplacementsWithPagination, type ReplacementFilters } from '@/lib/api/replacements';
 
-// --- Hook לסטטיסטיקות (RPC מהיר) ---
+// --- Hook לסטטיסטיקות ---
 export function useReplacementsStats() {
   const queryClient = useQueryClient();
   
-  const query = useQuery({
+  // אין צורך ב-Realtime כאן כי ה-Hook של הטבלה כבר ירענן את הכל
+  return useQuery({
     queryKey: ['replacements', 'stats'],
     queryFn: async () => {
       const supabase = createClient();
@@ -19,19 +20,6 @@ export function useReplacementsStats() {
     },
     staleTime: 1000 * 60 * 5, // 5 דקות
   });
-
-  // Realtime Subscription
-  useEffect(() => {
-    const supabase = createClient();
-    const channel = supabase.channel('replacements-stats')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'replacement_requests' }, 
-          () => queryClient.invalidateQueries({ queryKey: ['replacements', 'stats'] }))
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [queryClient]);
-
-  return query;
 }
 
 // --- Hook לטבלה (Pagination) ---
@@ -45,18 +33,32 @@ export function useReplacementsTable(
   const query = useQuery({
     queryKey: ['replacements', 'list', page, pageSize, filters],
     queryFn: () => fetchReplacementsWithPagination(page, pageSize, filters),
-    placeholderData: (prev) => prev, // שומר על המידע הקודם בזמן טעינת עמוד חדש למניעת הבהוב
+    placeholderData: (prev) => prev,
+    staleTime: 1000 * 30, // 30 שניות
   });
 
-  // Realtime Subscription
+  // Realtime Subscription - מרוכז במקום אחד
   useEffect(() => {
     const supabase = createClient();
-    const channel = supabase.channel('replacements-list')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'replacement_requests' }, 
-          () => queryClient.invalidateQueries({ queryKey: ['replacements', 'list'] }))
+    // שימוש ב-ID רנדומלי מונע התנגשויות ערוצים
+    const channelId = `replacements-global-tracker-${Math.random()}`;
+    
+    const channel = supabase.channel(channelId)
+      .on(
+        'postgres_changes', 
+        { event: '*', schema: 'public', table: 'replacement_requests' }, 
+        (payload) => {
+          console.log('🔄 Replacements change detected:', payload);
+          // רענון אגרסיבי: פוסל כל שאילתה שמתחילה ב-'replacements'
+          // זה יעדכן גם את הטבלה (בכל עמוד/פילטר) וגם את הסטטיסטיקות בבת אחת
+          queryClient.invalidateQueries({ queryKey: ['replacements'] });
+        }
+      )
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => { 
+      supabase.removeChannel(channel); 
+    };
   }, [queryClient]);
 
   return query;

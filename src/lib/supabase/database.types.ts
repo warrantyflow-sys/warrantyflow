@@ -844,6 +844,30 @@ export type Database = {
           message: string
         }[]
       }
+      search_device_by_imei: {
+        Args: {
+          p_imei: string
+          p_user_ip?: string | null
+        }
+        Returns: {
+          device_id: string | null
+          imei: string | null
+          imei2: string | null
+          model_id: string | null
+          model_name: string | null
+          manufacturer: string | null
+          warranty_months: number | null
+          is_replaced: boolean | null
+          replaced_at: string | null
+          has_active_warranty: boolean | null
+          warranty_id: string | null
+          warranty_expiry_date: string | null
+          customer_name: string | null
+          customer_phone: string | null
+          message: string | null
+          device_found: boolean
+        }[]
+      }
     }
     Enums: {
       user_role: "admin" | "store" | "lab"

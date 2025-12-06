@@ -66,12 +66,13 @@ export default function ReplacementsPage() {
   const { toast } = useToast();
 
   // --- Optimized Data Fetching ---
-  const { data: statsData, isLoading: isStatsLoading } = useReplacementsStats();
+  const { data: statsData, isLoading: isStatsLoading, refetch: refetchStats } = useReplacementsStats();
   
   const { 
     data: requestsData, 
     isLoading: isRequestsLoading, 
-    isFetching 
+    isFetching,
+    refetch: refetchTable
   } = useReplacementsTable(page, pageSize, {
     status: filterStatus,
     search: debouncedSearch
@@ -89,7 +90,7 @@ export default function ReplacementsPage() {
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(searchQuery);
-      if (searchQuery !== debouncedSearch) setPage(1);
+      setPage(1);
     }, 500);
     return () => clearTimeout(timer);
   }, [searchQuery]);
@@ -113,7 +114,23 @@ export default function ReplacementsPage() {
 
   const handleRefresh = () => {
     toast({ title: 'הנתונים מתעדכנים...' });
-    // Invalidation happens automatically via hooks if needed, or we can expose refetch
+    Promise.all([
+        refetchTable(),
+        refetchStats()
+    ]).then(() => {
+        toast({ title: 'הנתונים עודכנו בהצלחה', duration: 2000 });
+    });
+  };
+
+  const handleRowClick = (request: any) => {
+    setSelectedRequest(request);
+    if (request.status === 'pending') {
+      setDecision('approve');
+      setAdminNotes('');
+      setIsDecisionDialogOpen(true);
+    } else {
+      setIsDetailsDialogOpen(true);
+    }
   };
 
   const handleDecision = async () => {
@@ -273,9 +290,6 @@ export default function ReplacementsPage() {
         <Alert>
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>יש {statsData?.pending} בקשות ממתינות</AlertTitle>
-          <AlertDescription>
-            הבקשות נמצאות בטיפול וייענו בהקדם האפשרי
-          </AlertDescription>
         </Alert>
       )}
 
@@ -336,7 +350,11 @@ export default function ReplacementsPage() {
             </TableHeader>
             <TableBody>
               {requests.map((request) => (
-                <TableRow key={request.id}>
+                <TableRow 
+                  key={request.id}
+                  className="cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => handleRowClick(request)}
+                >
                   <TableCell>
                     <div>
                       <div className="font-medium">{request.device?.device_model?.model_name}</div>
@@ -388,7 +406,7 @@ export default function ReplacementsPage() {
                     )}
                   </TableCell>
                   <TableCell>
-                    <div className="flex gap-1">
+                    <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                       <Button
                         size="sm"
                         variant="ghost"
@@ -453,16 +471,24 @@ export default function ReplacementsPage() {
 
       {/* Decision Dialog */}
       <Dialog open={isDecisionDialogOpen} onOpenChange={setIsDecisionDialogOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-[500px]" dir="rtl">
           <DialogHeader>
             <DialogTitle>
               {decision === 'approve' ? 'אישור בקשת החלפה' : 'דחיית בקשת החלפה'}
             </DialogTitle>
             <DialogDescription>
               {selectedRequest && (
-                <div className="mt-2">
-                  <p>מכשיר: {selectedRequest.device?.device_model?.model_name}</p>
-                  <p>IMEI: {selectedRequest.device?.imei}</p>
+                <div className="mt-4 space-y-3 bg-muted/50 p-3 rounded-lg border text-sm">
+                    <div className="grid grid-cols-2 gap-2">
+                        <div><span className="font-semibold">מכשיר:</span> {selectedRequest.device?.device_model?.model_name}</div>
+                        <div><span className="font-semibold">IMEI:</span> {selectedRequest.device?.imei}</div>
+                        <div><span className="font-semibold">מבקש:</span> {getUserDisplayName(selectedRequest.requester)}</div>
+                        <div><span className="font-semibold">תאריך:</span> {formatDate(selectedRequest.created_at)}</div>
+                    </div>
+                    <div>
+                        <span className="font-semibold block mb-1">סיבת הבקשה:</span>
+                        <p className="text-muted-foreground bg-background p-2 rounded border text-xs">{selectedRequest.reason}</p>
+                    </div>
                 </div>
               )}
             </DialogDescription>

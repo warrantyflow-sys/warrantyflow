@@ -76,9 +76,6 @@ export function StoreNotificationsDropdown() {
       )
       .subscribe();
 
-    // ✅ Removed polling interval - Supabase Realtime handles updates instantly
-    // This reduces database load by ~3,000 queries/minute for 500 concurrent users
-
     return () => {
       supabase.removeChannel(channel);
     };

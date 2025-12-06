@@ -110,8 +110,6 @@ export default function StoreReplacementsPage() {
     resolver: zodResolver(replacementRequestSchema),
   });
 
-  // --- [תיקון 2: החלפת useState + useEffect ב-useMemo] ---
-
   // חישוב הרשימה המסוננת
   const filteredRequests = useMemo(() => {
     let filtered = [...requests];
@@ -145,10 +143,10 @@ export default function StoreReplacementsPage() {
     };
   }, [requests]);
 
-  // --- [סוף תיקון 2] ---
   
   const handleSearchDevice = async () => {
     const trimmedIMEI = searchIMEI.trim().replace(/[\s-]/g, '');
+    
     if (!trimmedIMEI) {
       toast({
         title: 'שגיאה',
@@ -159,69 +157,90 @@ export default function StoreReplacementsPage() {
     }
 
     setIsSearching(true);
+
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('משתמש לא מחובר');
+      // קריאה לפונקציה המאובטחת בשרת (כולל Rate Limit ולוגים)
+      const { data, error } = await supabase.rpc('search_device_by_imei', {
+        p_imei: trimmedIMEI
+      });
 
-      const { data: userData } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', user.id)
-        .single<UserType>();
+      if (error) throw error;
 
-      // Search for device with warranty
-      const { data: devices, error } = await supabase
-        .from('devices')
-        .select(`
-          *,
-          device_models(*),
-          warranty:warranties!inner(
-            *,
-            store_id
-          ),
-          repairs(
-            id,
-            status,
-            fault_type,
-            lab_id
-          )
-        `)
-        .or(`imei.eq.${trimmedIMEI},imei2.eq.${trimmedIMEI}`)
-        .eq('warranty.store_id', userData?.id || '')
-        .returns<DeviceSearchResult[]>();
+      // הפונקציה מחזירה מערך, ניקח את האיבר הראשון
+      const result = data && data[0];
 
-      if (error) {
-        console.error('Search error:', error);
+      // 1. בדיקה אם המכשיר נמצא
+      if (!result || !result.device_found) {
         setSearchedDevice(null);
         toast({
-          title: 'שגיאה',
-          description: 'אירעה שגיאה בחיפוש המכשיר',
+          title: 'לא נמצא',
+          description: result?.message || 'מכשיר לא נמצא במערכת', // משתמש בהודעה מה-RPC
           variant: 'destructive',
         });
         return;
       }
 
-      if (!devices || devices.length === 0) {
+      // 2. בדיקה אם המכשיר שייך לחנות הזו
+      // ה-RPC מחזיר customer_name רק אם לחנות יש הרשאה לראות אותו (כלומר המכשיר שייך לה)
+      // אם השדה ריק, סימן שהמכשיר קיים אבל לא שייך לחנות הזו
+      if (!result.customer_name && result.has_active_warranty) {
         setSearchedDevice(null);
         toast({
-          title: 'לא נמצא',
-          description: 'מכשיר זה לא נמצא או לא שייך לחנות שלך',
+          title: 'אין הרשאה',
+          description: 'המכשיר נמצא במערכת אך לא שייך לחנות שלך.',
           variant: 'destructive',
         });
-      } else {
-        const device = devices[0];
-        setSearchedDevice(device);
-        setValue('imei', trimmedIMEI);
-        setValue('customer_name', device.warranty[0]?.customer_name || '');
-        setValue('customer_phone', device.warranty[0]?.customer_phone || '');
+        return;
       }
-    } catch (error) {
+
+      // 3. מיפוי התוצאה מה-RPC למבנה שה-UI מצפה לו (DeviceSearchResult)
+      const mappedDevice: any = { // שימוש ב-any או DeviceSearchResult אם הטיפוסים זמינים
+        id: result.device_id,
+        imei: result.imei,
+        imei2: result.imei2,
+        model_id: result.model_id,
+        // בניית אובייקט דגם
+        device_models: {
+          model_name: result.model_name,
+          manufacturer: result.manufacturer
+        },
+        // בניית מערך אחריות
+        warranty: result.has_active_warranty ? [{
+          id: result.warranty_id,
+          customer_name: result.customer_name,
+          customer_phone: result.customer_phone,
+          expiry_date: result.warranty_expiry_date,
+          is_active: true
+          // שדות נוספים אם צריך: store_id, activation_date וכו' (כרגע ה-RPC לא מחזיר את כולם, וזה בסדר להחלפה)
+        }] : [],
+        // ה-RPC לא מחזיר היסטוריית תיקונים, וזה תקין ליצירת בקשה חדשה
+        repairs: [] 
+      };
+
+      setSearchedDevice(mappedDevice);
+      
+      // מילוי אוטומטי של הטופס
+      setValue('imei', trimmedIMEI);
+      setValue('customer_name', result.customer_name || '');
+      setValue('customer_phone', result.customer_phone || '');
+
+      // התראות נוספות לפי הצורך
+      if (result.is_replaced) {
+        toast({
+          title: 'שים לב',
+          description: 'מכשיר זה מסומן כ"הוחלף" במערכת.',
+          variant: 'destructive',
+        });
+      }
+
+    } catch (error: any) {
       console.error('Error searching device:', error);
       toast({
         title: 'שגיאה',
-        description: 'אירעה שגיאה בחיפוש',
+        description: error.message || 'אירעה שגיאה בחיפוש המכשיר',
         variant: 'destructive',
       });
+      setSearchedDevice(null);
     } finally {
       setIsSearching(false);
     }
@@ -272,15 +291,17 @@ export default function StoreReplacementsPage() {
         status: 'pending',
       };
 
-      const { error } = await (supabase.from('replacement_requests') as any)
-        .insert([payload]);
-
-      if (error) throw error;
-
-      toast({
-        title: 'הצלחה',
-        description: 'בקשת ההחלפה נשלחה בהצלחה',
+      const { data: rpcData, error } = await supabase.rpc('create_replacement_request', {
+        p_device_id: searchedDevice.id,
+        p_reason: data.reason,
+        p_repair_id: undefined
       });
+  
+      if (error) throw error;
+      
+      if (rpcData && rpcData[0] && !rpcData[0].success) {
+          throw new Error(rpcData[0].message);
+      }
 
       setIsNewRequestDialogOpen(false);
       reset();

@@ -87,6 +87,9 @@ export default function StoreDashboard() {
   const [replacementRequests, setReplacementRequests] = useState<ReplacementRequestWithDevice[]>([]);
   const [activeTab, setActiveTab] = useState('search');
   const activationDateDisplay = formatDate(new Date());
+  const [activeDevicesPage, setActiveDevicesPage] = useState(1);
+  const [totalActiveDevices, setTotalActiveDevices] = useState(0);
+  const DEVICES_PER_PAGE = 5;
 
   const router = useRouter();
   const supabase = createClient();
@@ -105,36 +108,51 @@ export default function StoreDashboard() {
     if (!storeId) return;
 
     try {
-      // Fetch devices with active warranties for this store
-      const { data, error } = await supabase
-        .from('devices')
+      const from = (activeDevicesPage - 1) * DEVICES_PER_PAGE;
+      const to = from + DEVICES_PER_PAGE - 1;
+
+      // תיקון: שליפה מטבלת warranties במקום מ-devices
+      const { data, error, count } = await supabase
+        .from('warranties')
         .select(`
-          *,
-          device_models(*),
-          warranties!inner(
-            id,
-            store_id,
-            customer_name,
-            customer_phone,
-            activation_date,
-            expiry_date,
-            is_active
+          id,
+          store_id,
+          customer_name,
+          customer_phone,
+          activation_date,
+          expiry_date,
+          is_active,
+          devices!inner (
+            *,
+            device_models (*)
           )
-        `)
-        .eq('warranties.store_id', storeId)
-        .eq('warranties.is_active', true)
-        .gte('warranties.expiry_date', new Date().toISOString().split('T')[0]);
+        `, { count: 'exact' })
+        .eq('store_id', storeId)
+        .eq('is_active', true)
+        .gte('expiry_date', new Date().toISOString().split('T')[0])
+        .order('created_at', { ascending: false }) // מיון לפי תאריך יצירת האחריות (הרבה יותר יעיל)
+        .range(from, to);
 
       if (error) {
         console.error('Error fetching active devices:', error);
         return;
       }
 
-      setActiveDevices(data || []);
+      // המרה למבנה שהדשבורד מצפה לו (משטח את המבנה)
+      // מכיוון ששלפנו אחריות, המכשיר נמצא בתוך אובייקט מקונן
+      const flattenedDevices = (data || []).map((warranty: any) => ({
+        ...warranty.devices, // פרטי המכשיר בראשי
+        device_models: warranty.devices.device_models, // דגם המכשיר
+        warranties: [warranty] // עוטף את האחריות במערך כדי להתאים לטיפוס הקיים
+      }));
+
+      setActiveDevices(flattenedDevices);
+      setTotalActiveDevices(count || 0);
+
     } catch (error) {
       console.error('Error fetching active devices:', error);
     }
-  }, [storeId, supabase]);
+  }, [storeId, supabase, activeDevicesPage]);
 
   const fetchReplacementRequests = useCallback(async () => {
     if (!storeId) return;
@@ -386,25 +404,6 @@ export default function StoreDashboard() {
         throw new Error(activationResult?.[0]?.message || 'שגיאה בהפעלת אחריות');
       }
 
-      // --- Audit Log ---
-      const warrantyId = activationResult[0].warranty_id;
-      if (warrantyId) {
-        supabase.from('audit_log').insert({
-          actor_user_id: user.id,
-          action: 'warranty.activate',
-          entity_type: 'warranty',
-          entity_id: warrantyId,
-          meta: {
-            device_id: device.id,
-            customer_name: data.customer_name,
-            store_id: user.id
-          }
-        }).then(({ error: logError }) => {
-          if (logError) console.error('Audit log failed:', logError);
-        });
-      }
-      // --- End Audit Log ---
-
       toast({
         title: 'הצלחה',
         description: `האחריות הופעלה בהצלחה עבור ${data.customer_name}`,
@@ -620,7 +619,7 @@ export default function StoreDashboard() {
                   <p>אין מכשירים עם אחריות פעילה</p>
                 </div>
               ) : (
-                // === קוד הטבלה שהשתנה ===
+                <>
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -673,7 +672,33 @@ export default function StoreDashboard() {
                     })}
                   </TableBody>
                 </Table>
-              )}
+                {/* פקדי פגינציה */}
+                <div className="flex items-center justify-between mt-4">
+                <div className="text-sm text-muted-foreground">
+                  מציג {((activeDevicesPage - 1) * DEVICES_PER_PAGE) + 1}-
+                  {Math.min(activeDevicesPage * DEVICES_PER_PAGE, totalActiveDevices)} מתוך {totalActiveDevices}
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setActiveDevicesPage(p => Math.max(1, p - 1))}
+                    disabled={activeDevicesPage === 1}
+                  >
+                    הקודם
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setActiveDevicesPage(p => p + 1)}
+                    disabled={activeDevicesPage * DEVICES_PER_PAGE >= totalActiveDevices}
+                  >
+                    הבא
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
             </CardContent>
           </Card>
         </TabsContent>

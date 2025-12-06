@@ -69,23 +69,49 @@ export function NotificationsDropdown() {
   }, [supabase]);
 
   useEffect(() => {
-    loadNotifications();
+    let channel: any;
 
-    // Realtime subscription for instant updates (no polling needed)
-    const channel = supabase
-      .channel('notifications')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, () => {
-        loadNotifications();
-      })
-      .subscribe();
+    const setupRealtime = async () => {
+      // Load initial state
+      await loadNotifications();
 
-    // ✅ Removed polling interval - Supabase Realtime handles updates instantly
-    // This reduces database load by ~3,000 queries/minute for 500 concurrent users
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Realtime subscription with explicit user filter
+      channel = supabase
+        .channel(`notifications-${user.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'notifications',
+            filter: `user_id=eq.${user.id}`, // Critical for instant updates
+          },
+          (payload) => {
+            // Optimistic update - update state immediately without refetching
+            const newNotification = payload.new as Notification;
+            
+            setNotifications((prev) => [newNotification, ...prev]);
+            setUnreadCount((prev) => prev + 1);
+
+            // Show toast for better visibility
+            toast({
+              title: newNotification.title,
+              description: newNotification.message,
+            });
+          }
+        )
+        .subscribe();
+    };
+
+    setupRealtime();
 
     return () => {
-      supabase.removeChannel(channel);
+      if (channel) supabase.removeChannel(channel);
     };
-  }, [loadNotifications, supabase]);
+  }, [loadNotifications, supabase, toast]);
 
   const markAsOpened = async (notificationId: string) => {
     try {

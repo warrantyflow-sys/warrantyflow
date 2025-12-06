@@ -802,6 +802,7 @@ CREATE INDEX IF NOT EXISTS idx_replacement_requests_device ON replacement_reques
 CREATE INDEX IF NOT EXISTS idx_replacement_requests_requester ON replacement_requests(requester_id);
 CREATE INDEX IF NOT EXISTS idx_replacement_requests_status ON replacement_requests(status);
 CREATE INDEX IF NOT EXISTS idx_replacement_requests_pending ON replacement_requests(device_id) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_replacements_created_at ON replacement_requests(created_at DESC);
 
 -- Payments Indexes
 CREATE INDEX IF NOT EXISTS idx_payments_lab ON payments(lab_id);
@@ -836,6 +837,8 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 DECLARE
+  v_user_id UUID := auth.uid();
+  v_user_role TEXT;
   v_total BIGINT;
   v_new BIGINT;
   v_active BIGINT;
@@ -843,7 +846,15 @@ DECLARE
   v_replaced BIGINT;
   v_in_repair BIGINT;
 BEGIN
-  -- ספירת מכשירים לפי סטטוס (שימוש ב-View הקיים אבל אגרגציה בשרת)
+  SELECT role::TEXT INTO v_user_role FROM users WHERE id = v_user_id;
+
+  
+  IF v_user_role != 'admin' THEN
+     RETURN json_build_object(
+       'total', 0, 'new', 0, 'active', 0, 'expired', 0, 'replaced', 0, 'inRepair', 0
+     );
+  END IF;
+
   SELECT
     COUNT(*),
     COUNT(*) FILTER (WHERE warranty_status = 'new'),
@@ -854,12 +865,10 @@ BEGIN
     v_total, v_new, v_active, v_expired, v_replaced
   FROM devices_with_status;
 
-  -- ספירת תיקונים פעילים
   SELECT COUNT(*) INTO v_in_repair
   FROM repairs
   WHERE status IN ('received', 'in_progress');
 
-  -- החזרת אובייקט JSON קליל
   RETURN json_build_object(
     'total', v_total,
     'new', v_new,
@@ -1241,111 +1250,96 @@ RETURNS TABLE(
   warranty_expiry_date DATE,
   customer_name TEXT,
   customer_phone TEXT,
-  store_id UUID,
-  store_name TEXT,
-  searches_today INTEGER,
-  search_limit_reached BOOLEAN
+  message TEXT,
+  device_found BOOLEAN
 )
 LANGUAGE plpgsql
-SECURITY DEFINER
+SECURITY DEFINER -- רץ עם הרשאות אדמין (עוקף RLS)
+SET search_path = public, temp -- אבטחה קריטית
 AS $$
 DECLARE
-  v_user_id UUID;
+  v_user_id UUID := auth.uid();
   v_user_role TEXT;
   v_searches_today INTEGER;
-  v_device_found BOOLEAN;
-  v_device_id UUID;
   v_rate_limit INTEGER;
+  v_device_record RECORD;
 BEGIN
-  v_user_id := auth.uid();
+  -- בדיקת תפקיד
+  SELECT role::TEXT INTO v_user_role FROM users WHERE id = v_user_id;
   
-  IF v_user_id IS NULL THEN
-    RAISE EXCEPTION 'User not authenticated';
-  END IF;
-
-  -- Get the rate limit from the settings table
-  SELECT (value->>'value')::INTEGER INTO v_rate_limit
-  FROM public.settings
-  WHERE key = 'imei_search_rate_limit'
-  LIMIT 1;
-
-  -- Fallback to 50 if setting is not found
-  v_rate_limit := COALESCE(v_rate_limit, 50);
-  
-  SELECT role INTO v_user_role FROM public.users WHERE id = v_user_id;
-  
-  IF v_user_role = 'store' THEN
-    SELECT COUNT(*) INTO v_searches_today
-    FROM public.device_search_log
-    WHERE user_id = v_user_id
-      AND created_at >= CURRENT_DATE
-      AND created_at < CURRENT_DATE + INTERVAL '1 day';
+  -- בדיקת Rate Limit (הוחלה גם על מעבדות)
+  IF v_user_role IN ('store', 'lab') THEN
+    SELECT COALESCE((value->>'value')::INTEGER, 50) INTO v_rate_limit 
+    FROM settings WHERE key = 'imei_search_rate_limit';
+    
+    SELECT COUNT(*) INTO v_searches_today 
+    FROM device_search_log 
+    WHERE user_id = v_user_id AND created_at >= CURRENT_DATE;
     
     IF v_searches_today >= v_rate_limit THEN
-      RETURN QUERY
-      SELECT 
+      RETURN QUERY SELECT 
         NULL::UUID, NULL::TEXT, NULL::TEXT, NULL::UUID, NULL::TEXT, NULL::TEXT, 
-        NULL::INTEGER, NULL::BOOLEAN, NULL::TIMESTAMPTZ, NULL::BOOLEAN,
-        NULL::UUID, NULL::DATE, NULL::TEXT, NULL::TEXT, NULL::UUID, NULL::TEXT,
-        v_searches_today, true;
+        NULL::INTEGER, NULL::BOOLEAN, NULL::TIMESTAMPTZ, NULL::BOOLEAN, 
+        NULL::UUID, NULL::DATE, NULL::TEXT, NULL::TEXT, 
+        'חרגת ממכסת החיפושים היומית'::TEXT, false;
       RETURN;
     END IF;
-  ELSE
-    v_searches_today := 0;
   END IF;
   
-  SELECT d.id INTO v_device_id
-  FROM public.devices d
+  -- חיפוש המכשיר
+  SELECT d.id, d.imei, d.imei2, d.model_id, dm.model_name, dm.manufacturer, dm.warranty_months, d.is_replaced, d.replaced_at
+  INTO v_device_record
+  FROM devices d
+  LEFT JOIN device_models dm ON d.model_id = dm.id
   WHERE d.imei = p_imei OR d.imei2 = p_imei
   LIMIT 1;
-  
-  v_device_found := FOUND;
-  
-  INSERT INTO public.device_search_log (
-    user_id, search_term, device_found, device_id, ip_address
-  ) VALUES (
-    v_user_id, p_imei, v_device_found, v_device_id, p_user_ip::INET
-  );
-  
-  IF v_device_found THEN
+
+  -- תיעוד ב-Log
+  INSERT INTO device_search_log (user_id, search_term, device_found, device_id, ip_address)
+  VALUES (v_user_id, p_imei, (v_device_record.id IS NOT NULL), v_device_record.id, p_user_ip::INET);
+
+  -- החזרת תוצאות
+  IF v_device_record.id IS NOT NULL THEN
     RETURN QUERY
     SELECT
-      d.id, d.imei, d.imei2, d.model_id, dm.model_name, dm.manufacturer, dm.warranty_months,
-      d.is_replaced, d.replaced_at,
-      EXISTS(SELECT 1 FROM public.warranties w WHERE w.device_id = d.id AND w.is_active = true AND w.expiry_date >= CURRENT_DATE),
-      w.id, w.expiry_date,
-      -- 🔒 SECURITY: Only show customer info if user is admin, the store that activated, or lab with active repair
-      CASE
-        WHEN is_admin() THEN w.customer_name
-        WHEN is_store() AND w.store_id = auth.uid() THEN w.customer_name
-        WHEN is_lab() AND EXISTS(SELECT 1 FROM public.repairs r WHERE r.device_id = d.id AND r.lab_id = auth.uid() AND r.status IN ('received', 'in_progress')) THEN w.customer_name
-        ELSE NULL
+      v_device_record.id,
+      v_device_record.imei,
+      v_device_record.imei2,
+      v_device_record.model_id,
+      v_device_record.model_name,
+      v_device_record.manufacturer,
+      v_device_record.warranty_months,
+      v_device_record.is_replaced,
+      v_device_record.replaced_at,
+      EXISTS(SELECT 1 FROM warranties w WHERE w.device_id = v_device_record.id AND w.is_active = true AND w.expiry_date >= CURRENT_DATE),
+      w.id,
+      w.expiry_date,
+      -- לוגיקה מעודכנת לחשיפת פרטי לקוח (כולל למעבדה)
+      CASE 
+        WHEN is_admin() OR is_lab() OR (is_store() AND w.store_id = v_user_id) THEN w.customer_name 
+        ELSE NULL 
       END,
-      CASE
-        WHEN is_admin() THEN w.customer_phone
-        WHEN is_store() AND w.store_id = auth.uid() THEN w.customer_phone
-        WHEN is_lab() AND EXISTS(SELECT 1 FROM public.repairs r WHERE r.device_id = d.id AND r.lab_id = auth.uid() AND r.status IN ('received', 'in_progress')) THEN w.customer_phone
-        ELSE NULL
+      CASE 
+        WHEN is_admin() OR is_lab() OR (is_store() AND w.store_id = v_user_id) THEN w.customer_phone 
+        ELSE NULL 
       END,
-      -- Store info visible to admins only
-      CASE WHEN is_admin() THEN w.store_id ELSE NULL END,
-      CASE WHEN is_admin() THEN u.full_name ELSE NULL END,
-      v_searches_today + 1, false
-    FROM public.devices d
-    LEFT JOIN public.device_models dm ON d.model_id = dm.id
-    LEFT JOIN public.warranties w ON w.device_id = d.id AND w.is_active = true AND w.expiry_date >= CURRENT_DATE
-    LEFT JOIN public.users u ON w.store_id = u.id
-    WHERE d.id = v_device_id;
+      'מכשיר נמצא'::TEXT,
+      true
+    FROM (SELECT 1) dummy
+    LEFT JOIN warranties w ON w.device_id = v_device_record.id AND w.is_active = true
+    LIMIT 1;
   ELSE
-    RETURN QUERY
-    SELECT 
+    RETURN QUERY SELECT 
       NULL::UUID, NULL::TEXT, NULL::TEXT, NULL::UUID, NULL::TEXT, NULL::TEXT, 
       NULL::INTEGER, NULL::BOOLEAN, NULL::TIMESTAMPTZ, NULL::BOOLEAN,
-      NULL::UUID, NULL::DATE, NULL::TEXT, NULL::TEXT, NULL::UUID, NULL::TEXT,
-      v_searches_today + 1, false;
+      NULL::UUID, NULL::DATE, NULL::TEXT, NULL::TEXT, 
+      'מכשיר לא נמצא במערכת'::TEXT, false;
   END IF;
 END;
 $$;
+
+-- מתן הרשאה להרצה
+GRANT EXECUTE ON FUNCTION search_device_by_imei(TEXT, TEXT) TO authenticated;
 
 -- Store: Check if IMEI exists
 CREATE OR REPLACE FUNCTION store_check_imei_exists(p_imei TEXT)
@@ -1413,12 +1407,26 @@ DECLARE
   v_device_id UUID;
   v_model_name TEXT;
   v_has_warranty BOOLEAN;
+  v_rate_limit INTEGER;
+  v_searches_today INTEGER;
 BEGIN
   SELECT role INTO v_user_role FROM public.users WHERE id = v_user_id;
-  
   IF v_user_role != 'lab' THEN
     RETURN QUERY SELECT false, NULL::UUID, NULL::TEXT, false, 'אין הרשאה'::TEXT;
     RETURN;
+  END IF;
+
+  SELECT (value->>'value')::INTEGER INTO v_rate_limit
+  FROM public.settings WHERE key = 'imei_search_rate_limit';
+  v_rate_limit := COALESCE(v_rate_limit, 50);
+
+  SELECT COUNT(*) INTO v_searches_today
+  FROM public.device_search_log
+  WHERE user_id = v_user_id AND created_at >= CURRENT_DATE;
+
+  IF v_searches_today >= v_rate_limit THEN
+     RETURN QUERY SELECT false, NULL::UUID, NULL::TEXT, false, 'חרגת ממכסת החיפושים היומית'::TEXT;
+     RETURN;
   END IF;
 
   SELECT 
@@ -1428,6 +1436,12 @@ BEGIN
   FROM public.devices d
   LEFT JOIN public.device_models dm ON d.model_id = dm.id
   WHERE d.imei = p_imei OR d.imei2 = p_imei;
+
+  INSERT INTO public.device_search_log (
+    user_id, search_term, device_found, device_id, ip_address
+  ) VALUES (
+    v_user_id, p_imei, (v_device_id IS NOT NULL), v_device_id, NULL
+  );
 
   IF v_device_id IS NULL THEN
     RETURN QUERY SELECT false, NULL::UUID, NULL::TEXT, false, 'מכשיר לא נמצא'::TEXT;
@@ -2221,6 +2235,63 @@ BEGIN
   END LOOP;
 END $$;
 
+
+-- =======================================================
+-- תיקונים קריטיים ל-RLS (הרשאות) עבור חנויות ומעבדות
+-- =======================================================
+
+-- 1. פתיחת טבלת המכשירים (Devices) לקריאה מותנית
+-- הסבר: מאפשר לחנות לראות מכשיר אם יש לה אחריות עליו.
+-- מאפשר למעבדה לראות מכשיר אם יש לה תיקון פעיל עליו.
+
+DROP POLICY IF EXISTS "store_view_own_devices" ON devices;
+CREATE POLICY "store_view_own_devices" ON devices FOR SELECT TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM warranties 
+    WHERE warranties.device_id = devices.id 
+    AND warranties.store_id = auth.uid()
+  )
+);
+
+-- מדיניות למעבדה: לראות מכשירים שנמצאים אצלה בתיקון
+CREATE POLICY "lab_view_work_devices" ON devices 
+FOR SELECT TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM repairs 
+    WHERE repairs.device_id = devices.id 
+    AND repairs.lab_id = auth.uid()
+  )
+);
+
+-- 2. מתן אפשרות למעבדה לראות בקשות החלפה (Replacement Requests)
+
+-- מדיניות למעבדה: לראות אם יש בקשת החלפה על מכשיר שבטיפול אצלה
+CREATE POLICY "lab_view_device_requests" ON replacement_requests
+FOR SELECT TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM repairs 
+    WHERE repairs.device_id = replacement_requests.device_id 
+    AND repairs.lab_id = auth.uid()
+  )
+);
+
+
+-- store search IMEI POLICY
+-- אפשר לחנויות לקרוא פרטי מכשיר רק אם יש להם אחריות עליו
+ALTER TABLE devices ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "store_view_devices_with_warranty" ON devices 
+FOR SELECT TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM warranties 
+    WHERE warranties.device_id = devices.id 
+    AND warranties.store_id = auth.uid()
+  )
+);
+
 -- Users Table Policies
 CREATE POLICY "Admins can do everything" ON users FOR ALL TO authenticated USING (get_my_role() = 'admin') WITH CHECK (get_my_role() = 'admin');
 CREATE POLICY "Users can read their own data" ON users FOR SELECT TO authenticated USING (auth.uid() = id);
@@ -2234,6 +2305,7 @@ CREATE POLICY "admin_all" ON device_models FOR ALL TO authenticated USING (is_ad
 CREATE POLICY "public_select" ON device_models FOR SELECT TO authenticated USING (is_active = true);
 
 -- Devices Policies
+ALTER TABLE devices ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "admin_all" ON devices FOR ALL TO authenticated USING (is_admin()) WITH CHECK (is_admin());
 
 -- Repair Types Policies
@@ -2247,11 +2319,6 @@ CREATE POLICY "lab_select" ON lab_repair_prices FOR SELECT TO authenticated USIN
 -- Warranties Policies
 CREATE POLICY "admin_all" ON warranties FOR ALL TO authenticated USING (is_admin()) WITH CHECK (is_admin());
 CREATE POLICY "store_select" ON warranties FOR SELECT TO authenticated USING (is_store() AND store_id = auth.uid());
-CREATE POLICY "lab_select"
-ON "public"."warranties"
-FOR SELECT
-TO authenticated
-USING (is_lab());
 
 -- Repairs Policies
 CREATE POLICY "admin_all" ON repairs FOR ALL TO authenticated USING (is_admin()) WITH CHECK (is_admin());
@@ -2263,7 +2330,6 @@ CREATE POLICY "lab_update" ON repairs FOR UPDATE TO authenticated USING (is_lab(
 CREATE POLICY "Admin can view all requests" ON replacement_requests FOR SELECT TO authenticated USING (is_admin());
 CREATE POLICY "Admin can update all requests" ON replacement_requests FOR UPDATE TO authenticated USING (is_admin());
 CREATE POLICY "Admin can delete requests" ON replacement_requests FOR DELETE TO authenticated USING (is_admin());
-CREATE POLICY "Authenticated users can create requests" ON replacement_requests FOR INSERT TO authenticated WITH CHECK (requester_id = auth.uid());
 CREATE POLICY "Users can view own requests" ON replacement_requests FOR SELECT TO authenticated USING (requester_id = auth.uid());
 CREATE POLICY "Users can update own pending requests" ON replacement_requests FOR UPDATE TO authenticated USING (requester_id = auth.uid() AND status = 'pending');
 
@@ -2391,10 +2457,6 @@ CREATE POLICY "admin_all_access" ON public.audit_log FOR ALL USING (public.is_ad
 
 DROP POLICY IF EXISTS "service_role_insert" ON public.audit_log;
 CREATE POLICY "service_role_insert" ON public.audit_log FOR INSERT WITH CHECK (auth.role() = 'service_role');
-
-DROP POLICY IF EXISTS "Users can insert their own audit logs" ON public.audit_log;
-CREATE POLICY "Users can insert their own audit logs" ON public.audit_log FOR INSERT WITH CHECK (actor_user_id = auth.uid());
-
 
 -- ===============================================
 -- COMPLETION
