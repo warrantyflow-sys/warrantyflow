@@ -27,7 +27,7 @@ export default function LabDashboardPage() {
   const labId = currentUser?.id || null;
 
   // React Query hooks with Realtime subscriptions
-  const { stats, isLoading: isStatsLoading, isFetching: isStatsFetching } = useLabDashboardStats();
+  const { stats, isLoading: isStatsLoading, isFetching: isStatsFetching } = useLabDashboardStats(labId);
   const { repairs: recentRepairs, isLoading: isRecentLoading, isFetching: isRecentFetching } = useLabRecentRepairs(labId);
   const { repairs: urgentRepairs, isLoading: isUrgentLoading, isFetching: isUrgentFetching } = useLabUrgentRepairs(labId);
 

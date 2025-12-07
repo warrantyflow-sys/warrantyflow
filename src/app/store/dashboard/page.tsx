@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import type { Device, DeviceModel, Warranty, ReplacementRequest } from '@/types';
@@ -72,13 +72,11 @@ type ReplacementRequestWithDevice = ReplacementRequest & {
 };
 
 export default function StoreDashboard() {
-  // Hooks for user and stats with Realtime
   const { user: currentUser, isLoading: isUserLoading } = useCurrentUser();
   const storeId = currentUser?.id || null;
   const storeName = currentUser?.full_name || currentUser?.email || '';
   const { stats, isLoading: isStatsLoading, isFetching: isStatsFetching } = useStoreDashboardStats(storeId);
 
-  // Local state for interactive features
   const [searchImei, setSearchImei] = useState('');
   const [searchResult, setSearchResult] = useState<DeviceWithWarranty | null>(null);
   const [isActivationDialogOpen, setIsActivationDialogOpen] = useState(false);
@@ -89,8 +87,8 @@ export default function StoreDashboard() {
   const activationDateDisplay = formatDate(new Date());
   const [activeDevicesPage, setActiveDevicesPage] = useState(1);
   const [totalActiveDevices, setTotalActiveDevices] = useState(0);
+  const listRefreshDebounce = useRef<NodeJS.Timeout | null>(null);
   const DEVICES_PER_PAGE = 5;
-
   const router = useRouter();
   const supabase = createClient();
   const { toast } = useToast();
@@ -111,7 +109,6 @@ export default function StoreDashboard() {
       const from = (activeDevicesPage - 1) * DEVICES_PER_PAGE;
       const to = from + DEVICES_PER_PAGE - 1;
 
-      // תיקון: שליפה מטבלת warranties במקום מ-devices
       const { data, error, count } = await supabase
         .from('warranties')
         .select(`
@@ -130,7 +127,7 @@ export default function StoreDashboard() {
         .eq('store_id', storeId)
         .eq('is_active', true)
         .gte('expiry_date', new Date().toISOString().split('T')[0])
-        .order('created_at', { ascending: false }) // מיון לפי תאריך יצירת האחריות (הרבה יותר יעיל)
+        .order('created_at', { ascending: false })
         .range(from, to);
 
       if (error) {
@@ -138,12 +135,10 @@ export default function StoreDashboard() {
         return;
       }
 
-      // המרה למבנה שהדשבורד מצפה לו (משטח את המבנה)
-      // מכיוון ששלפנו אחריות, המכשיר נמצא בתוך אובייקט מקונן
       const flattenedDevices = (data || []).map((warranty: any) => ({
-        ...warranty.devices, // פרטי המכשיר בראשי
-        device_models: warranty.devices.device_models, // דגם המכשיר
-        warranties: [warranty] // עוטף את האחריות במערך כדי להתאים לטיפוס הקיים
+        ...warranty.devices,
+        device_models: warranty.devices.device_models,
+        warranties: [warranty]
       }));
 
       setActiveDevices(flattenedDevices);
@@ -158,26 +153,13 @@ export default function StoreDashboard() {
     if (!storeId) return;
 
     try {
-      const { data: warranties } = await supabase
-        .from('warranties')
-        .select('device_id')
-        .eq('store_id', storeId)
-        .returns<Array<Pick<Warranty, 'device_id'>>>();
-
-      const deviceIds = (warranties || []).map(w => w.device_id).filter(Boolean) as string[];
-
-      if (deviceIds.length === 0) {
-        setReplacementRequests([]);
-        return;
-      }
-
       const { data } = await supabase
         .from('replacement_requests')
         .select(`
           *,
           device:devices(*, device_models(*), warranties(*))
         `)
-        .in('device_id', deviceIds)
+        .eq('requester_id', storeId)
         .order('created_at', { ascending: false });
 
       setReplacementRequests(data || []);
@@ -186,61 +168,37 @@ export default function StoreDashboard() {
     }
   }, [storeId, supabase]);
 
-  // Fetch lists on mount and setup Realtime subscriptions
   useEffect(() => {
     if (!storeId) return;
 
     fetchActiveDevices();
     fetchReplacementRequests();
 
-    // Realtime subscriptions for interactive lists
-    const devicesChannel = supabase
-      .channel(`store-devices-${storeId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'devices',
-        },
-        () => fetchActiveDevices()
-      )
-      .subscribe();
+    const triggerListRefresh = () => {
+      if (listRefreshDebounce.current) clearTimeout(listRefreshDebounce.current);
+      listRefreshDebounce.current = setTimeout(() => {
+        fetchActiveDevices();
+        fetchReplacementRequests();
+      }, 1000);
+    };
 
-    const warrantiesChannel = supabase
-      .channel(`store-warranties-${storeId}`)
+    const channel = supabase
+      .channel(`store-dashboard-lists-${storeId}`)
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'warranties',
-          filter: `store_id=eq.${storeId}`,
-        },
-        () => {
-          fetchActiveDevices();
-          fetchReplacementRequests();
-        }
+        { event: '*', schema: 'public', table: 'warranties', filter: `store_id=eq.${storeId}` },
+        triggerListRefresh
       )
-      .subscribe();
-
-    const replacementsChannel = supabase
-      .channel(`store-replacements-${storeId}`)
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'replacement_requests',
-        },
-        () => fetchReplacementRequests()
+        { event: '*', schema: 'public', table: 'replacement_requests', filter: `requester_id=eq.${storeId}` },
+        triggerListRefresh
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(devicesChannel);
-      supabase.removeChannel(warrantiesChannel);
-      supabase.removeChannel(replacementsChannel);
+      if (listRefreshDebounce.current) clearTimeout(listRefreshDebounce.current);
+      supabase.removeChannel(channel);
     };
   }, [storeId, fetchActiveDevices, fetchReplacementRequests, supabase]);
 

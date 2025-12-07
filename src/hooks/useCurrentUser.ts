@@ -1,6 +1,7 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { UserData } from '@/types/user';
 
@@ -16,22 +17,21 @@ interface JWTPayload {
 }
 
 export function useCurrentUser() {
+  const queryClient = useQueryClient();
+  const supabase = createClient();
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
   const query = useQuery({
     queryKey: ['currentUser'],
     queryFn: async () => {
-      const supabase = createClient();
-      
-      // 1. קבלת הסשן הנוכחי
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.user) return null;
 
-      // 2. אופטימיזציה: ניסיון לקרוא claims מה-JWT
       if (session.access_token) {
         try {
           const tokenParts = session.access_token.split('.');
           if (tokenParts.length === 3) {
-            // פענוח בטוח של ה-Payload
             const base64Url = tokenParts[1];
             const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
             const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function(c) {
@@ -40,7 +40,6 @@ export function useCurrentUser() {
 
             const payload: JWTPayload = JSON.parse(jsonPayload);
             
-            // אם המידע קיים בטוקן (Custom Claims), נחזיר אותו מיד
             if (payload.user_role && payload.user_active !== undefined) {
               return {
                 id: session.user.id,
@@ -73,6 +72,47 @@ export function useCurrentUser() {
     staleTime: 1000 * 60 * 10,
     retry: false,
   });
+
+
+  // 1. האזנה לשינויים בסטטוס ההתחברות (Auth)
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
+        queryClient.invalidateQueries({ queryKey: ['currentUser'] });
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [queryClient, supabase]);
+
+  useEffect(() => {
+    const userId = query.data?.id;
+    if (!userId) return;
+
+    const channel = supabase.channel(`current-user-${userId}`)
+      .on(
+        'postgres_changes',
+        { 
+          event: 'UPDATE', 
+          schema: 'public', 
+          table: 'users', 
+          filter: `id=eq.${userId}`
+        },
+        () => {
+          if (debounceRef.current) clearTimeout(debounceRef.current);
+          debounceRef.current = setTimeout(() => {
+            console.log('User profile updated via Realtime');
+            queryClient.invalidateQueries({ queryKey: ['currentUser'] });
+          }, 1000);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      supabase.removeChannel(channel);
+    };
+  }, [query.data?.id, queryClient, supabase]);
 
   return { 
     user: query.data ?? null, 

@@ -90,7 +90,7 @@ export default function StoresPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('active');
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);

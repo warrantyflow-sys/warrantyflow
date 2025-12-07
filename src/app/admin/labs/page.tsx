@@ -90,7 +90,7 @@ export default function LabsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('active');
 
   const [labStats, setLabStats] = useState<LabStats | null>(null);
   const [loadingStats, setLoadingStats] = useState(false);

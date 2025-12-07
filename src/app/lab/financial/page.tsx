@@ -7,7 +7,6 @@ import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-i
 import type { User, Device, DeviceModel, Warranty, Repair, RepairType, Payment } from '@/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
   Table,
   TableBody,
@@ -23,10 +22,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useToast } from '@/components/ui/use-toast';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import {
-  Calendar,
   Wrench,
   TrendingUp,
   Download,
@@ -34,7 +31,6 @@ import {
   CheckCircle,
   Clock
 } from 'lucide-react';
-import ShekelIcon from '@/components/ui/shekel-icon';
 
 type CompletedRepair = Repair & {
   device?: (Pick<Device, 'imei'> & {
@@ -58,8 +54,16 @@ interface MonthlyReport {
   payments: LabPayment[];
 }
 
+const FAULT_TYPE_LABELS: Record<string, string> = {
+  screen: 'מסך',
+  charging_port: 'שקע טעינה',
+  flash: 'פנס',
+  speaker: 'רמקול',
+  board: 'לוח אם',
+  other: 'אחר',
+};
+
 export default function LabFinancialReportPage() {
-  // React Query hooks with Realtime
   const { user: labData, isLoading: isUserLoading } = useCurrentUser();
   const labId = labData?.id || null;
   const { repairs: completedRepairs, isLoading: isRepairsLoading, isFetching: isRepairsFetching } = useLabCompletedRepairs(labId);
@@ -68,37 +72,21 @@ export default function LabFinancialReportPage() {
   const isLoading = isUserLoading || isRepairsLoading || isPaymentsLoading;
   const isFetching = isRepairsFetching || isPaymentsFetching;
 
-  // Local state for UI
   const [selectedMonth, setSelectedMonth] = useState<string>('');
   
-  // --- [תיקון 2: הפיכת state נגזר ל-useMemo] ---
-
-  // Legacy fault type labels for backwards compatibility
-  const faultTypeLabels: Record<string, string> = {
-    screen: 'מסך',
-    charging_port: 'שקע טעינה',
-    flash: 'פנס',
-    speaker: 'רמקול',
-    board: 'לוח אם',
-    other: 'אחר',
-  };
-
-  // עטיפת הפונקציה ב-useCallback כדי לייצב אותה עבור useMemo
   const getRepairTypeName = useCallback((repair: CompletedRepair): string => {
     if (repair.repair_type?.name) {
       return repair.repair_type.name;
     }
     if (repair.fault_type) {
-      return faultTypeLabels[repair.fault_type] || repair.fault_type;
+      return FAULT_TYPE_LABELS[repair.fault_type] || repair.fault_type;
     }
     return 'אחר';
-  }, [faultTypeLabels]); // תלות זו יציבה
+  }, []);
 
-  // חישוב הדוחות באמצעות useMemo
   const monthlyReports = useMemo(() => {
     if (!completedRepairs || !payments) return [];
 
-    // Process data by month
     const reportsByMonth: Record<string, MonthlyReport> = {};
 
     completedRepairs.forEach(repair => {
@@ -121,7 +109,6 @@ export default function LabFinancialReportPage() {
       reportsByMonth[month].totalRepairs++;
       reportsByMonth[month].totalRevenue += repair.cost || 0;
 
-      // Group by repair type
       const repairTypeName = getRepairTypeName(repair as any);
       if (!reportsByMonth[month].byRepairType[repairTypeName]) {
         reportsByMonth[month].byRepairType[repairTypeName] = { count: 0, revenue: 0 };
@@ -130,7 +117,6 @@ export default function LabFinancialReportPage() {
       reportsByMonth[month].byRepairType[repairTypeName].revenue += repair.cost || 0;
     });
 
-    // Add payments to months
     payments.forEach(payment => {
       const month = payment.payment_date.substring(0, 7);
       if (reportsByMonth[month]) {
@@ -147,7 +133,6 @@ export default function LabFinancialReportPage() {
     return sortedReports;
   }, [completedRepairs, payments, getRepairTypeName]);
 
-  // חישוב סטטיסטיקות כלליות באמצעות useMemo
   const totalStats = useMemo(() => {
     if (!completedRepairs || !payments) {
       return { totalRepairs: 0, totalRevenue: 0, totalPaid: 0, balance: 0 };
@@ -164,31 +149,12 @@ export default function LabFinancialReportPage() {
     };
   }, [completedRepairs, payments]);
 
-  // useEffect חדש: קובע את החודש הנבחר כברירת מחדל רק כשהדוחות נטענים
-  useEffect(() => {
-    // אם הדוחות נטענו ועדיין לא נבחר חודש, בחר את החדש ביותר
-    if (monthlyReports.length > 0 && !selectedMonth) {
-      const mostRecentMonth = `${monthlyReports[0].year}-${String(monthlyReports[0].month).padStart(2, '0')}`;
-      setSelectedMonth(mostRecentMonth);
-    }
-    // אפקט זה תלוי *רק* בדוחות, ולא בחודש שנבחר
-  }, [monthlyReports, selectedMonth]); 
-  // (הוספנו את selectedMonth בחזרה כדי למנוע stale state, אבל הלוגיקה `!selectedMonth` מונעת לולאה)
-  // עריכה: עדיף להסיר את התלות ב-selectedMonth לחלוטין כדי למנוע בלבול
-  /* useEffect(() => {
-    if (monthlyReports.length > 0 && !selectedMonth) {
-      const mostRecentMonth = `${monthlyReports[0].year}-${String(monthlyReports[0].month).padStart(2, '0')}`;
-      setSelectedMonth(mostRecentMonth);
-    }
-  }, [monthlyReports]); 
-  */
-  // נשאיר את הקוד המקורי של המשתמש כרגע, הוא עובד בסדר
   useEffect(() => {
     if (monthlyReports.length > 0 && !selectedMonth) {
       const mostRecentMonth = `${monthlyReports[0].year}-${String(monthlyReports[0].month).padStart(2, '0')}`;
       setSelectedMonth(mostRecentMonth);
     }
-  }, [monthlyReports, selectedMonth]); // הלולאה נשברת כי selectedMonth יפסיק להיות Falsy
+  }, [monthlyReports, selectedMonth]);
 
 
   const exportToCSV = () => {
@@ -232,14 +198,11 @@ export default function LabFinancialReportPage() {
     link.click();
   };
 
-  // חישוב הדוח הנוכחי באמצעות useMemo
   const currentMonthReport = useMemo(() => {
     return monthlyReports.find(r => 
       `${r.year}-${String(r.month).padStart(2, '0')}` === selectedMonth
     );
   }, [monthlyReports, selectedMonth]);
-
-  // --- [סוף תיקון 2] ---
 
   if (isLoading) {
     return (
@@ -251,7 +214,6 @@ export default function LabFinancialReportPage() {
 
   return (
     <div className="space-y-6">
-      {/* Background refresh indicator */}
       <BackgroundRefreshIndicator
         isFetching={isFetching}
         isLoading={isLoading}

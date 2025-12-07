@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 
 export interface StoreDashboardStats {
@@ -16,49 +16,38 @@ export interface StoreDashboardStats {
  */
 async function fetchStoreDashboardStats(storeId: string): Promise<StoreDashboardStats> {
   const supabase = createClient();
-
-  // Active warranties count
-  const { count: activeCount } = await supabase
-    .from('warranties')
-    .select('*', { count: 'exact' })
-    .eq('store_id', storeId)
-    .eq('is_active', true)
-    .gte('expiry_date', new Date().toISOString());
-
-  // Get device IDs for this store
-  const { data: warranties } = await supabase
-    .from('warranties')
-    .select('device_id')
-    .eq('store_id', storeId);
-
-  const deviceIds = (warranties || []).map(w => w.device_id).filter(Boolean) as string[];
-
-  // Pending replacements
-  const { count: pendingCount } = await supabase
-    .from('replacement_requests')
-    .select('*', { count: 'exact' })
-    .in('device_id', deviceIds.length > 0 ? deviceIds : [''])
-    .eq('status', 'pending');
-
-  // Monthly activations
   const startOfMonth = new Date();
   startOfMonth.setDate(1);
   startOfMonth.setHours(0, 0, 0, 0);
 
-  const { count: monthlyCount } = await supabase
-    .from('warranties')
-    .select('*', { count: 'exact' })
-    .eq('store_id', storeId)
-    .gte('activation_date', startOfMonth.toISOString());
+  const [activeRes, pendingRes, monthlyRes, devicesRes] = await Promise.all([
+    supabase
+      .from('warranties')
+      .select('*', { count: 'exact', head: true })
+      .eq('store_id', storeId)
+      .eq('is_active', true)
+      .gte('expiry_date', new Date().toISOString()),
 
-  // Total devices
-  const { data: deviceCountData } = await supabase.rpc('get_store_device_count');
+    supabase
+      .from('replacement_requests')
+      .select('*', { count: 'exact', head: true })
+      .eq('requester_id', storeId)
+      .eq('status', 'pending'),
+
+    supabase
+      .from('warranties')
+      .select('*', { count: 'exact', head: true })
+      .eq('store_id', storeId)
+      .gte('activation_date', startOfMonth.toISOString()),
+
+    supabase.rpc('get_store_device_count')
+  ]);
 
   return {
-    activeWarranties: activeCount || 0,
-    pendingReplacements: pendingCount || 0,
-    monthlyActivations: monthlyCount || 0,
-    totalDevices: deviceCountData || 0,
+    activeWarranties: activeRes.count || 0,
+    pendingReplacements: pendingRes.count || 0,
+    monthlyActivations: monthlyRes.count || 0,
+    totalDevices: (devicesRes.data as number) || 0,
   };
 }
 
@@ -67,6 +56,7 @@ async function fetchStoreDashboardStats(storeId: string): Promise<StoreDashboard
  */
 export function useStoreDashboardStats(storeId: string | null) {
   const queryClient = useQueryClient();
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const query = useQuery({
     queryKey: ['store', 'dashboard', 'stats', storeId],
@@ -75,48 +65,41 @@ export function useStoreDashboardStats(storeId: string | null) {
       return fetchStoreDashboardStats(storeId);
     },
     enabled: !!storeId,
-    refetchInterval: 60 * 1000, // 60 seconds as backup to Realtime
+    staleTime: 1000 * 60 * 5,
   });
 
-  // Realtime subscription - batched for efficiency
-  // ✅ Optimization: Single channel with multiple table subscriptions
-  // Reduces WebSocket connections from 2 to 1 (50% reduction)
   useEffect(() => {
     if (!storeId) return;
-
     const supabase = createClient();
 
-    const handleChange = () => {
-      queryClient.invalidateQueries({
-        queryKey: ['store', 'dashboard', 'stats', storeId],
-      });
+    const triggerRefresh = () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['store', 'dashboard', 'stats', storeId] });
+      }, 1000);
     };
 
-    // Single channel monitoring all relevant tables
     const channel = supabase
-      .channel(`store-dashboard-all-${storeId}`)
+      .channel(`store-dashboard-stats-${storeId}`)
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'warranties',
-          filter: `store_id=eq.${storeId}`,
-        },
-        handleChange
+        { event: '*', schema: 'public', table: 'warranties', filter: `store_id=eq.${storeId}` },
+        triggerRefresh
       )
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'replacement_requests',
-        },
-        handleChange
+        { event: '*', schema: 'public', table: 'replacement_requests', filter: `requester_id=eq.${storeId}` },
+        triggerRefresh
+      )
+      .on(
+         'postgres_changes',
+         { event: 'INSERT', schema: 'public', table: 'devices' },
+         triggerRefresh
       )
       .subscribe();
 
     return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
       supabase.removeChannel(channel);
     };
   }, [storeId, queryClient]);

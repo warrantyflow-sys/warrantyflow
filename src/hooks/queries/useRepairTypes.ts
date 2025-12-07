@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { fetchLabRepairTypes } from '@/lib/api/repairs';
 import type { RepairType } from '@/types';
@@ -21,12 +21,10 @@ export interface LabRepairPrice {
   lab: Lab;
 }
 
-/**
- * שליפת כל סוגי התיקונים
- */
+// --- Fetcher Functions ---
+
 async function fetchAllRepairTypes(): Promise<RepairType[]> {
   const supabase = createClient();
-
   const { data, error } = await supabase
     .from('repair_types')
     .select('*')
@@ -35,16 +33,11 @@ async function fetchAllRepairTypes(): Promise<RepairType[]> {
   if (error) {
     throw new Error(`Failed to fetch repair types: ${error.message}`);
   }
-
   return data || [];
 }
 
-/**
- * שליפת כל המעבדות הפעילות
- */
 async function fetchActiveLabs(): Promise<Lab[]> {
   const supabase = createClient();
-
   const { data, error } = await supabase
     .from('users')
     .select('id, full_name, email')
@@ -55,16 +48,11 @@ async function fetchActiveLabs(): Promise<Lab[]> {
   if (error) {
     throw new Error(`Failed to fetch labs: ${error.message}`);
   }
-
   return data || [];
 }
 
-/**
- * שליפת מחירי מעבדה לסוג תיקון מסוים
- */
 async function fetchLabRepairPrices(repairTypeId: string): Promise<LabRepairPrice[]> {
   const supabase = createClient();
-
   const { data, error } = await supabase
     .from('lab_repair_prices')
     .select(`
@@ -76,18 +64,17 @@ async function fetchLabRepairPrices(repairTypeId: string): Promise<LabRepairPric
   if (error) {
     throw new Error(`Failed to fetch lab prices: ${error.message}`);
   }
-
   return (data || []) as any as LabRepairPrice[];
 }
 
+// --- Hooks ---
+
 /**
  * Hook לשליפת סוגי תיקונים זמינים למעבדה (עם מחירים)
- *
- * @param labId - מזהה המעבדה
- * @returns סוגי תיקונים זמינים עם מחירים
  */
 export function useLabRepairTypes(labId: string | null) {
   const queryClient = useQueryClient();
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const query = useQuery({
     queryKey: ['repair-types', 'lab', labId],
@@ -98,44 +85,39 @@ export function useLabRepairTypes(labId: string | null) {
     enabled: !!labId,
   });
 
-  // Supabase Realtime subscriptions
-  // ✅ Optimization: Single channel with multiple table subscriptions
-  // Reduces WebSocket connections from 2 to 1 (50% reduction)
+  // Realtime
   useEffect(() => {
     if (!labId) return;
-
     const supabase = createClient();
 
-    const handleChange = () => {
-      queryClient.invalidateQueries({
-        queryKey: ['repair-types', 'lab', labId],
-      });
+    const triggerRefresh = () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['repair-types', 'lab', labId] });
+      }, 1000);
     };
 
     const channel = supabase
       .channel(`repair-types-lab-all-${labId}`)
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'repair_types',
-        },
-        handleChange
+        { event: '*', schema: 'public', table: 'repair_types' },
+        triggerRefresh
       )
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
+        { 
+          event: '*', 
+          schema: 'public', 
           table: 'lab_repair_prices',
-          filter: `lab_id=eq.${labId}`,
+          filter: `lab_id=eq.${labId}`, 
         },
-        handleChange
+        triggerRefresh
       )
       .subscribe();
 
     return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
       supabase.removeChannel(channel);
     };
   }, [labId, queryClient]);
@@ -151,40 +133,39 @@ export function useLabRepairTypes(labId: string | null) {
 }
 
 /**
- * Hook לכל סוגי התיקונים (ללא מחירים)
+ * Hook לכל סוגי התיקונים (עבור המנהל)
  */
 export function useAllRepairTypes() {
   const queryClient = useQueryClient();
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const query = useQuery({
     queryKey: ['repair-types', 'all'],
     queryFn: fetchAllRepairTypes,
-    staleTime: 5 * 60 * 1000, // 5 minutes - semi-static data
-    // No refetchInterval - Realtime subscription handles updates
+    staleTime: 5 * 60 * 1000,
   });
 
-  // Realtime subscription
   useEffect(() => {
     const supabase = createClient();
+
+    const triggerRefresh = () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['repair-types', 'all'] });
+      }, 1000);
+    };
 
     const channel = supabase
       .channel('repair-types-all')
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'repair_types',
-        },
-        () => {
-          queryClient.invalidateQueries({
-            queryKey: ['repair-types', 'all'],
-          });
-        }
+        { event: '*', schema: 'public', table: 'repair_types' },
+        triggerRefresh
       )
       .subscribe();
 
     return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
       supabase.removeChannel(channel);
     };
   }, [queryClient]);
@@ -200,21 +181,27 @@ export function useAllRepairTypes() {
 }
 
 /**
- * Hook למעבדות פעילות
+ * Hook למעבדות פעילות (עבור המנהל - מסך ניהול סוגי תיקונים)
  */
 export function useActiveLabs() {
   const queryClient = useQueryClient();
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const query = useQuery({
     queryKey: ['labs', 'active'],
     queryFn: fetchActiveLabs,
-    staleTime: 5 * 60 * 1000, // 5 minutes - semi-static data
-    // No refetchInterval - Realtime subscription handles updates
+    staleTime: 5 * 60 * 1000,
   });
 
-  // Realtime subscription
   useEffect(() => {
     const supabase = createClient();
+
+    const triggerRefresh = () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['labs', 'active'] });
+      }, 1000);
+    };
 
     const channel = supabase
       .channel('labs-active')
@@ -226,15 +213,12 @@ export function useActiveLabs() {
           table: 'users',
           filter: 'role=eq.lab',
         },
-        () => {
-          queryClient.invalidateQueries({
-            queryKey: ['labs', 'active'],
-          });
-        }
+        triggerRefresh
       )
       .subscribe();
 
     return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
       supabase.removeChannel(channel);
     };
   }, [queryClient]);
@@ -250,10 +234,11 @@ export function useActiveLabs() {
 }
 
 /**
- * Hook למחירי מעבדות לסוג תיקון מסוים
+ * Hook למחירי מעבדות לסוג תיקון מסוים (עבור דיאלוג מחירים של המנהל)
  */
 export function useLabRepairPrices(repairTypeId: string | null) {
   const queryClient = useQueryClient();
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const query = useQuery({
     queryKey: ['lab-repair-prices', repairTypeId],
@@ -264,11 +249,16 @@ export function useLabRepairPrices(repairTypeId: string | null) {
     enabled: !!repairTypeId,
   });
 
-  // Realtime subscription
   useEffect(() => {
     if (!repairTypeId) return;
-
     const supabase = createClient();
+
+    const triggerRefresh = () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['lab-repair-prices', repairTypeId] });
+      }, 1000);
+    };
 
     const channel = supabase
       .channel(`lab-repair-prices-${repairTypeId}`)
@@ -280,15 +270,12 @@ export function useLabRepairPrices(repairTypeId: string | null) {
           table: 'lab_repair_prices',
           filter: `repair_type_id=eq.${repairTypeId}`,
         },
-        () => {
-          queryClient.invalidateQueries({
-            queryKey: ['lab-repair-prices', repairTypeId],
-          });
-        }
+        triggerRefresh
       )
       .subscribe();
 
     return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
       supabase.removeChannel(channel);
     };
   }, [repairTypeId, queryClient]);

@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
-// ✅ שימוש ב-Hooks החדשים והיעילים שיצרנו
 import { useRepairsTable, useRepairsStats } from '@/hooks/queries/useRepairs';
 import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
 import { Button } from '@/components/ui/button';
@@ -418,7 +417,7 @@ export default function RepairsPage() {
                 <TableRow key={repair.id}>
                   <TableCell>
                     <div>
-                      <div className="font-medium">{repair.device?.device_models?.model_name || repair.device?.device_model?.model_name || 'לא ידוע'}</div>
+                      <div className="font-medium">{repair.device?.device_models?.model_name || 'לא ידוע'}</div>
                       <div className="text-xs text-muted-foreground">{repair.device?.imei}</div>
                     </div>
                   </TableCell>

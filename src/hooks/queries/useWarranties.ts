@@ -1,14 +1,16 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { fetchStoreWarranties, fetchWarrantiesWithPagination } from '@/lib/api/warranties';
 
-// --- Hooks למנהל ---
+// --- Hooks למנהל (Admin) ---
 
 export function useWarrantiesStats() {
   const queryClient = useQueryClient();
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
   const query = useQuery({
     queryKey: ['warranties', 'stats'],
     queryFn: async () => {
@@ -22,11 +24,22 @@ export function useWarrantiesStats() {
 
   useEffect(() => {
     const supabase = createClient();
-    const channel = supabase.channel('warranties-stats')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'warranties' }, 
-          () => queryClient.invalidateQueries({ queryKey: ['warranties', 'stats'] }))
+    
+    const triggerRefresh = () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['warranties', 'stats'] });
+      }, 1000);
+    };
+
+    const channel = supabase.channel('warranties-stats-monitor')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'warranties' }, triggerRefresh)
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+
+    return () => { 
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      supabase.removeChannel(channel); 
+    };
   }, [queryClient]);
 
   return query;
@@ -34,6 +47,8 @@ export function useWarrantiesStats() {
 
 export function useWarrantiesTable(page: number, pageSize: number, filters: { status: string; search: string }) {
   const queryClient = useQueryClient();
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
   const query = useQuery({
     queryKey: ['warranties', 'list', page, pageSize, filters],
     queryFn: () => fetchWarrantiesWithPagination(page, pageSize, filters),
@@ -42,20 +57,33 @@ export function useWarrantiesTable(page: number, pageSize: number, filters: { st
 
   useEffect(() => {
     const supabase = createClient();
-    const channel = supabase.channel('warranties-list')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'warranties' }, 
-          () => queryClient.invalidateQueries({ queryKey: ['warranties', 'list'] }))
+
+    const triggerRefresh = () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['warranties', 'list'] });
+      }, 1000);
+    };
+
+    const channel = supabase.channel('warranties-list-monitor')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'warranties' }, triggerRefresh)
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+
+    return () => { 
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      supabase.removeChannel(channel); 
+    };
   }, [queryClient]);
 
   return query;
 }
 
-// --- Hooks לחנות ---
+// --- Hook לחנות (Store) ---
 
 export function useStoreWarranties(storeId: string | null, page: number = 1, pageSize: number = 50) {
   const queryClient = useQueryClient();
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
   const query = useQuery({
     queryKey: ['warranties', 'store', storeId, page, pageSize],
     queryFn: () => {
@@ -63,36 +91,52 @@ export function useStoreWarranties(storeId: string | null, page: number = 1, pag
       return fetchStoreWarranties(storeId, page, pageSize);
     },
     enabled: !!storeId,
+    placeholderData: (prev) => prev, 
   });
   
   useEffect(() => {
+    if (!storeId) return;
     const supabase = createClient();
 
-    const handleChange = () => {
-      queryClient.invalidateQueries({
-        queryKey: ['warranties', 'all'],
-      });
+    const triggerRefresh = () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        queryClient.invalidateQueries({ 
+          predicate: (query) => 
+            query.queryKey[0] === 'warranties' && 
+            query.queryKey[1] === 'store' && 
+            query.queryKey[2] === storeId
+        });
+        
+        queryClient.invalidateQueries({ queryKey: ['store', 'dashboard', 'stats'] });
+      }, 1000);
     };
 
-    // Single channel monitoring all relevant tables
     const channel = supabase
-      .channel('warranties-all-combined')
+      .channel(`store-warranties-${storeId}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'warranties' },
-        handleChange
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'warranties',
+          filter: `store_id=eq.${storeId}`
+        },
+        triggerRefresh
       )
+
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'devices' },
-        handleChange
+        triggerRefresh
       )
       .subscribe();
 
     return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
       supabase.removeChannel(channel);
     };
-  }, [queryClient]);
+  }, [queryClient, storeId]);
 
   return {
     warranties: query.data?.warranties || [],

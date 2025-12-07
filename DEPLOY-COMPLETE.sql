@@ -1254,20 +1254,21 @@ RETURNS TABLE(
   device_found BOOLEAN
 )
 LANGUAGE plpgsql
-SECURITY DEFINER -- רץ עם הרשאות אדמין (עוקף RLS)
-SET search_path = public, temp -- אבטחה קריטית
+SECURITY DEFINER
+SET search_path = public, temp
 AS $$
 DECLARE
   v_user_id UUID := auth.uid();
   v_user_role TEXT;
-  v_searches_today INTEGER;
+  v_searches_today INTEGER := 0;
   v_rate_limit INTEGER;
   v_device_record RECORD;
+  v_warranty_record RECORD;
 BEGIN
-  -- בדיקת תפקיד
+  -- Get user role
   SELECT role::TEXT INTO v_user_role FROM users WHERE id = v_user_id;
   
-  -- בדיקת Rate Limit (הוחלה גם על מעבדות)
+  -- Check rate limit for stores and labs
   IF v_user_role IN ('store', 'lab') THEN
     SELECT COALESCE((value->>'value')::INTEGER, 50) INTO v_rate_limit 
     FROM settings WHERE key = 'imei_search_rate_limit';
@@ -1286,20 +1287,31 @@ BEGIN
     END IF;
   END IF;
   
-  -- חיפוש המכשיר
-  SELECT d.id, d.imei, d.imei2, d.model_id, dm.model_name, dm.manufacturer, dm.warranty_months, d.is_replaced, d.replaced_at
+  -- Search for device
+  SELECT d.id, d.imei, d.imei2, d.model_id, dm.model_name, dm.manufacturer, 
+         dm.warranty_months, d.is_replaced, d.replaced_at
   INTO v_device_record
   FROM devices d
   LEFT JOIN device_models dm ON d.model_id = dm.id
   WHERE d.imei = p_imei OR d.imei2 = p_imei
   LIMIT 1;
 
-  -- תיעוד ב-Log
+  -- Log the search
   INSERT INTO device_search_log (user_id, search_term, device_found, device_id, ip_address)
-  VALUES (v_user_id, p_imei, (v_device_record.id IS NOT NULL), v_device_record.id, p_user_ip::INET);
+  VALUES (v_user_id, p_imei, (v_device_record.id IS NOT NULL), v_device_record.id, 
+          CASE WHEN p_user_ip IS NOT NULL THEN p_user_ip::INET ELSE NULL END);
 
-  -- החזרת תוצאות
+  -- If device found
   IF v_device_record.id IS NOT NULL THEN
+    -- Get active warranty with customer details
+    SELECT w.id, w.expiry_date, w.customer_name, w.customer_phone, w.store_id
+    INTO v_warranty_record
+    FROM warranties w 
+    WHERE w.device_id = v_device_record.id 
+      AND w.is_active = true 
+      AND w.expiry_date >= CURRENT_DATE
+    LIMIT 1;
+
     RETURN QUERY
     SELECT
       v_device_record.id,
@@ -1311,24 +1323,23 @@ BEGIN
       v_device_record.warranty_months,
       v_device_record.is_replaced,
       v_device_record.replaced_at,
-      EXISTS(SELECT 1 FROM warranties w WHERE w.device_id = v_device_record.id AND w.is_active = true AND w.expiry_date >= CURRENT_DATE),
-      w.id,
-      w.expiry_date,
-      -- לוגיקה מעודכנת לחשיפת פרטי לקוח (כולל למעבדה)
+      (v_warranty_record.id IS NOT NULL),
+      v_warranty_record.id,
+      v_warranty_record.expiry_date,
       CASE 
-        WHEN is_admin() OR is_lab() OR (is_store() AND w.store_id = v_user_id) THEN w.customer_name 
+        WHEN is_admin() OR is_lab() OR (is_store() AND v_warranty_record.store_id = v_user_id) 
+        THEN v_warranty_record.customer_name 
         ELSE NULL 
       END,
       CASE 
-        WHEN is_admin() OR is_lab() OR (is_store() AND w.store_id = v_user_id) THEN w.customer_phone 
+        WHEN is_admin() OR is_lab() OR (is_store() AND v_warranty_record.store_id = v_user_id) 
+        THEN v_warranty_record.customer_phone 
         ELSE NULL 
       END,
       'מכשיר נמצא'::TEXT,
-      true
-    FROM (SELECT 1) dummy
-    LEFT JOIN warranties w ON w.device_id = v_device_record.id AND w.is_active = true
-    LIMIT 1;
+      true;
   ELSE
+    -- Device not found
     RETURN QUERY SELECT 
       NULL::UUID, NULL::TEXT, NULL::TEXT, NULL::UUID, NULL::TEXT, NULL::TEXT, 
       NULL::INTEGER, NULL::BOOLEAN, NULL::TIMESTAMPTZ, NULL::BOOLEAN,
@@ -1338,7 +1349,6 @@ BEGIN
 END;
 $$;
 
--- מתן הרשאה להרצה
 GRANT EXECUTE ON FUNCTION search_device_by_imei(TEXT, TEXT) TO authenticated;
 
 -- Store: Check if IMEI exists
@@ -2075,6 +2085,44 @@ BEGIN
   RAISE NOTICE '👁️  Creating views...';
 END $$;
 
+
+
+CREATE OR REPLACE VIEW view_lab_balances AS
+WITH lab_earnings AS (
+    -- חישוב הכנסות לכל מעבדה בנפרד
+    SELECT 
+        lab_id, 
+        COALESCE(SUM(cost), 0) as total_earned,
+        COUNT(id) as repairs_count
+    FROM repairs 
+    WHERE status = 'completed'
+    GROUP BY lab_id
+),
+lab_payments AS (
+    -- חישוב תשלומים לכל מעבדה בנפרד
+    SELECT 
+        lab_id, 
+        COALESCE(SUM(amount), 0) as total_paid,
+        COUNT(id) as payments_count
+    FROM payments 
+    GROUP BY lab_id
+)
+SELECT 
+    u.id AS lab_id,
+    u.full_name AS lab_name,
+    u.email AS lab_email,
+    COALESCE(le.total_earned, 0) AS total_earned,
+    COALESCE(lp.total_paid, 0) AS total_paid,
+    (COALESCE(le.total_earned, 0) - COALESCE(lp.total_paid, 0)) AS balance,
+    COALESCE(le.repairs_count, 0) AS repairs_count,
+    COALESCE(lp.payments_count, 0) AS payments_count
+FROM users u
+LEFT JOIN lab_earnings le ON u.id = le.lab_id
+LEFT JOIN lab_payments lp ON u.id = lp.lab_id
+WHERE u.role = 'lab' AND u.is_active = true;
+
+-- הענקת הרשאות
+GRANT SELECT ON view_lab_balances TO authenticated;
 
 
 -- Rich Devices View (For Admin Table)

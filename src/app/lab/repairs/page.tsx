@@ -275,7 +275,7 @@ export default function LabRepairsPage() {
 
   const handleSearchDevice = async () => {
     const trimmedIMEI = searchIMEI.trim().replace(/[\s-]/g, '');
-
+    
     if (!trimmedIMEI) {
       toast({
         title: 'שגיאה',
@@ -284,32 +284,52 @@ export default function LabRepairsPage() {
       });
       return;
     }
-
+  
     try {
       setIsSearching(true);
-
-      // Search using IMEI lookup view - minimal info only
-      const { data: lookupData, error: lookupError } = await supabase
-        .from('devices_imei_lookup')
-        .select('*')
-        .or(`imei.eq.${trimmedIMEI},imei2.eq.${trimmedIMEI}`)
-        .maybeSingle() as {
-          data: any;
-          error: any;
-        };
-
-      if (lookupError || !lookupData) {
+  
+      // Use the search_device_by_imei function
+      const { data: searchResult, error: searchError } = await (supabase as any)
+        .rpc('search_device_by_imei', {
+          p_imei: trimmedIMEI,
+          p_user_ip: null
+        });
+  
+  
+      if (searchError) {
+        console.error('Search error:', searchError);
+        toast({
+          title: 'שגיאה',
+          description: `אירעה שגיאה בחיפוש המכשיר: ${searchError.message}`,
+          variant: 'destructive',
+        });
+        return;
+      }
+  
+      if (!searchResult || searchResult.length === 0) {
+        toast({
+          title: 'שגיאה',
+          description: 'לא התקבלה תשובה מהשרת',
+          variant: 'destructive',
+        });
+        return;
+      }
+  
+      const result = searchResult[0];
+  
+      // Check if device was found
+      if (!result.device_found || !result.device_id) {
         toast({
           title: 'לא נמצא',
-          description: 'לא נמצא מכשיר עם IMEI זה',
+          description: result.message || `המכשיר עם IMEI ${trimmedIMEI} לא נמצא במערכת`,
           variant: 'destructive',
         });
         setSearchedDevice(null);
         return;
       }
-
+  
       // Check if device has active warranty
-      if (!lookupData.has_active_warranty) {
+      if (!result.has_active_warranty) {
         toast({
           title: 'אין אחריות פעילה',
           description: 'למכשיר זה אין אחריות פעילה',
@@ -318,45 +338,39 @@ export default function LabRepairsPage() {
         setSearchedDevice(null);
         return;
       }
-
-      // Check if device already has active repair
-      if (lookupData.has_active_repair) {
+  
+      // Check if device is replaced
+      if (result.is_replaced) {
         toast({
-          title: 'שגיאה',
-          description: 'כבר קיים תיקון פעיל למכשיר זה',
+          title: 'מכשיר הוחלף',
+          description: `מכשיר זה הוחלף${result.replaced_at ? ' בתאריך ' + formatDate(result.replaced_at) : ''} ולא ניתן להפעיל עליו תיקון`,
           variant: 'destructive',
         });
         setSearchedDevice(null);
         return;
       }
-
-      // Get warranty details for customer info
-      const { data: warrantyData } = await supabase
-        .from('warranties')
-        .select('id, customer_name, customer_phone, activation_date, expiry_date')
-        .eq('device_id', lookupData.id)
-        .eq('is_active', true)
-        .gte('expiry_date', new Date().toISOString().split('T')[0])
-        .single() as {
-          data: any;
-          error: any;
-        };
-
+  
+      // Create device object with warranty info
       const data = {
-        id: lookupData.id,
+        id: result.device_id,
         imei: trimmedIMEI,
-        model: lookupData.model_name || 'לא ידוע',
-        warranty: warrantyData ? [warrantyData] : []
+        model: result.model_name || 'לא ידוע',
+        warranty: result.warranty_id ? [{
+          id: result.warranty_id,
+          customer_name: result.customer_name || '',
+          customer_phone: result.customer_phone || '',
+          activation_date: result.warranty_expiry_date || new Date().toISOString().split('T')[0],
+          expiry_date: result.warranty_expiry_date || new Date().toISOString().split('T')[0]
+        }] : []
       };
-
+  
       setSearchedDevice(data);
-
-      // Auto-fill customer details from warranty (always required)
-      if (warrantyData) {
-        setSearchedDevice(data);
-        setValue('customer_name', warrantyData.customer_name || '');
-        setValue('customer_phone', warrantyData.customer_phone || '');
-      } else {
+  
+      // Auto-fill customer details from warranty
+      if (result.warranty_id && result.customer_name) {
+        setValue('customer_name', result.customer_name);
+        setValue('customer_phone', result.customer_phone || '');
+      } else if (result.has_active_warranty) {
         toast({
           title: 'שגיאת נתונים',
           description: 'המכשיר נמצא אך פרטי הלקוח המשויכים לאחריות לא אותרו.',
@@ -364,11 +378,11 @@ export default function LabRepairsPage() {
         });
         setSearchedDevice(null);
       }
-
+  
     } catch (error) {
       toast({
         title: 'שגיאה',
-        description: 'לא ניתן לחפש את המכשיר',
+        description: 'אירעה שגיאה בחיפוש המכשיר',
         variant: 'destructive',
       });
       setSearchedDevice(null);

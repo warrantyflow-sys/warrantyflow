@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 
 export interface LabDashboardStats {
@@ -32,12 +32,10 @@ export interface LabRepairItem {
   } | null;
 }
 
-/**
- * שליפת סטטיסטיקות דשבורד מעבדה (RPC)
- */
+// --- Fetcher Functions ---
+
 async function fetchLabDashboardStats(): Promise<LabDashboardStats> {
   const supabase = createClient();
-
   const { data, error } = await supabase.rpc('get_lab_dashboard_stats');
 
   if (error) {
@@ -56,42 +54,25 @@ async function fetchLabDashboardStats(): Promise<LabDashboardStats> {
   };
 }
 
-/**
- * שליפת תיקונים אחרונים של מעבדה
- */
 async function fetchLabRecentRepairs(labId: string): Promise<LabRepairItem[]> {
   const supabase = createClient();
-
   const { data, error } = await supabase
     .from('repairs')
     .select(`
       *,
-      device:devices(
-        imei,
-        device_models(model_name)
-      ),
-      warranty:warranties(
-        customer_name,
-        customer_phone
-      )
+      device:devices(imei, device_models(model_name)),
+      warranty:warranties(customer_name, customer_phone)
     `)
     .eq('lab_id', labId)
     .order('created_at', { ascending: false })
     .limit(5);
 
-  if (error) {
-    throw new Error(`Failed to fetch recent repairs: ${error.message}`);
-  }
-
+  if (error) throw new Error(`Failed to fetch recent repairs: ${error.message}`);
   return (data || []) as any as LabRepairItem[];
 }
 
-/**
- * שליפת תיקונים דחופים (מעל 48 שעות)
- */
 async function fetchLabUrgentRepairs(labId: string): Promise<LabRepairItem[]> {
   const supabase = createClient();
-
   const twoDaysAgo = new Date();
   twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
 
@@ -99,14 +80,8 @@ async function fetchLabUrgentRepairs(labId: string): Promise<LabRepairItem[]> {
     .from('repairs')
     .select(`
       *,
-      device:devices(
-        imei,
-        device_models(model_name)
-      ),
-      warranty:warranties(
-        customer_name,
-        customer_phone
-      )
+      device:devices(imei, device_models(model_name)),
+      warranty:warranties(customer_name, customer_phone)
     `)
     .eq('lab_id', labId)
     .in('status', ['received', 'in_progress'])
@@ -114,50 +89,53 @@ async function fetchLabUrgentRepairs(labId: string): Promise<LabRepairItem[]> {
     .order('created_at', { ascending: true })
     .limit(5);
 
-  if (error) {
-    throw new Error(`Failed to fetch urgent repairs: ${error.message}`);
-  }
-
+  if (error) throw new Error(`Failed to fetch urgent repairs: ${error.message}`);
   return (data || []) as any as LabRepairItem[];
 }
 
-/**
- * Hook לסטטיסטיקות דשבורד מעבדה
- */
-export function useLabDashboardStats() {
+// --- Hooks ---
+
+export function useLabDashboardStats(labId: string | null) {
   const queryClient = useQueryClient();
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const query = useQuery({
-    queryKey: ['lab', 'dashboard', 'stats'],
+    queryKey: ['lab', 'dashboard', 'stats', labId],
     queryFn: fetchLabDashboardStats,
-    refetchInterval: 60 * 1000, // 60 seconds as backup to Realtime
+    enabled: !!labId,
+    staleTime: 1000 * 60 * 5,
   });
 
-  // Realtime subscription
   useEffect(() => {
+    if (!labId) return;
     const supabase = createClient();
 
-    const repairsChannel = supabase
-      .channel('lab-dashboard-stats')
+    const triggerRefresh = () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['lab', 'dashboard', 'stats', labId] });
+      }, 1000);
+    };
+
+    const channel = supabase
+      .channel(`lab-stats-${labId}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'repairs',
+          filter: `lab_id=eq.${labId}`,
         },
-        () => {
-          queryClient.invalidateQueries({
-            queryKey: ['lab', 'dashboard', 'stats'],
-          });
-        }
+        triggerRefresh
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(repairsChannel);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      supabase.removeChannel(channel);
     };
-  }, [queryClient]);
+  }, [queryClient, labId]);
 
   return {
     stats: query.data || {
@@ -178,11 +156,9 @@ export function useLabDashboardStats() {
   };
 }
 
-/**
- * Hook לתיקונים אחרונים של מעבדה
- */
 export function useLabRecentRepairs(labId: string | null) {
   const queryClient = useQueryClient();
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const query = useQuery({
     queryKey: ['lab', 'recent-repairs', labId],
@@ -191,34 +167,30 @@ export function useLabRecentRepairs(labId: string | null) {
       return fetchLabRecentRepairs(labId);
     },
     enabled: !!labId,
-    refetchInterval: 60 * 1000, // 60 seconds as backup to Realtime
   });
 
-  // Realtime subscription
   useEffect(() => {
     if (!labId) return;
-
     const supabase = createClient();
+
+    const triggerRefresh = () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['lab', 'recent-repairs', labId] });
+      }, 1000);
+    };
 
     const channel = supabase
       .channel(`lab-recent-repairs-${labId}`)
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'repairs',
-          filter: `lab_id=eq.${labId}`,
-        },
-        () => {
-          queryClient.invalidateQueries({
-            queryKey: ['lab', 'recent-repairs', labId],
-          });
-        }
+        { event: '*', schema: 'public', table: 'repairs', filter: `lab_id=eq.${labId}` },
+        triggerRefresh
       )
       .subscribe();
 
     return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
       supabase.removeChannel(channel);
     };
   }, [labId, queryClient]);
@@ -233,11 +205,9 @@ export function useLabRecentRepairs(labId: string | null) {
   };
 }
 
-/**
- * Hook לתיקונים דחופים של מעבדה
- */
 export function useLabUrgentRepairs(labId: string | null) {
   const queryClient = useQueryClient();
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const query = useQuery({
     queryKey: ['lab', 'urgent-repairs', labId],
@@ -246,34 +216,30 @@ export function useLabUrgentRepairs(labId: string | null) {
       return fetchLabUrgentRepairs(labId);
     },
     enabled: !!labId,
-    refetchInterval: 60 * 1000, // 60 seconds as backup to Realtime
   });
 
-  // Realtime subscription
   useEffect(() => {
     if (!labId) return;
-
     const supabase = createClient();
+
+    const triggerRefresh = () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['lab', 'urgent-repairs', labId] });
+      }, 1000);
+    };
 
     const channel = supabase
       .channel(`lab-urgent-repairs-${labId}`)
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'repairs',
-          filter: `lab_id=eq.${labId}`,
-        },
-        () => {
-          queryClient.invalidateQueries({
-            queryKey: ['lab', 'urgent-repairs', labId],
-          });
-        }
+        { event: '*', schema: 'public', table: 'repairs', filter: `lab_id=eq.${labId}` },
+        triggerRefresh
       )
       .subscribe();
 
     return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
       supabase.removeChannel(channel);
     };
   }, [labId, queryClient]);

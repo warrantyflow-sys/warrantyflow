@@ -1,16 +1,16 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { fetchReplacementsWithPagination, type ReplacementFilters } from '@/lib/api/replacements';
 
 // --- Hook לסטטיסטיקות ---
 export function useReplacementsStats() {
   const queryClient = useQueryClient();
-  
-  // אין צורך ב-Realtime כאן כי ה-Hook של הטבלה כבר ירענן את הכל
-  return useQuery({
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
+  const query = useQuery({
     queryKey: ['replacements', 'stats'],
     queryFn: async () => {
       const supabase = createClient();
@@ -18,8 +18,35 @@ export function useReplacementsStats() {
       if (error) throw error;
       return data as any;
     },
-    staleTime: 1000 * 60 * 5, // 5 דקות
+    staleTime: 1000 * 60 * 5,
   });
+
+  // Realtime Subscription
+  useEffect(() => {
+    const supabase = createClient();
+
+    const triggerRefresh = () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['replacements', 'stats'] });
+      }, 1000);
+    };
+
+    const channel = supabase.channel('replacements-stats-monitor')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'replacement_requests' },
+        triggerRefresh
+      )
+      .subscribe();
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
+
+  return query;
 }
 
 // --- Hook לטבלה (Pagination) ---
@@ -29,34 +56,36 @@ export function useReplacementsTable(
   filters: ReplacementFilters
 ) {
   const queryClient = useQueryClient();
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const query = useQuery({
     queryKey: ['replacements', 'list', page, pageSize, filters],
     queryFn: () => fetchReplacementsWithPagination(page, pageSize, filters),
     placeholderData: (prev) => prev,
-    staleTime: 1000 * 30, // 30 שניות
+    staleTime: 1000 * 30,
   });
 
-  // Realtime Subscription - מרוכז במקום אחד
+  // Realtime Subscription
   useEffect(() => {
     const supabase = createClient();
-    // שימוש ב-ID רנדומלי מונע התנגשויות ערוצים
-    const channelId = `replacements-global-tracker-${Math.random()}`;
     
-    const channel = supabase.channel(channelId)
+    const triggerRefresh = () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['replacements'] });
+      }, 1000);
+    };
+    
+    const channel = supabase.channel('replacements-global-tracker')
       .on(
         'postgres_changes', 
         { event: '*', schema: 'public', table: 'replacement_requests' }, 
-        (payload) => {
-          console.log('🔄 Replacements change detected:', payload);
-          // רענון אגרסיבי: פוסל כל שאילתה שמתחילה ב-'replacements'
-          // זה יעדכן גם את הטבלה (בכל עמוד/פילטר) וגם את הסטטיסטיקות בבת אחת
-          queryClient.invalidateQueries({ queryKey: ['replacements'] });
-        }
+        triggerRefresh
       )
       .subscribe();
 
     return () => { 
+      if (debounceRef.current) clearTimeout(debounceRef.current);
       supabase.removeChannel(channel); 
     };
   }, [queryClient]);
@@ -64,8 +93,7 @@ export function useReplacementsTable(
   return query;
 }
 
-// --- Hook ישן (תאימות לאחור / שימוש בפורטל חנות) ---
-// במידה ופורטל החנות עדיין משתמש בגרסה הישנה, אפשר להשאיר זאת כך או לשדרג גם אותו
+// --- Hook לחנות ---
 async function fetchStoreReplacementRequests(storeId: string) {
   const supabase = createClient();
 
@@ -98,6 +126,7 @@ async function fetchStoreReplacementRequests(storeId: string) {
 
 export function useStoreReplacementRequests(storeId: string | null) {
   const queryClient = useQueryClient();
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const query = useQuery({
     queryKey: ['replacement-requests', 'store', storeId],
@@ -106,12 +135,21 @@ export function useStoreReplacementRequests(storeId: string | null) {
       return fetchStoreReplacementRequests(storeId);
     },
     enabled: !!storeId,
-    refetchInterval: 60 * 1000,
   });
 
   useEffect(() => {
     if (!storeId) return;
     const supabase = createClient();
+
+    const triggerRefresh = () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        queryClient.invalidateQueries({
+          queryKey: ['replacement-requests', 'store', storeId],
+        });
+      }, 1000);
+    };
+
     const channel = supabase
       .channel(`replacement-requests-store-${storeId}`)
       .on(
@@ -122,15 +160,12 @@ export function useStoreReplacementRequests(storeId: string | null) {
           table: 'replacement_requests',
           filter: `requester_id=eq.${storeId}`,
         },
-        () => {
-          queryClient.invalidateQueries({
-            queryKey: ['replacement-requests', 'store', storeId],
-          });
-        }
+        triggerRefresh
       )
       .subscribe();
 
     return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
       supabase.removeChannel(channel);
     };
   }, [storeId, queryClient]);
@@ -145,9 +180,7 @@ export function useStoreReplacementRequests(storeId: string | null) {
   };
 }
 
-// Hook ישן (useAllReplacementRequests) - נמחק או הושאר כ-Alias לשימוש במקומות אחרים אם טרם שונו
 export function useAllReplacementRequests() {
-    // זה רק wrapper זמני למקרה ששכחנו לעדכן קובץ כלשהו
     const { data, isLoading, isFetching, refetch } = useReplacementsTable(1, 1000, { status: 'all', search: '' });
     return {
         requests: data?.data || [],

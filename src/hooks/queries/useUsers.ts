@@ -1,7 +1,7 @@
 'use client';
 
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { useEffect, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { fetchUsersWithPagination, UserFilters } from '@/lib/api/users';
 
@@ -12,18 +12,28 @@ export function useUsersTable(
   filters: UserFilters
 ) {
   const queryClient = useQueryClient();
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const query = useQuery({
     queryKey: ['users', 'list', page, pageSize, filters],
     queryFn: () => fetchUsersWithPagination(page, pageSize, filters),
-    placeholderData: (prev) => prev,
+    placeholderData: keepPreviousData,
+    staleTime: 1000 * 60,
   });
 
   // Realtime Subscription
   useEffect(() => {
     const supabase = createClient();
     
-    // בניית פילטר ל-Realtime אם אפשר, או האזנה כללית
+    const triggerRefresh = () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      
+      debounceRef.current = setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['users', 'list'] });
+        queryClient.invalidateQueries({ queryKey: ['admin', 'dashboard', 'stats'] });
+      }, 1000);
+    };
+
     let filter = undefined;
     if (filters.role && filters.role !== 'all') {
       filter = `role=eq.${filters.role}`;
@@ -36,25 +46,28 @@ export function useUsersTable(
           table: 'users',
           filter: filter 
         }, 
-        () => queryClient.invalidateQueries({ queryKey: ['users', 'list'] })
+        triggerRefresh
       )
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => { 
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      supabase.removeChannel(channel); 
+    };
   }, [queryClient, filters.role]);
 
   return query;
 }
 
-// --- Hook לסטטיסטיקות משתמש (נשאר לשימוש בדיאלוגים) ---
-// (העתקתי את הלוגיקה הקיימת כי היא משמשת לסטטיסטיקה פרטנית של חנות/מעבדה)
+// --- Hook לסטטיסטיקות משתמש (עבור דיאלוגים) ---
 export function useUserStats(userId: string | null, role: string | null) {
   const queryClient = useQueryClient();
-  const supabase = createClient();
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const query = useQuery({
     queryKey: ['user', 'stats', userId],
     queryFn: async () => {
+      const supabase = createClient();
       if (!userId || !role) throw new Error('User ID and role are required');
       
       const stats = {
@@ -93,10 +106,38 @@ export function useUserStats(userId: string | null, role: string | null) {
     staleTime: 1000 * 60 * 5, 
   });
 
+  // Realtime
+  useEffect(() => {
+    if (!userId || !role) return;
+    const supabase = createClient();
+
+    const triggerStatsRefresh = () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['user', 'stats', userId] });
+      }, 1000);
+    };
+
+    let channel = null;
+    if (role === 'store') {
+      channel = supabase.channel(`user-stats-store-${userId}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'warranties', filter: `store_id=eq.${userId}` }, triggerStatsRefresh)
+        .subscribe();
+    } else if (role === 'lab') {
+      channel = supabase.channel(`user-stats-lab-${userId}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'repairs', filter: `lab_id=eq.${userId}` }, triggerStatsRefresh)
+        .subscribe();
+    }
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (channel) supabase.removeChannel(channel);
+    };
+  }, [queryClient, userId, role]);
+
   return query;
 }
 
-// Hook תאימות לאחור (אם עדיין בשימוש במקומות אחרים)
 export function useAllUsers() {
     const { data, isLoading, isFetching } = useUsersTable(1, 1000, { role: 'all', status: 'all' });
     return {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 
 export interface DevicesFilter {
@@ -24,23 +24,22 @@ async function fetchDevices(filters: DevicesFilter): Promise<DevicesResponse> {
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
-  // שימוש ב-View החדש והיעיל
+  // שימוש ב-View היעיל (כפי שהיה במקור)
   let query = (supabase as any)
     .from('devices_rich_view')
     .select('*', { count: 'exact' });
 
-  // 1. סינון לפי סטטוס (עכשיו זה עובד כי העמודה קיימת ב-View)
+  // 1. סינון לפי סטטוס
   if (warrantyStatus && warrantyStatus !== 'all') {
     query = query.eq('warranty_status', warrantyStatus);
   }
 
   // 2. סינון לפי דגם
   if (model && model !== 'all') {
-    // ה-View מכיל את שם הדגם, אז אפשר לסנן לפיו ישירות
     query = query.eq('model_name', model);
   }
 
-  // 3. חיפוש חכם (כולל שם לקוח!)
+  // 3. חיפוש חכם
   if (search) {
     query = query.or(`imei.ilike.%${search}%,imei2.ilike.%${search}%,customer_name.ilike.%${search}%`);
   }
@@ -53,16 +52,13 @@ async function fetchDevices(filters: DevicesFilter): Promise<DevicesResponse> {
     throw new Error(`Failed to fetch devices: ${error.message}`);
   }
 
-  // המרת המידע השטוח למבנה המקונן שה-UI מצפה לו
   const mappedData = (data || []).map((row: any) => ({
     ...row,
-    // שחזור מבנה device_models
     device_models: {
       id: row.model_id,
       model_name: row.model_name,
       manufacturer: row.manufacturer
     },
-    // שחזור מבנה warranties (מערך עם איבר אחד)
     warranties: row.warranty_id ? [{
       id: row.warranty_id,
       customer_name: row.customer_name,
@@ -83,6 +79,7 @@ async function fetchDevices(filters: DevicesFilter): Promise<DevicesResponse> {
 
 export function useDevices(filters: DevicesFilter) {
   const queryClient = useQueryClient();
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const query = useQuery({
     queryKey: ['devices', filters.page, filters.pageSize, filters.search, filters.model, filters.warrantyStatus],
@@ -93,13 +90,26 @@ export function useDevices(filters: DevicesFilter) {
 
   useEffect(() => {
     const supabase = createClient();
-    // האזנה לשינויים בכל הטבלאות הרלוונטיות
+
+    const triggerRefresh = () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+      
+
+      debounceRef.current = setTimeout(() => {
+        console.log('♻️ Refreshing devices list due to DB changes...');
+        queryClient.invalidateQueries({ queryKey: ['devices'] });
+      }, 1000); 
+    };
+
     const channel = supabase.channel('devices-list-updates')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'devices' }, () => queryClient.invalidateQueries({ queryKey: ['devices'] }))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'warranties' }, () => queryClient.invalidateQueries({ queryKey: ['devices'] }))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'devices' }, triggerRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'warranties' }, triggerRefresh)
       .subscribe();
 
     return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
       supabase.removeChannel(channel);
     };
   }, [queryClient]);
