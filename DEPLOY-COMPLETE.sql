@@ -525,6 +525,20 @@ CREATE INDEX IF NOT EXISTS idx_repair_types_active_name
   ON repair_types(is_active, name)
   WHERE is_active = true;
 
+
+-- Composite index for common queries (status + date)
+CREATE INDEX IF NOT EXISTS idx_repairs_status_created_desc 
+  ON repairs(status, created_at DESC);
+
+-- Partial index for open repairs (most common filter)
+CREATE INDEX IF NOT EXISTS idx_repairs_open_status
+  ON repairs(created_at DESC)
+  WHERE status IN ('received', 'in_progress');
+
+-- Index for lab filtering
+CREATE INDEX IF NOT EXISTS idx_repairs_lab_status_created
+  ON repairs(lab_id, status, created_at DESC)
+  WHERE lab_id IS NOT NULL;
 -- ================================================================================================
 -- PARTIAL INDEX ANALYSIS & STATISTICS
 -- ================================================================================================
@@ -1546,6 +1560,228 @@ BEGIN
 
     RETURN QUERY SELECT true, 'Replacement request created successfully.'::text, v_new_request_id;
 
+END;
+$$;
+
+-- Get repairs with pagination (Optimized - separates count from data)
+CREATE OR REPLACE FUNCTION get_repairs_paginated(
+  p_page INT DEFAULT 1,
+  p_page_size INT DEFAULT 50,
+  p_status TEXT DEFAULT NULL,
+  p_lab_id UUID DEFAULT NULL,
+  p_search TEXT DEFAULT NULL
+)
+RETURNS JSON
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_offset INT;
+  v_total BIGINT;
+  v_data JSON;
+  v_search_pattern TEXT;
+BEGIN
+  v_offset := (p_page - 1) * p_page_size;
+  
+  IF p_search IS NOT NULL AND p_search != '' THEN
+    v_search_pattern := '%' || p_search || '%';
+  END IF;
+
+  -- Fast count without JOINs
+  SELECT COUNT(*) INTO v_total
+  FROM repairs r
+  WHERE 
+    (p_status IS NULL OR p_status = '' OR p_status = 'all' OR r.status::TEXT = p_status)
+    AND (p_lab_id IS NULL OR r.lab_id = p_lab_id)
+    AND (
+      v_search_pattern IS NULL 
+      OR r.customer_name ILIKE v_search_pattern
+      OR r.customer_phone ILIKE v_search_pattern
+    );
+
+  -- Data fetch with JOINs only for current page
+  SELECT COALESCE(json_agg(row_to_json(t) ORDER BY t.created_at DESC), '[]'::json)
+  INTO v_data
+  FROM (
+    SELECT 
+      r.id, r.device_id, r.lab_id, r.warranty_id, r.repair_type_id,
+      r.cost, r.status, r.fault_type, r.customer_name, r.customer_phone,
+      r.custom_repair_description, r.custom_repair_price,
+      r.created_at, r.completed_at,
+      CASE WHEN d.id IS NOT NULL THEN
+        json_build_object(
+          'id', d.id, 'imei', d.imei, 'imei2', d.imei2,
+          'device_models', CASE WHEN dm.id IS NOT NULL THEN
+            json_build_object('model_name', dm.model_name)
+          ELSE NULL END
+        )
+      ELSE NULL END AS device,
+      CASE WHEN u.id IS NOT NULL THEN
+        json_build_object('id', u.id, 'full_name', u.full_name, 'email', u.email)
+      ELSE NULL END AS lab,
+      CASE WHEN rt.id IS NOT NULL THEN
+        json_build_object('id', rt.id, 'name', rt.name)
+      ELSE NULL END AS repair_type,
+      (
+        SELECT json_agg(json_build_object(
+          'customer_name', w.customer_name, 'customer_phone', w.customer_phone,
+          'activation_date', w.activation_date, 'expiry_date', w.expiry_date,
+          'store', CASE WHEN ws.id IS NOT NULL THEN
+            json_build_object('full_name', ws.full_name, 'email', ws.email)
+          ELSE NULL END
+        ))
+        FROM warranties w
+        LEFT JOIN users ws ON w.store_id = ws.id
+        WHERE w.device_id = r.device_id
+        LIMIT 1
+      ) AS warranty
+    FROM repairs r
+    LEFT JOIN devices d ON r.device_id = d.id
+    LEFT JOIN device_models dm ON d.model_id = dm.id
+    LEFT JOIN users u ON r.lab_id = u.id
+    LEFT JOIN repair_types rt ON r.repair_type_id = rt.id
+    WHERE 
+      (p_status IS NULL OR p_status = '' OR p_status = 'all' OR r.status::TEXT = p_status)
+      AND (p_lab_id IS NULL OR r.lab_id = p_lab_id)
+      AND (
+        v_search_pattern IS NULL 
+        OR r.customer_name ILIKE v_search_pattern
+        OR r.customer_phone ILIKE v_search_pattern
+      )
+    ORDER BY r.created_at DESC
+    LIMIT p_page_size
+    OFFSET v_offset
+  ) t;
+
+  RETURN json_build_object(
+    'data', v_data, 'count', v_total, 'page', p_page,
+    'pageSize', p_page_size, 'totalPages', CEIL(v_total::FLOAT / p_page_size)
+  );
+END;
+$$;
+
+-- Get lab repairs with pagination (Optimized)
+CREATE OR REPLACE FUNCTION get_lab_repairs_paginated(
+  p_lab_id UUID,
+  p_page INT DEFAULT 1,
+  p_page_size INT DEFAULT 50
+)
+RETURNS JSON
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_offset INT;
+  v_total BIGINT;
+  v_data JSON;
+BEGIN
+  IF NOT (auth.uid() = p_lab_id OR EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'admin')) THEN
+    RAISE EXCEPTION 'Access denied';
+  END IF;
+
+  v_offset := (p_page - 1) * p_page_size;
+
+  SELECT COUNT(*) INTO v_total FROM repairs WHERE lab_id = p_lab_id;
+
+  SELECT COALESCE(json_agg(row_to_json(t) ORDER BY t.created_at DESC), '[]'::json)
+  INTO v_data
+  FROM (
+    SELECT 
+      r.id, r.device_id, r.lab_id, r.warranty_id, r.repair_type_id,
+      r.cost, r.status, r.fault_type, r.customer_name, r.customer_phone,
+      r.custom_repair_description, r.custom_repair_price,
+      r.created_at, r.completed_at,
+      CASE WHEN d.id IS NOT NULL THEN
+        json_build_object(
+          'id', d.id, 'imei', d.imei, 'imei2', d.imei2,
+          'device_models', CASE WHEN dm.id IS NOT NULL THEN
+            json_build_object('model_name', dm.model_name)
+          ELSE NULL END
+        )
+      ELSE NULL END AS device,
+      CASE WHEN rt.id IS NOT NULL THEN
+        json_build_object('id', rt.id, 'name', rt.name, 'description', rt.description)
+      ELSE NULL END AS repair_type,
+      (
+        SELECT json_agg(json_build_object('id', rr.id, 'status', rr.status, 'created_at', rr.created_at))
+        FROM replacement_requests rr WHERE rr.device_id = r.device_id
+      ) AS replacement_requests
+    FROM repairs r
+    LEFT JOIN devices d ON r.device_id = d.id
+    LEFT JOIN device_models dm ON d.model_id = dm.id
+    LEFT JOIN repair_types rt ON r.repair_type_id = rt.id
+    WHERE r.lab_id = p_lab_id
+    ORDER BY r.created_at DESC
+    LIMIT p_page_size
+    OFFSET v_offset
+  ) t;
+
+  RETURN json_build_object(
+    'data', v_data, 'count', v_total, 'page', p_page,
+    'pageSize', p_page_size, 'totalPages', CEIL(v_total::FLOAT / p_page_size)
+  );
+END;
+$$;
+
+-- Search repairs by IMEI
+CREATE OR REPLACE FUNCTION search_repairs_by_imei(
+  p_imei TEXT,
+  p_page INT DEFAULT 1,
+  p_page_size INT DEFAULT 50
+)
+RETURNS JSON
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_offset INT;
+  v_total BIGINT;
+  v_data JSON;
+BEGIN
+  v_offset := (p_page - 1) * p_page_size;
+
+  SELECT COUNT(*) INTO v_total
+  FROM repairs r JOIN devices d ON r.device_id = d.id
+  WHERE d.imei = p_imei OR d.imei2 = p_imei;
+
+  SELECT COALESCE(json_agg(row_to_json(t) ORDER BY t.created_at DESC), '[]'::json)
+  INTO v_data
+  FROM (
+    SELECT 
+      r.id, r.device_id, r.lab_id, r.warranty_id, r.repair_type_id,
+      r.cost, r.status, r.fault_type, r.customer_name, r.customer_phone,
+      r.custom_repair_description, r.custom_repair_price,
+      r.created_at, r.completed_at,
+      json_build_object(
+        'id', d.id, 'imei', d.imei, 'imei2', d.imei2,
+        'device_models', CASE WHEN dm.id IS NOT NULL THEN
+          json_build_object('model_name', dm.model_name)
+        ELSE NULL END
+      ) AS device,
+      CASE WHEN u.id IS NOT NULL THEN
+        json_build_object('id', u.id, 'full_name', u.full_name, 'email', u.email)
+      ELSE NULL END AS lab,
+      CASE WHEN rt.id IS NOT NULL THEN
+        json_build_object('id', rt.id, 'name', rt.name)
+      ELSE NULL END AS repair_type
+    FROM repairs r
+    JOIN devices d ON r.device_id = d.id
+    LEFT JOIN device_models dm ON d.model_id = dm.id
+    LEFT JOIN users u ON r.lab_id = u.id
+    LEFT JOIN repair_types rt ON r.repair_type_id = rt.id
+    WHERE d.imei = p_imei OR d.imei2 = p_imei
+    ORDER BY r.created_at DESC
+    LIMIT p_page_size
+    OFFSET v_offset
+  ) t;
+
+  RETURN json_build_object(
+    'data', v_data, 'count', v_total, 'page', p_page,
+    'pageSize', p_page_size, 'totalPages', CEIL(v_total::FLOAT / p_page_size)
+  );
 END;
 $$;
 

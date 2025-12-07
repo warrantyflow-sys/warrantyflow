@@ -868,6 +868,32 @@ export type Database = {
           device_found: boolean
         }[]
       }
+      get_repairs_paginated: {
+        Args: {
+          p_page?: number
+          p_page_size?: number
+          p_status?: string | null
+          p_lab_id?: string | null
+          p_search?: string | null
+        }
+        Returns: Json
+      }
+      get_lab_repairs_paginated: {
+        Args: {
+          p_lab_id: string
+          p_page?: number
+          p_page_size?: number
+        }
+        Returns: Json
+      }
+      search_repairs_by_imei: {
+        Args: {
+          p_imei: string
+          p_page?: number
+          p_page_size?: number
+        }
+        Returns: Json
+      }
     }
     Enums: {
       user_role: "admin" | "store" | "lab"
