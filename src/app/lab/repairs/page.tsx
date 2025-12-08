@@ -454,23 +454,6 @@ export default function LabRepairsPage() {
         throw error;
       }
 
-      // --- Audit Log ---
-      if (newRepair) {
-        supabase.from('audit_log').insert({
-          actor_user_id: user.id,
-          action: 'repair.create',
-          entity_type: 'repair',
-          entity_id: newRepair.id,
-          meta: { 
-            device_id: searchedDevice.id,
-            lab_id: typedUserData.id,
-            customer_name: data.customer_name
-          }
-        }).then(({ error: logError }) => {
-          if (logError) console.error('Audit log failed:', logError);
-        });
-      }
-      // --- End Audit Log ---
 
       toast({
         title: 'הצלחה',
@@ -588,23 +571,6 @@ export default function LabRepairsPage() {
           variant: 'destructive',
         });
       }
-
-      // --- Audit Log ---
-      if (currentUserId) {
-        supabase.from('audit_log').insert({
-          actor_user_id: currentUserId,
-          action: 'repair.update',
-          entity_type: 'repair',
-          entity_id: selectedRepair.id,
-          meta: {
-            updates: updateData,
-            lab_id: selectedRepair.lab_id
-          }
-        }).then(({ error: logError }) => {
-          if (logError) console.error('Audit log failed:', logError);
-        });
-      }
-      // --- End Audit Log ---
 
       // Show success message with warning if custom repair without price
       const isCustomWithoutPrice = isCustomRepair && !customRepairPrice && updateData.status === 'completed';
@@ -1279,20 +1245,6 @@ export default function LabRepairsPage() {
                     <AlertCircle className="h-4 w-4 me-2" />
                     שלח בקשת החלפה
                   </Button>
-                </div>
-              )}
-
-              {selectedRepair.replacement_requests && selectedRepair.replacement_requests.length > 0 && (
-                <div>
-                  <Label>בקשות החלפה</Label>
-                  <div className="border rounded p-2">
-                    {selectedRepair.replacement_requests.map((req: any) => (
-                      <div key={req.id} className="flex items-center justify-between">
-                        <span className="text-sm">{formatDate(req.created_at)}</span>
-                        <Badge>{req.status === 'pending' ? 'ממתין' : req.status === 'approved' ? 'אושר' : 'נדחה'}</Badge>
-                      </div>
-                    ))}
-                  </div>
                 </div>
               )}
             </div>

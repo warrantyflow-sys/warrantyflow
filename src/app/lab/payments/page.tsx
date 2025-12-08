@@ -100,12 +100,12 @@ export default function LabPaymentsPage() {
         <Card>
           <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
             <ShekelIcon className="h-4 w-4 text-blue-600" />
-            <CardTitle className="text-sm font-medium">סה"כ קיבלת</CardTitle>
+            <CardTitle className="text-sm font-medium">סה"כ קיבלת מהמנהל</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-right text-blue-600">{formatCurrency(stats.totalPaid)}</div>
             <p className="text-xs text-muted-foreground text-right">
-              {payments.length} תשלומים
+              ב- {payments.length} תשלומים
             </p>
           </CardContent>
         </Card>
@@ -113,14 +113,14 @@ export default function LabPaymentsPage() {
         <Card>
           <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
             <Wallet className="h-4 w-4 text-orange-600" />
-            <CardTitle className="text-sm font-medium">יתרה</CardTitle>
+            <CardTitle className="text-sm font-medium">מאזן תשלומים</CardTitle>
           </CardHeader>
           <CardContent>
             <div className={`text-2xl font-bold text-right ${stats.balance > 0 ? 'text-orange-600' : stats.balance < 0 ? 'text-green-600' : 'text-gray-600'}`}>
               {formatCurrency(Math.abs(stats.balance))}
             </div>
             <p className="text-xs text-muted-foreground text-right">
-              {stats.balance > 0 ? 'המנהל חייב לך' : stats.balance < 0 ? 'אתה בפלוס!' : 'מעודכן'}
+              {stats.balance > 0 ? 'המנהל חייב לך' : stats.balance < 0 ? 'אתה ביתרה!' : 'מעודכן'}
             </p>
           </CardContent>
         </Card>
@@ -128,7 +128,7 @@ export default function LabPaymentsPage() {
         <Card>
           <CardHeader className="flex flex-row-reverse items-center justify-between space-y-0 pb-2">
             <Calendar className="h-4 w-4 text-purple-600" />
-            <CardTitle className="text-sm font-medium">החודש</CardTitle>
+            <CardTitle className="text-sm font-medium">החודש הכנסת מהתיקונים</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-right text-purple-600">{formatCurrency(stats.thisMonthEarned)}</div>
