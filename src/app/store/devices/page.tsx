@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import type { Device, DeviceModel, Warranty, Repair } from '@/types';
+import type { Device, DeviceModel, Warranty, Repair, WarrantyWithRelations } from '@/types';
 import { useStoreWarranties } from '@/hooks/queries/useWarranties';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
@@ -57,14 +57,8 @@ import { useRouter } from 'next/navigation';
 
 type WarrantyStatus = 'new' | 'active' | 'expired' | 'replaced';
 
-type StoreWarranty = Warranty & {
-  device: (Pick<Device, 'id' | 'imei' | 'imei2'> & {
-    device_models: Pick<DeviceModel, 'model_name'> | null;
-  }) | null;
-  repairs: Array<
-    Pick<Repair, 'id' | 'status' | 'fault_type' | 'lab_id' | 'created_at' | 'completed_at'>
-  > | null;
-};
+// Use WarrantyWithRelations directly instead of creating a new type
+type StoreWarranty = WarrantyWithRelations;
 
 export default function StoreDevicesPage() {
   // Load current user to get storeId
@@ -90,20 +84,13 @@ export default function StoreDevicesPage() {
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'expired'>('all');
   const [selectedWarranty, setSelectedWarranty] = useState<StoreWarranty | null>(null);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
-  const [filteredWarranties, setFilteredWarranties] = useState<any[]>([]);
-  const [stats, setStats] = useState({
-    total: 0,
-    active: 0,
-    expired: 0,
-    inRepair: 0,
-  });
 
   const { toast } = useToast();
   const supabase = createClient();
   const router = useRouter();
 
-  // Calculate stats when warranties change
-  useEffect(() => {
+  // Calculate stats using useMemo to prevent infinite loops
+  const stats = useMemo(() => {
     const now = new Date();
     const activeCount = warranties.filter((w: any) =>
       new Date(w.expiry_date) > now && w.is_active
@@ -117,15 +104,16 @@ export default function StoreDevicesPage() {
       (w.repairs || []).some((r: any) => ['received', 'in_progress', 'replacement_requested'].includes(r.status))
     ).length;
 
-    setStats({
+    return {
       total,
       active: activeCount,
       expired: expiredCount,
       inRepair: inRepairCount,
-    });
+    };
   }, [warranties, total]);
 
-  const filterData = useCallback(() => {
+  // Filter warranties using useMemo
+  const filteredWarranties = useMemo(() => {
     let filtered = [...warranties];
 
     if (searchQuery) {
@@ -151,21 +139,19 @@ export default function StoreDevicesPage() {
       }
     }
 
-    setFilteredWarranties(filtered);
-    setCurrentPage(1); // Reset to first page when filters change
+    return filtered;
   }, [warranties, searchQuery, filterStatus]);
 
-  const [paginatedWarranties, setPaginatedWarranties] = useState<any[]>([]);
-
+  // Reset to first page when filters change
   useEffect(() => {
-    filterData();
-  }, [filterData]);
+    setCurrentPage(1);
+  }, [searchQuery, filterStatus]);
 
-  useEffect(() => {
-    // Apply client-side pagination to filtered warranties
+  // Apply client-side pagination using useMemo
+  const paginatedWarranties = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
     const endIndex = startIndex + itemsPerPage;
-    setPaginatedWarranties(filteredWarranties.slice(startIndex, endIndex));
+    return filteredWarranties.slice(startIndex, endIndex);
   }, [filteredWarranties, currentPage, itemsPerPage]);
 
   const getWarrantyStatus = (warranty: StoreWarranty) => {
@@ -187,7 +173,7 @@ export default function StoreDevicesPage() {
     if (!repairs || repairs.length === 0) return null;
 
     const activeRepair = repairs.find(r =>
-      ['received', 'in_progress', 'replacement_requested'].includes(r.status)
+      r.status && ['received', 'in_progress', 'replacement_requested'].includes(r.status)
     );
 
     if (activeRepair) {
@@ -558,8 +544,8 @@ export default function StoreDevicesPage() {
                                     repair.fault_type === 'board' ? 'לוח אם' : 'אחר'}
                           </p>
                           <p className="text-sm text-muted-foreground">
-                            {formatDate(repair.created_at)}
-                            {repair.completed_at && ` - ${formatDate(repair.completed_at)}`}
+                            {repair.created_at ? formatDate(repair.created_at) : '-'}
+                            {repair.completed_at ? ` - ${formatDate(repair.completed_at)}` : ''}
                           </p>
                         </div>
                         <Badge variant={

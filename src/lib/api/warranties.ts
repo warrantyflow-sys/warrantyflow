@@ -47,8 +47,29 @@ export async function fetchWarrantiesWithPagination(
   }
 
   if (filters.search) {
-    const s = filters.search;
-    query = query.or(`customer_name.ilike.%${s}%,customer_phone.ilike.%${s}%,device.imei.ilike.%${s}%`);
+    const s = filters.search.trim();
+    // Escape underscore for PostgREST ilike pattern (underscore is a wildcard in SQL LIKE)
+    const escapedSearch = s.replace(/_/g, '\\_');
+    const searchPattern = `%${escapedSearch}%`;
+    
+    // PostgREST doesn't support nested fields (device.imei) in or() filter
+    // So we search devices separately and filter by device_id
+    const { data: matchingDevices } = await supabase
+      .from('devices')
+      .select('id')
+      .ilike('imei', searchPattern);
+    
+    const deviceIds = matchingDevices?.map(d => d.id) || [];
+    
+    // Build or() condition: customer fields OR device_id in matching devices
+    if (deviceIds.length > 0) {
+      // Combine customer fields search with device_id filter
+      // Note: PostgREST or() syntax: field1.op.val1,field2.op.val2,field3.in.(val1,val2,val3)
+      query = query.or(`customer_name.ilike.${searchPattern},customer_phone.ilike.${searchPattern},device_id.in.(${deviceIds.join(',')})`);
+    } else {
+      // Only search in customer fields if no devices match
+      query = query.or(`customer_name.ilike.${searchPattern},customer_phone.ilike.${searchPattern}`);
+    }
   }
 
   const { data, error, count } = await query

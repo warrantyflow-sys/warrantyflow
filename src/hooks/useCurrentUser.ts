@@ -26,8 +26,24 @@ export function useCurrentUser() {
     queryFn: async () => {
       const { data: { session } } = await supabase.auth.getSession();
       
-      if (!session?.user) return null;
-
+      // אם אין session (למשל בניווט מיידי אחרי login)
+      // ננסה getUser() כ-fallback
+      if (!session?.user) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return null;
+        
+        // אין לנו JWT claims, אז נקרא מה-DB
+        const { data: userData, error } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+          
+        if (error) throw error;
+        return userData as UserData;
+      }
+    
+      // הלוגיקה הקיימת של JWT parsing...
       if (session.access_token) {
         try {
           const tokenParts = session.access_token.split('.');

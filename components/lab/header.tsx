@@ -20,9 +20,15 @@ import { LabNotificationsDropdown } from './notifications-dropdown'; // Import t
 
 export function LabHeader() {
   const [user, setUser] = useState<UserData | null>(null);
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
   const router = useRouter();
   const supabase = createClient();
+
+  // Prevent hydration mismatch by only rendering theme-dependent content after mount
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const fetchUserData = useCallback(async () => {
     const { data: { user: authUser } } = await supabase.auth.getUser();
@@ -71,7 +77,11 @@ export function LabHeader() {
               size="icon"
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             >
-              {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+              {mounted && (resolvedTheme === 'dark' || theme === 'dark') ? (
+                <Sun className="h-5 w-5" />
+              ) : (
+                <Moon className="h-5 w-5" />
+              )}
             </Button>
 
             {/* Notifications */}
