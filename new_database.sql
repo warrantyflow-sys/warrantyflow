@@ -674,6 +674,11 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
+
+  IF SESSION_USER = 'postgres' OR current_setting('is_superuser') = 'on' THEN
+    RETURN TRUE;
+  END IF;
+
   RETURN EXISTS (
     SELECT 1 FROM public.users
     WHERE id = auth.uid()
