@@ -866,6 +866,7 @@ export type Database = {
           customer_phone: string | null
           message: string | null
           device_found: boolean
+          is_own_warranty: boolean | null
         }[]
       }
       get_repairs_paginated: {

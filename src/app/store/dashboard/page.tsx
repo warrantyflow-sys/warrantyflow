@@ -44,6 +44,7 @@ import {
   RefreshCw,
   FileText,
   Phone,
+  ShieldOff,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { useForm } from 'react-hook-form';
@@ -65,6 +66,8 @@ type DeviceWithWarranty = Device & {
     expiry_date: string;
     is_active: boolean;
   }[] | null;
+  // שדה חדש - האם האחריות שייכת לחנות הנוכחית
+  is_own_warranty?: boolean;
 };
 
 type ReplacementRequestWithDevice = ReplacementRequest & {
@@ -99,8 +102,20 @@ export default function StoreDashboard() {
     reset
   } = useForm<WarrantyFormData>();
 
-  const hasExistingWarranty = Boolean(searchResult?.warranties && searchResult.warranties.length > 0);
-  const currentWarranty = hasExistingWarranty ? searchResult!.warranties![0]! : null;
+  // בדיקה האם יש אחריות שהחנות הנוכחית הפעילה
+  const hasOwnWarranty = Boolean(
+    searchResult?.warranties && 
+    searchResult.warranties.length > 0 && 
+    searchResult.is_own_warranty
+  );
+  
+  // בדיקה האם יש אחריות פעילה (בכלל - גם של חנות אחרת)
+  const hasAnyWarranty = Boolean(searchResult?.warranties && searchResult.warranties.length > 0);
+  
+  // בדיקה האם האחריות שייכת לחנות אחרת
+  const isOtherStoreWarranty = hasAnyWarranty && !searchResult?.is_own_warranty;
+  
+  const currentWarranty = hasOwnWarranty ? searchResult!.warranties![0]! : null;
 
   const fetchActiveDevices = useCallback(async () => {
     if (!storeId) return;
@@ -138,7 +153,8 @@ export default function StoreDashboard() {
       const flattenedDevices = (data || []).map((warranty: any) => ({
         ...warranty.devices,
         device_models: warranty.devices.device_models,
-        warranties: [warranty]
+        warranties: [warranty],
+        is_own_warranty: true // תמיד true כי אנחנו שולפים רק של החנות שלנו
       }));
 
       setActiveDevices(flattenedDevices);
@@ -216,14 +232,13 @@ export default function StoreDashboard() {
     try {
       console.log('Searching for IMEI:', trimmedIMEI);
 
-      // Use the search_device_by_imei function with 50 searches limit
-      const { data: searchResult, error: searchError } = await (supabase as any)
+      const { data: searchResultData, error: searchError } = await supabase
         .rpc('search_device_by_imei', {
           p_imei: trimmedIMEI,
           p_user_ip: null
         });
 
-      console.log('Search result:', { searchResult, error: searchError });
+      console.log('Search result:', { searchResultData, error: searchError });
 
       if (searchError) {
         console.error('Search error:', searchError);
@@ -235,7 +250,7 @@ export default function StoreDashboard() {
         return;
       }
 
-      if (!searchResult || searchResult.length === 0) {
+      if (!searchResultData || searchResultData.length === 0) {
         toast({
           title: 'שגיאה',
           description: 'לא התקבלה תשובה מהשרת',
@@ -244,39 +259,87 @@ export default function StoreDashboard() {
         return;
       }
 
-      const result = searchResult[0];
+      const result = searchResultData[0];
 
-      // Check if search limit reached
-      if (result.search_limit_reached) {
+      // בדיקה אם הגענו למגבלת חיפושים
+      if (!result.device_found && result.message?.includes('מכסת')) {
         toast({
           title: 'הגעת למגבלת החיפושים',
-          description: 'הגעת למגבלה של 50 חיפושים ליום',
+          description: result.message || 'הגעת למגבלה של 50 חיפושים ליום',
           variant: 'destructive',
         });
         return;
       }
 
-      // Show searches count for stores
-      if (result.searches_today !== undefined) {
-        console.log(`Searches today: ${result.searches_today}/50`);
-      }
-
-      // Check if device was found
-      if (!result.device_id) {
+      // בדיקה אם המכשיר נמצא
+      if (!result.device_found || !result.device_id) {
         toast({
           title: 'לא נמצא',
-          description: `המכשיר עם IMEI ${trimmedIMEI} לא נמצא במערכת`,
+          description: result.message || `המכשיר עם IMEI ${trimmedIMEI} לא נמצא במערכת`,
           variant: 'destructive',
         });
+        setSearchResult(null);
         return;
       }
 
-      // Convert the result to the expected format
+      // ========================================
+      // טיפול חדש: אחריות בחנות אחרת
+      // ========================================
+      if (result.has_active_warranty && !result.is_own_warranty) {
+        // מכשיר נמצא אבל האחריות שייכת לחנות אחרת
+        toast({
+          title: 'אחריות בחנות אחרת',
+          description: result.message || 'למכשיר זה קיימת אחריות פעילה בחנות אחרת',
+          variant: 'destructive',
+        });
+        
+        // הצג את המכשיר עם מידע מוגבל (ללא פרטי לקוח)
+        const device: DeviceWithWarranty = {
+          id: result.device_id,
+          imei: result.imei,
+          imei2: result.imei2 || null,
+          model_id: result.model_id,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          notes: null,
+          is_replaced: result.is_replaced || false,
+          replaced_at: result.replaced_at || null,
+          imported_by: null,
+          import_batch: null,
+          device_models: {
+            id: result.model_id,
+            model_name: result.model_name || 'לא ידוע',
+            manufacturer: result.manufacturer || null,
+            warranty_months: result.warranty_months || 12,
+            description: null,
+            is_active: true,
+            created_by: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+          // אחריות קיימת אבל לא שלנו - לא מציגים פרטים
+          warranties: [{
+            id: '', // לא מקבלים את ה-ID
+            store_id: '', // לא מקבלים
+            customer_name: '', // מוסתר!
+            customer_phone: '', // מוסתר!
+            activation_date: '',
+            expiry_date: '',
+            is_active: true
+          }],
+          is_own_warranty: false // סימון שזה לא שלנו
+        };
+        
+        setSearchResult(device);
+        return;
+      }
+
+      // המשך רגיל - מכשיר שלנו או ללא אחריות
       const device: DeviceWithWarranty = {
         id: result.device_id,
         imei: result.imei,
         imei2: result.imei2 || null,
-        model_id: result.model_id, // Corrected: Use model_id from result
+        model_id: result.model_id,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         notes: null,
@@ -285,7 +348,7 @@ export default function StoreDashboard() {
         imported_by: null,
         import_batch: null,
         device_models: {
-          id: result.model_id, // Corrected: Use model_id
+          id: result.model_id,
           model_name: result.model_name || 'לא ידוע',
           manufacturer: result.manufacturer || null,
           warranty_months: result.warranty_months || 12,
@@ -295,35 +358,40 @@ export default function StoreDashboard() {
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         },
-        // Include warranty info if exists
         warranties: result.warranty_id ? [{
           id: result.warranty_id,
-          store_id: result.store_id,
+          store_id: storeId || '',
           customer_name: result.customer_name || '',
           customer_phone: result.customer_phone || '',
           activation_date: new Date().toISOString().split('T')[0],
           expiry_date: result.warranty_expiry_date || new Date().toISOString().split('T')[0],
           is_active: result.has_active_warranty || false
-        }] : []
+        }] : [],
+        is_own_warranty: result.is_own_warranty ?? true
       };
 
       console.log('Found device:', device);
       setSearchResult(device);
 
-      // Check warranty and replacement status from the search result
+      // הודעות לפי מצב
       if (result.is_replaced) {
         toast({
           title: 'מכשיר הוחלף',
           description: `מכשיר זה הוחלף${result.replaced_at ? ' בתאריך ' + formatDate(result.replaced_at) : ''} ולא ניתן להפעיל עליו אחריות`,
           variant: 'destructive',
         });
-      } else if (result.has_active_warranty && result.warranty_id) {
+      } else if (result.has_active_warranty && result.is_own_warranty) {
         const activationInfo = result.warranty_expiry_date
           ? ` (תוקף עד ${formatDate(result.warranty_expiry_date)})`
           : '';
         toast({
           title: 'אחריות קיימת',
           description: `למכשיר זה כבר קיימת אחריות פעילה${activationInfo}`,
+        });
+      } else if (!result.has_active_warranty) {
+        toast({
+          title: 'מכשיר נמצא',
+          description: 'המכשיר נמצא במערכת וניתן להפעיל עליו אחריות',
         });
       }
     } catch (error) {
@@ -367,13 +435,11 @@ export default function StoreDashboard() {
         description: `האחריות הופעלה בהצלחה עבור ${data.customer_name}`,
       });
 
-      // Reset form and close dialog
       setIsActivationDialogOpen(false);
       reset();
       setSearchImei('');
       setSearchResult(null);
 
-      // Refresh lists (stats refresh automatically via React Query + Realtime)
       fetchActiveDevices();
       fetchReplacementRequests();
 
@@ -410,7 +476,6 @@ export default function StoreDashboard() {
       setSearchResult(null);
       setSearchImei('');
 
-      // Refresh lists (stats refresh automatically via React Query + Realtime)
       fetchActiveDevices();
       fetchReplacementRequests();
 
@@ -462,13 +527,11 @@ export default function StoreDashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Background refresh indicator */}
       <BackgroundRefreshIndicator
         isFetching={isStatsFetching}
         isLoading={isUserLoading || !storeId || isStatsLoading}
       />
 
-      {/* === שורות שהשתנו === */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">ניהול מכשירים ואחריות</h2>
@@ -477,17 +540,15 @@ export default function StoreDashboard() {
           </p>
         </div>
         <Button onClick={() => {
-          setSearchResult(null); // נקה חיפוש קודם
-          setSearchImei('');    // נקה שדה IMEI
-          reset();              // אפס את הטופס
+          setSearchResult(null);
+          setSearchImei('');
+          reset();
           setIsActivationDialogOpen(true);
         }}>
           <Shield className="me-2 h-4 w-4" />
           הפעל אחריות חדשה
         </Button>
       </div>
-      {/* === סוף שורות שהשתנו === */}
-
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -561,8 +622,8 @@ export default function StoreDashboard() {
           </TabsTrigger>
         </TabsList>
 
-{/* Active Warranties Tab */}
-<TabsContent value="active-warranties" className="space-y-4">
+        {/* Active Warranties Tab */}
+        <TabsContent value="active-warranties" className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle>מכשירים עם אחריות פעילה</CardTitle>
@@ -578,85 +639,84 @@ export default function StoreDashboard() {
                 </div>
               ) : (
                 <>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>דגם</TableHead>
-                      <TableHead>IMEI</TableHead>
-                      <TableHead>לקוח</TableHead>
-                      <TableHead>טלפון</TableHead>
-                      <TableHead>תאריך הפעלה</TableHead>
-                      <TableHead>תוקף</TableHead>
-                      <TableHead>סטטוס</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {activeDevices.map((device) => {
-                      const warranties = device.warranties as any;
-                      const warranty = warranties?.[0];
-                      if (!warranty) return null;
-                      const status = getWarrantyStatus(warranty);
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>דגם</TableHead>
+                        <TableHead>IMEI</TableHead>
+                        <TableHead>לקוח</TableHead>
+                        <TableHead>טלפון</TableHead>
+                        <TableHead>תאריך הפעלה</TableHead>
+                        <TableHead>תוקף</TableHead>
+                        <TableHead>סטטוס</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {activeDevices.map((device) => {
+                        const warranties = device.warranties as any;
+                        const warranty = warranties?.[0];
+                        if (!warranty) return null;
+                        const status = getWarrantyStatus(warranty);
 
-                      return (
-                        <TableRow key={device.id}>
-                          <TableCell className="font-medium">
-                            <div className="flex items-center gap-2">
-                              <Package className="h-4 w-4 text-muted-foreground" />
-                              {device.device_models?.model_name || 'לא ידוע'}
-                            </div>
-                          </TableCell>
-                          <TableCell className="font-mono text-sm">{device.imei}</TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <User className="h-4 w-4 text-muted-foreground" />
-                              {warranty.customer_name}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Phone className="h-4 w-4 text-muted-foreground" />
-                              {warranty.customer_phone}
-                            </div>
-                          </TableCell>
-                          <TableCell>{formatDate(warranty.activation_date)}</TableCell>
-                          <TableCell>{formatDate(warranty.expiry_date)}</TableCell>
-                          <TableCell>
-                            <Badge variant={status.variant}>
-                              {status.text}
-                            </Badge>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-                {/* פקדי פגינציה */}
-                <div className="flex items-center justify-between mt-4">
-                <div className="text-sm text-muted-foreground">
-                  מציג {((activeDevicesPage - 1) * DEVICES_PER_PAGE) + 1}-
-                  {Math.min(activeDevicesPage * DEVICES_PER_PAGE, totalActiveDevices)} מתוך {totalActiveDevices}
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setActiveDevicesPage(p => Math.max(1, p - 1))}
-                    disabled={activeDevicesPage === 1}
-                  >
-                    הקודם
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setActiveDevicesPage(p => p + 1)}
-                    disabled={activeDevicesPage * DEVICES_PER_PAGE >= totalActiveDevices}
-                  >
-                    הבא
-                  </Button>
-                </div>
-              </div>
-            </>
-          )}
+                        return (
+                          <TableRow key={device.id}>
+                            <TableCell className="font-medium">
+                              <div className="flex items-center gap-2">
+                                <Package className="h-4 w-4 text-muted-foreground" />
+                                {device.device_models?.model_name || 'לא ידוע'}
+                              </div>
+                            </TableCell>
+                            <TableCell className="font-mono text-sm">{device.imei}</TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <User className="h-4 w-4 text-muted-foreground" />
+                                {warranty.customer_name}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <Phone className="h-4 w-4 text-muted-foreground" />
+                                {warranty.customer_phone}
+                              </div>
+                            </TableCell>
+                            <TableCell>{formatDate(warranty.activation_date)}</TableCell>
+                            <TableCell>{formatDate(warranty.expiry_date)}</TableCell>
+                            <TableCell>
+                              <Badge variant={status.variant}>
+                                {status.text}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                  <div className="flex items-center justify-between mt-4">
+                    <div className="text-sm text-muted-foreground">
+                      מציג {((activeDevicesPage - 1) * DEVICES_PER_PAGE) + 1}-
+                      {Math.min(activeDevicesPage * DEVICES_PER_PAGE, totalActiveDevices)} מתוך {totalActiveDevices}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setActiveDevicesPage(p => Math.max(1, p - 1))}
+                        disabled={activeDevicesPage === 1}
+                      >
+                        הקודם
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setActiveDevicesPage(p => p + 1)}
+                        disabled={activeDevicesPage * DEVICES_PER_PAGE >= totalActiveDevices}
+                      >
+                        הבא
+                      </Button>
+                    </div>
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -755,7 +815,11 @@ export default function StoreDashboard() {
 
               {/* Search Result */}
               {searchResult && (
-                <Card className={`border-2 ${searchResult.is_replaced ? 'border-destructive' : 'border-primary'}`}>
+                <Card className={`border-2 ${
+                  searchResult.is_replaced ? 'border-destructive' : 
+                  isOtherStoreWarranty ? 'border-orange-500' :
+                  'border-primary'
+                }`}>
                   <CardHeader>
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-lg">תוצאות חיפוש</CardTitle>
@@ -763,14 +827,24 @@ export default function StoreDashboard() {
                         <Badge variant="destructive" className="text-sm">
                           מכשיר הוחלף
                         </Badge>
+                      ) : isOtherStoreWarranty ? (
+                        <Badge variant="outline" className="text-sm border-orange-500 text-orange-600">
+                          <ShieldOff className="h-3 w-3 me-1" />
+                          אחריות בחנות אחרת
+                        </Badge>
+                      ) : hasOwnWarranty ? (
+                        <Badge variant="default" className="text-sm">
+                          אחריות פעילה
+                        </Badge>
                       ) : (
-                        <Badge variant={hasExistingWarranty ? 'default' : 'secondary'} className="text-sm">
-                          {hasExistingWarranty ? 'אחריות פעילה' : 'ללא אחריות'}
+                        <Badge variant="secondary" className="text-sm">
+                          ללא אחריות
                         </Badge>
                       )}
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4">
+                    {/* התראה - מכשיר הוחלף */}
                     {searchResult.is_replaced && (
                       <Alert variant="destructive">
                         <AlertCircle className="h-4 w-4" />
@@ -782,6 +856,20 @@ export default function StoreDashboard() {
                         </AlertDescription>
                       </Alert>
                     )}
+                    
+                    {/* התראה חדשה - אחריות בחנות אחרת */}
+                    {isOtherStoreWarranty && !searchResult.is_replaced && (
+                      <Alert className="border-orange-500 bg-orange-50 dark:bg-orange-950">
+                        <ShieldOff className="h-4 w-4 text-orange-600" />
+                        <AlertDescription className="text-orange-800 dark:text-orange-200">
+                          <strong>למכשיר זה קיימת אחריות פעילה בחנות אחרת.</strong>
+                          <br />
+                          לא ניתן לצפות בפרטי הלקוח או להגיש בקשת החלפה.
+                        </AlertDescription>
+                      </Alert>
+                    )}
+
+                    {/* פרטי מכשיר בסיסיים - תמיד מוצגים */}
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1">
                         <Label className="text-xs text-muted-foreground">דגם</Label>
@@ -815,7 +903,8 @@ export default function StoreDashboard() {
                       </div>
                     </div>
 
-                    {currentWarranty && (
+                    {/* פרטי אחריות - רק אם זו אחריות שלנו */}
+                    {currentWarranty && hasOwnWarranty && (
                       <div className="border-t pt-4 space-y-3">
                         <h4 className="font-semibold flex items-center gap-2">
                           <CheckCircle className="h-4 w-4 text-green-500" />
@@ -842,15 +931,16 @@ export default function StoreDashboard() {
                       </div>
                     )}
 
-                    {!searchResult.is_replaced && (
+                    {/* כפתורי פעולה - רק אם מותר */}
+                    {!searchResult.is_replaced && !isOtherStoreWarranty && (
                       <div className="flex gap-2 pt-2">
-                        {!hasExistingWarranty && (
+                        {!hasOwnWarranty && !hasAnyWarranty && (
                           <Button onClick={() => setIsActivationDialogOpen(true)} className="flex-1">
                             <Shield className="me-2 h-4 w-4" />
                             הפעל אחריות
                           </Button>
                         )}
-                        {hasExistingWarranty && (
+                        {hasOwnWarranty && (
                           <Button onClick={() => setIsReplacementDialogOpen(true)} variant="outline" className="flex-1">
                             <RefreshCw className="me-2 h-4 w-4" />
                             הגש בקשת החלפה
@@ -866,11 +956,10 @@ export default function StoreDashboard() {
         </TabsContent>
       </Tabs>
 
-      {/* === דיאלוג הפעלה - קוד מעודכן === */}
+      {/* Activation Dialog */}
       <Dialog open={isActivationDialogOpen} onOpenChange={(isOpen) => {
         setIsActivationDialogOpen(isOpen);
         if (!isOpen) {
-          // אפס את המצב כשהדיאלוג נסגר
           setSearchResult(null);
           setSearchImei('');
           reset();
@@ -884,9 +973,7 @@ export default function StoreDashboard() {
             </DialogDescription>
           </DialogHeader>
 
-          {/* === התניה חדשה: הצג חיפוש או טופס === */}
           {!searchResult ? (
-            // שלב 1: ממשק חיפוש
             <div className="space-y-4 pt-2">
               <div className="flex gap-2" dir="rtl">
                 <Input
@@ -905,9 +992,7 @@ export default function StoreDashboard() {
               </div>
             </div>
           ) : (
-            // שלב 2: טופס הפעלה
             <form onSubmit={handleSubmit(onSubmitWarranty)} className="space-y-4">
-              {/* שדות תצוגה */}
               <div className="space-y-4 p-4 bg-muted rounded-lg">
                 <div className="flex items-center gap-2">
                   <Calendar className="h-4 w-4 text-muted-foreground" />
@@ -949,7 +1034,6 @@ export default function StoreDashboard() {
                 )}
               </div>
               
-              {/* הצג התראות אם יש צורך */}
               {searchResult.is_replaced && (
                 <Alert variant="destructive">
                   <AlertCircle className="h-4 w-4" />
@@ -958,7 +1042,17 @@ export default function StoreDashboard() {
                   </AlertDescription>
                 </Alert>
               )}
-              {hasExistingWarranty && (
+              
+              {isOtherStoreWarranty && (
+                <Alert className="border-orange-500 bg-orange-50 dark:bg-orange-950">
+                  <ShieldOff className="h-4 w-4 text-orange-600" />
+                  <AlertDescription className="text-orange-800 dark:text-orange-200">
+                    למכשיר זה קיימת אחריות פעילה בחנות אחרת.
+                  </AlertDescription>
+                </Alert>
+              )}
+              
+              {hasOwnWarranty && (
                 <Alert variant="destructive">
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
@@ -967,7 +1061,6 @@ export default function StoreDashboard() {
                 </Alert>
               )}
 
-              {/* שדות לעריכה */}
               <div className="space-y-4">
                 <div>
                   <Label htmlFor="customer_name">שם הלקוח *</Label>
@@ -975,6 +1068,7 @@ export default function StoreDashboard() {
                     id="customer_name"
                     {...register('customer_name', { required: 'שם הלקוח הוא שדה חובה' })}
                     placeholder="ישראל ישראלי"
+                    disabled={hasOwnWarranty || hasAnyWarranty || searchResult.is_replaced}
                   />
                   {errors.customer_name && (
                     <p className="text-sm text-red-500 mt-1">{errors.customer_name.message}</p>
@@ -993,6 +1087,7 @@ export default function StoreDashboard() {
                       }
                     })}
                     placeholder="050-1234567"
+                    disabled={hasOwnWarranty || hasAnyWarranty || searchResult.is_replaced}
                   />
                   {errors.customer_phone && (
                     <p className="text-sm text-red-500 mt-1">{errors.customer_phone.message}</p>
@@ -1008,8 +1103,12 @@ export default function StoreDashboard() {
                 >
                   ביטול
                 </Button>
-                <Button type="submit" disabled={hasExistingWarranty || searchResult.is_replaced}>
-                  {hasExistingWarranty ? 'אחריות כבר קיימת' :
+                <Button 
+                  type="submit" 
+                  disabled={hasOwnWarranty || hasAnyWarranty || searchResult.is_replaced}
+                >
+                  {hasOwnWarranty ? 'אחריות כבר קיימת' :
+                   isOtherStoreWarranty ? 'אחריות בחנות אחרת' :
                    searchResult.is_replaced ? 'מכשיר הוחלף' :
                    'הפעל אחריות'}
                 </Button>
@@ -1018,8 +1117,6 @@ export default function StoreDashboard() {
           )}
         </DialogContent>
       </Dialog>
-      {/* === סוף דיאלוג הפעלה === */}
-
 
       {/* Replacement Request Dialog */}
       <Dialog open={isReplacementDialogOpen} onOpenChange={setIsReplacementDialogOpen}>
@@ -1054,7 +1151,7 @@ export default function StoreDashboard() {
               return;
             }
             
-            if (searchResult) {
+            if (searchResult && hasOwnWarranty) {
               const warrantyId = searchResult.warranties?.[0]?.id || null;
               handleRequestReplacement(searchResult.id, warrantyId, reason);
             }
@@ -1071,6 +1168,20 @@ export default function StoreDashboard() {
                   <Label className="text-sm font-medium">IMEI:</Label>
                   <span className="text-sm font-mono">{searchResult.imei}</span>
                 </div>
+                {currentWarranty && (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <User className="h-4 w-4 text-muted-foreground" />
+                      <Label className="text-sm font-medium">לקוח:</Label>
+                      <span className="text-sm">{currentWarranty.customer_name}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Phone className="h-4 w-4 text-muted-foreground" />
+                      <Label className="text-sm font-medium">טלפון:</Label>
+                      <span className="text-sm">{currentWarranty.customer_phone}</span>
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
@@ -1093,7 +1204,7 @@ export default function StoreDashboard() {
               >
                 ביטול
               </Button>
-              <Button type="submit">
+              <Button type="submit" disabled={!hasOwnWarranty}>
                 <RefreshCw className="me-2 h-4 w-4" />
                 הגש בקשה
               </Button>

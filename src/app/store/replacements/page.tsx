@@ -181,13 +181,11 @@ export default function StoreReplacementsPage() {
       }
 
       // 2. בדיקה אם המכשיר שייך לחנות הזו
-      // ה-RPC מחזיר customer_name רק אם לחנות יש הרשאה לראות אותו (כלומר המכשיר שייך לה)
-      // אם השדה ריק, סימן שהמכשיר קיים אבל לא שייך לחנות הזו
-      if (!result.customer_name && result.has_active_warranty) {
+      if (result.has_active_warranty && !result.is_own_warranty) {
         setSearchedDevice(null);
         toast({
-          title: 'אין הרשאה',
-          description: 'המכשיר נמצא במערכת אך לא שייך לחנות שלך.',
+          title: 'אחריות בחנות אחרת',
+          description: result.message || 'למכשיר זה קיימת אחריות פעילה בחנות אחרת',
           variant: 'destructive',
         });
         return;
