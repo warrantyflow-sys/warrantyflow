@@ -2007,14 +2007,16 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
-  -- Prevent non-admins from changing their own role
+  IF current_setting('role', true) = 'service_role' THEN
+    RETURN NEW;
+  END IF;
+
   IF OLD.role IS DISTINCT FROM NEW.role THEN
     IF NOT is_admin() THEN
       RAISE EXCEPTION 'Only admins can change user roles';
     END IF;
   END IF;
   
-  -- Prevent non-admins from activating themselves
   IF OLD.is_active = false AND NEW.is_active = true THEN
     IF auth.uid() = NEW.id AND NOT is_admin() THEN
       RAISE EXCEPTION 'Users cannot activate themselves';
