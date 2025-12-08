@@ -296,9 +296,9 @@ export default function StoreDashboard() {
         // הצג את המכשיר עם מידע מוגבל (ללא פרטי לקוח)
         const device: DeviceWithWarranty = {
           id: result.device_id,
-          imei: result.imei,
+          imei: result.imei!,
           imei2: result.imei2 || null,
-          model_id: result.model_id,
+          model_id: result.model_id!,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           notes: null,
@@ -307,7 +307,7 @@ export default function StoreDashboard() {
           imported_by: null,
           import_batch: null,
           device_models: {
-            id: result.model_id,
+            id: result.model_id!,
             model_name: result.model_name || 'לא ידוע',
             manufacturer: result.manufacturer || null,
             warranty_months: result.warranty_months || 12,
@@ -337,9 +337,9 @@ export default function StoreDashboard() {
       // המשך רגיל - מכשיר שלנו או ללא אחריות
       const device: DeviceWithWarranty = {
         id: result.device_id,
-        imei: result.imei,
+        imei: result.imei!,
         imei2: result.imei2 || null,
-        model_id: result.model_id,
+        model_id: result.model_id!,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         notes: null,
@@ -348,7 +348,7 @@ export default function StoreDashboard() {
         imported_by: null,
         import_batch: null,
         device_models: {
-          id: result.model_id,
+          id: result.model_id!,
           model_name: result.model_name || 'לא ידוע',
           manufacturer: result.manufacturer || null,
           warranty_months: result.warranty_months || 12,

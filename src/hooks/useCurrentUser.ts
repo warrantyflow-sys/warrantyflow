@@ -44,7 +44,7 @@ export function useCurrentUser() {
       }
     
       // הלוגיקה הקיימת של JWT parsing...
-      if (session.access_token) {
+      if (session.access_token && typeof window !== 'undefined') {
         try {
           const tokenParts = session.access_token.split('.');
           if (tokenParts.length === 3) {
