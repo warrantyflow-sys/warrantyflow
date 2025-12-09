@@ -119,6 +119,7 @@ export function parseCSV(text: string): Array<Record<string, string>> {
 }
 
 export function downloadFile(content: string, filename: string, type: string = 'text/plain') {
+  if (typeof window === 'undefined') return;
   const blob = new Blob([content], { type });
   const url = window.URL.createObjectURL(blob);
   const link = document.createElement('a');

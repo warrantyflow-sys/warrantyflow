@@ -200,7 +200,7 @@ CREATE TABLE IF NOT EXISTS warranties (
   store_id UUID NULL, -- NULL מאפשר אחריות שנוצרה ע"י אדמין
   customer_name TEXT NOT NULL,
   customer_phone TEXT NOT NULL,
-  activation_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  activation_date DATE NOT NULL DEFAULT (NOW() AT TIME ZONE 'Asia/Jerusalem')::DATE,
   expiry_date DATE NOT NULL,
   is_active BOOLEAN NOT NULL DEFAULT true,
   activated_by UUID NULL,
@@ -300,7 +300,7 @@ CREATE TABLE IF NOT EXISTS payments (
   id UUID NOT NULL DEFAULT uuid_generate_v4(),
   lab_id UUID NOT NULL,
   amount NUMERIC(10, 2) NOT NULL,
-  payment_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  payment_date DATE NOT NULL DEFAULT (NOW() AT TIME ZONE 'Asia/Jerusalem')::DATE,
   reference TEXT NULL,
   notes TEXT NULL,
   created_by UUID NULL,
@@ -524,7 +524,7 @@ SELECT
   d.id, d.imei, d.imei2, d.is_replaced, dm.model_name,
   EXISTS(
     SELECT 1 FROM warranties w 
-    WHERE w.device_id = d.id AND w.is_active = true AND w.expiry_date >= CURRENT_DATE
+    WHERE w.device_id = d.id AND w.is_active = true AND w.expiry_date >= (NOW() AT TIME ZONE 'Asia/Jerusalem')::DATE
   ) AS has_active_warranty,
   EXISTS(
     SELECT 1 FROM repairs r 
@@ -555,7 +555,7 @@ SELECT
     WHEN d.is_replaced THEN 'replaced'
     WHEN EXISTS(
       SELECT 1 FROM warranties w 
-      WHERE w.device_id = d.id AND w.is_active = true AND w.expiry_date >= CURRENT_DATE
+      WHERE w.device_id = d.id AND w.is_active = true AND w.expiry_date >= (NOW() AT TIME ZONE 'Asia/Jerusalem')::DATE
     ) THEN 'active'
     WHEN EXISTS(SELECT 1 FROM warranties w WHERE w.device_id = d.id) THEN 'expired'
     ELSE 'new'
@@ -572,8 +572,8 @@ SELECT
   w.customer_name, w.customer_phone, w.notes, w.created_at, w.updated_at,
   d.imei, d.is_replaced, dm.model_name, u.full_name AS store_name,
   CASE
-    WHEN w.expiry_date > NOW() AND w.is_active THEN 'active'
-    WHEN w.expiry_date <= NOW() THEN 'expired'
+    WHEN w.expiry_date >= (NOW() AT TIME ZONE 'Asia/Jerusalem')::DATE AND w.is_active THEN 'active'
+    WHEN w.expiry_date < (NOW() AT TIME ZONE 'Asia/Jerusalem')::DATE THEN 'expired'
     ELSE 'cancelled'
   END AS warranty_status,
   (SELECT COUNT(*) FROM replacement_requests rr WHERE rr.device_id = w.device_id AND rr.status = 'pending') AS pending_replacements,
@@ -609,7 +609,7 @@ SELECT
   u.email AS store_email,
   CASE
     WHEN d.is_replaced THEN 'replaced'
-    WHEN lw.id IS NOT NULL AND lw.is_active AND lw.expiry_date >= CURRENT_DATE THEN 'active'
+    WHEN lw.id IS NOT NULL AND lw.is_active AND lw.expiry_date >= (NOW() AT TIME ZONE 'Asia/Jerusalem')::DATE THEN 'active'
     WHEN lw.id IS NOT NULL THEN 'expired'
     ELSE 'new'
   END AS warranty_status,
@@ -625,7 +625,7 @@ LEFT JOIN users u ON lw.store_id = u.id;
 CREATE OR REPLACE VIEW admin_dashboard_stats AS
 SELECT
   (SELECT COUNT(*) FROM devices WHERE NOT is_replaced) AS total_devices,
-  (SELECT COUNT(*) FROM warranties WHERE is_active = true AND expiry_date >= CURRENT_DATE) AS active_warranties,
+  (SELECT COUNT(*) FROM warranties WHERE is_active = true AND expiry_date >= (NOW() AT TIME ZONE 'Asia/Jerusalem')::DATE) AS active_warranties,
   (SELECT COUNT(*) FROM repairs WHERE status IN ('received', 'in_progress')) AS pending_repairs,
   (SELECT COUNT(*) FROM replacement_requests WHERE status = 'pending') AS pending_replacements,
   (SELECT COUNT(*) FROM users WHERE is_active = true AND role = 'store') AS total_stores,
@@ -840,7 +840,7 @@ BEGIN
     dm.model_name,
     EXISTS(
       SELECT 1 FROM warranties w 
-      WHERE w.device_id = d.id AND w.is_active = true AND w.expiry_date >= CURRENT_DATE
+      WHERE w.device_id = d.id AND w.is_active = true AND w.expiry_date >= (NOW() AT TIME ZONE 'Asia/Jerusalem')::DATE
     ) AS has_warranty
   FROM devices d
   LEFT JOIN device_models dm ON d.model_id = dm.id
@@ -1038,11 +1038,14 @@ DECLARE
   v_total BIGINT;
   v_active BIGINT;
   v_expired BIGINT;
+  v_today DATE;
 BEGIN
+  v_today := (NOW() AT TIME ZONE 'Asia/Jerusalem')::DATE;
+
   SELECT
     COUNT(*),
-    COUNT(*) FILTER (WHERE is_active = true AND expiry_date > CURRENT_DATE),
-    COUNT(*) FILTER (WHERE is_active = false OR expiry_date <= CURRENT_DATE)
+    COUNT(*) FILTER (WHERE is_active = true AND expiry_date >= v_today),
+    COUNT(*) FILTER (WHERE is_active = false OR expiry_date < v_today)
   INTO v_total, v_active, v_expired
   FROM warranties;
 
@@ -1098,8 +1101,8 @@ AS $$
 DECLARE
   v_lab_id UUID := auth.uid();
   v_stats JSON;
-  v_start_of_month TIMESTAMPTZ := date_trunc('month', NOW());
-  v_today_start TIMESTAMPTZ := date_trunc('day', NOW());
+  v_today_start TIMESTAMPTZ := date_trunc('day', NOW() AT TIME ZONE 'Asia/Jerusalem') AT TIME ZONE 'Asia/Jerusalem';
+  v_start_of_month TIMESTAMPTZ := date_trunc('month', NOW() AT TIME ZONE 'Asia/Jerusalem') AT TIME ZONE 'Asia/Jerusalem';
 BEGIN
   IF NOT is_lab() THEN
     RETURN '{}'::JSON;
@@ -1169,13 +1172,14 @@ SET search_path = public
 AS $$
 DECLARE
   v_lab_id UUID;
-  v_month_start DATE;
+  v_month_start TIMESTAMPTZ;
   v_today_start TIMESTAMPTZ;
   v_stats JSON;
 BEGIN
   v_lab_id := COALESCE(p_lab_id, auth.uid());
-  v_month_start := DATE_TRUNC('month', CURRENT_DATE)::DATE;
-  v_today_start := DATE_TRUNC('day', NOW());
+  
+  v_month_start := date_trunc('month', NOW() AT TIME ZONE 'Asia/Jerusalem') AT TIME ZONE 'Asia/Jerusalem';
+  v_today_start := date_trunc('day', NOW() AT TIME ZONE 'Asia/Jerusalem') AT TIME ZONE 'Asia/Jerusalem';
 
   WITH monthly_created_repairs AS (
     SELECT * FROM repairs
@@ -1199,7 +1203,6 @@ BEGIN
   RETURN v_stats;
 END;
 $$;
-
 -- ───────────────────────────────────────────────────────────────────────────────
 -- 7.4 Get Store Device Count
 -- ───────────────────────────────────────────────────────────────────────────────
@@ -1279,8 +1282,10 @@ DECLARE
   v_expiry_date DATE; 
   v_warranty_id UUID; 
   v_is_replaced BOOLEAN;
+  v_today DATE;
 BEGIN
   v_store_id := auth.uid();
+  v_today := (NOW() AT TIME ZONE 'Asia/Jerusalem')::DATE;
   
   IF NOT is_store() THEN 
     RETURN QUERY SELECT false, 'רק חנויות יכולות להפעיל אחריות'::TEXT, NULL::UUID, NULL::DATE; 
@@ -1315,16 +1320,16 @@ BEGIN
     SELECT 1 FROM warranties w 
     WHERE w.device_id = p_device_id 
       AND w.is_active = true 
-      AND w.expiry_date >= CURRENT_DATE
+      AND w.expiry_date >= v_today
   ) THEN 
     RETURN QUERY SELECT false, 'למכשיר זה כבר קיימת אחריות פעילה'::TEXT, NULL::UUID, NULL::DATE; 
     RETURN; 
   END IF;
   
-  v_expiry_date := CURRENT_DATE + (v_warranty_months || ' months')::INTERVAL;
+  v_expiry_date := v_today + (v_warranty_months || ' months')::INTERVAL;
   
   INSERT INTO warranties (device_id, store_id, customer_name, customer_phone, activation_date, expiry_date, is_active, activated_by)
-  VALUES (p_device_id, v_store_id, p_customer_name, p_customer_phone, CURRENT_DATE, v_expiry_date, true, v_store_id) 
+  VALUES (p_device_id, v_store_id, p_customer_name, p_customer_phone, v_today, v_expiry_date, true, v_store_id) 
   RETURNING id INTO v_warranty_id;
   
   RETURN QUERY SELECT true, 'אחריות הופעלה בהצלחה'::TEXT, v_warranty_id, v_expiry_date;
@@ -1355,7 +1360,7 @@ RETURNS TABLE(
   customer_phone TEXT,
   message TEXT,
   device_found BOOLEAN,
-  is_own_warranty BOOLEAN  -- חדש: האם האחריות שייכת למשתמש הנוכחי
+  is_own_warranty BOOLEAN
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -1379,7 +1384,7 @@ BEGIN
     
     SELECT COUNT(*) INTO v_searches_today 
     FROM device_search_log 
-    WHERE user_id = v_user_id AND created_at >= CURRENT_DATE;
+    WHERE user_id = v_user_id AND created_at >= (NOW() AT TIME ZONE 'Asia/Jerusalem')::DATE;
     
     IF v_searches_today >= v_rate_limit THEN
       RETURN QUERY SELECT 
@@ -1416,7 +1421,7 @@ BEGIN
   FROM warranties w
   WHERE w.device_id = v_device_record.id
     AND w.is_active = true
-    AND w.expiry_date >= CURRENT_DATE
+    AND w.expiry_date >= (NOW() AT TIME ZONE 'Asia/Jerusalem')::DATE
   ORDER BY w.created_at DESC
   LIMIT 1;
 
@@ -1562,7 +1567,7 @@ BEGIN
 
   SELECT COUNT(*) INTO v_searches_today
   FROM device_search_log
-  WHERE user_id = v_user_id AND created_at >= CURRENT_DATE;
+  WHERE user_id = v_user_id AND created_at >= (NOW() AT TIME ZONE 'Asia/Jerusalem')::DATE;
 
   IF v_searches_today >= v_rate_limit THEN
     RETURN QUERY SELECT false, NULL::UUID, NULL::TEXT, false, 'חרגת ממכסת החיפושים היומית'::TEXT;
@@ -1571,7 +1576,7 @@ BEGIN
 
   SELECT 
     d.id, dm.model_name,
-    EXISTS(SELECT 1 FROM warranties w WHERE w.device_id = d.id AND w.is_active = true AND w.expiry_date >= CURRENT_DATE)
+    EXISTS(SELECT 1 FROM warranties w WHERE w.device_id = d.id AND w.is_active = true AND w.expiry_date >= (NOW() AT TIME ZONE 'Asia/Jerusalem')::DATE)
   INTO v_device_id, v_model_name, v_has_warranty
   FROM devices d
   LEFT JOIN device_models dm ON d.model_id = dm.id
@@ -2038,24 +2043,47 @@ AS $$
 DECLARE
   v_price NUMERIC(10, 2);
 BEGIN
-  -- Handle custom repairs
+  -- טיפול בתיקון מותאם אישית (Custom)
   IF NEW.custom_repair_description IS NOT NULL THEN
-    IF NEW.status = 'completed' AND NEW.custom_repair_price IS NOT NULL THEN
-      NEW.cost := NEW.custom_repair_price;
+    IF NEW.custom_repair_price IS NOT NULL THEN
+       NEW.cost := NEW.custom_repair_price;
     END IF;
     RETURN NEW;
   END IF;
 
-  -- Handle standard repairs
+  -- טיפול בתיקון מחירון (Standard)
   IF NEW.repair_type_id IS NOT NULL AND NEW.lab_id IS NOT NULL THEN
+    
     SELECT price INTO v_price
     FROM lab_repair_prices
     WHERE lab_id = NEW.lab_id 
       AND repair_type_id = NEW.repair_type_id
       AND is_active = true;
-    
-    IF v_price IS NOT NULL AND NEW.status = 'completed' THEN
-      NEW.cost := v_price;
+
+    IF v_price IS NOT NULL THEN
+       
+       -- INSERT (יצירה)
+       IF TG_OP = 'INSERT' THEN
+          IF NEW.status = 'completed' AND NEW.cost IS NULL THEN
+             NEW.cost := v_price;
+          END IF;
+
+       -- UPDATE (עדכון)
+       ELSIF TG_OP = 'UPDATE' THEN
+          IF NEW.status = 'completed' THEN
+             IF (NEW.cost IS NULL OR NEW.cost = OLD.cost) THEN
+                
+                IF 
+                   (OLD.status IS DISTINCT FROM 'completed' AND OLD.cost IS NULL) OR 
+                   (OLD.repair_type_id IS DISTINCT FROM NEW.repair_type_id) OR
+                   (OLD.lab_id IS DISTINCT FROM NEW.lab_id) OR
+                   (NEW.cost IS NULL) 
+                THEN
+                   NEW.cost := v_price;
+                END IF;
+             END IF;
+          END IF;
+       END IF;
     END IF;
   END IF;
   
@@ -2487,8 +2515,15 @@ CREATE TRIGGER update_settings_updated_at BEFORE UPDATE ON settings FOR EACH ROW
 
 -- Business logic triggers
 DROP TRIGGER IF EXISTS enforce_repair_cost_trigger ON repairs;
+
 CREATE TRIGGER enforce_repair_cost_trigger
-  BEFORE INSERT OR UPDATE OF repair_type_id, lab_id, status ON repairs
+  BEFORE INSERT OR UPDATE OF 
+    repair_type_id, 
+    lab_id, 
+    status, 
+    custom_repair_price,
+    cost
+  ON repairs
   FOR EACH ROW
   EXECUTE FUNCTION validate_repair_cost();
 

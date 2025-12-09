@@ -2,6 +2,7 @@ import { createServiceClient } from '@/lib/supabase/server';
 import type { User } from '@/types';
 import { NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/auth/jwt-helper';
+import { TablesInsert } from '@/lib/supabase/database.types';
 
 export async function POST(request: Request) {
   try {
@@ -28,7 +29,7 @@ export async function POST(request: Request) {
 
     if (authError2) throw authError2;
 
-    const payload: Partial<User> = {
+    const payload: TablesInsert<'users'> = {
       id: authData.user!.id,
       email: data.email,
       full_name: data.full_name,
@@ -37,8 +38,9 @@ export async function POST(request: Request) {
       is_active: true,
     };
 
-    const { error: profileError } = await (supabaseService.from('users') as any)
-      .upsert([payload], {
+    const { error: profileError } = await supabaseService
+      .from('users')
+      .upsert(payload, {
         onConflict: 'id',
         ignoreDuplicates: false
       });

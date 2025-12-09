@@ -162,7 +162,7 @@ export default function StoreDevicesPage() {
     };
 
     fetchReplacementCounts();
-  }, [warranties?.length]); // תלות פשוטה יותר
+  }, [warranties]);
 
   // --- תיקון: שימוש ב-useMemo במקום useState+useEffect ---
   const filteredWarranties = useMemo(() => {

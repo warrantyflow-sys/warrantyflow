@@ -1120,7 +1120,7 @@ BEGIN
     SELECT 1 FROM warranties w 
     WHERE w.device_id = p_device_id 
       AND w.is_active = true 
-      AND w.expiry_date >= CURRENT_DATE
+      AND w.expiry_date >= (NOW() AT TIME ZONE 'Asia/Jerusalem')::DATE
   ) THEN 
     RETURN QUERY SELECT false, 'למכשיר זה כבר קיימת אחריות פעילה'::TEXT, NULL::UUID, NULL::DATE; 
     RETURN; 
@@ -1323,7 +1323,7 @@ BEGIN
     FROM warranties w 
     WHERE w.device_id = v_device_record.id 
       AND w.is_active = true 
-      AND w.expiry_date >= CURRENT_DATE
+      AND w.expiry_date >= (NOW() AT TIME ZONE 'Asia/Jerusalem')::DATE
     LIMIT 1;
 
     RETURN QUERY
@@ -1455,7 +1455,7 @@ BEGIN
 
   SELECT 
     d.id, dm.model_name,
-    EXISTS(SELECT 1 FROM public.warranties w WHERE w.device_id = d.id AND w.is_active = true AND w.expiry_date >= CURRENT_DATE)
+    EXISTS(SELECT 1 FROM public.warranties w WHERE w.device_id = d.id AND w.is_active = true AND w.expiry_date >= (NOW() AT TIME ZONE 'Asia/Jerusalem')::DATE)
   INTO v_device_id, v_model_name, v_has_warranty
   FROM public.devices d
   LEFT JOIN public.device_models dm ON d.model_id = dm.id
@@ -2401,7 +2401,7 @@ LEFT JOIN users u ON lw.store_id = u.id;
 CREATE OR REPLACE VIEW devices_imei_lookup AS
 SELECT
   d.id, d.imei, d.imei2, d.is_replaced, dm.model_name,
-  EXISTS(SELECT 1 FROM warranties w WHERE w.device_id = d.id AND w.is_active = true AND w.expiry_date >= CURRENT_DATE) AS has_active_warranty,
+  EXISTS(SELECT 1 FROM warranties w WHERE w.device_id = d.id AND w.is_active = true AND w.expiry_date >= (NOW() AT TIME ZONE 'Asia/Jerusalem')::DATE) AS has_active_warranty,
   EXISTS(SELECT 1 FROM repairs r WHERE r.device_id = d.id AND r.status IN ('received', 'in_progress')) AS has_active_repair
 FROM devices d
 LEFT JOIN device_models dm ON d.model_id = dm.id;
@@ -2424,7 +2424,7 @@ SELECT
   dm.model_name,
   CASE
     WHEN d.is_replaced THEN 'replaced'
-    WHEN EXISTS(SELECT 1 FROM warranties w WHERE w.device_id = d.id AND w.is_active = true AND w.expiry_date >= CURRENT_DATE) THEN 'active'
+    WHEN EXISTS(SELECT 1 FROM warranties w WHERE w.device_id = d.id AND w.is_active = true AND w.expiry_date >= (NOW() AT TIME ZONE 'Asia/Jerusalem')::DATE) THEN 'active'
     WHEN EXISTS(SELECT 1 FROM warranties w WHERE w.device_id = d.id) THEN 'expired'
     ELSE 'new'
   END AS warranty_status
