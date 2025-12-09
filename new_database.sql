@@ -612,7 +612,8 @@ SELECT
     WHEN lw.id IS NOT NULL AND lw.is_active AND lw.expiry_date >= CURRENT_DATE THEN 'active'
     WHEN lw.id IS NOT NULL THEN 'expired'
     ELSE 'new'
-  END AS warranty_status
+  END AS warranty_status,
+  (SELECT COUNT(*) FROM repairs r WHERE r.device_id = d.id) AS repairs_count
 FROM devices d
 LEFT JOIN device_models dm ON d.model_id = dm.id
 LEFT JOIN latest_warranties lw ON d.id = lw.device_id

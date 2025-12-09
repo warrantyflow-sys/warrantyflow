@@ -2,14 +2,14 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import type { Device, DeviceModel, Warranty, Repair, WarrantyWithRelations } from '@/types';
+import type { Device, DeviceModel, Warranty, Repair } from '@/types';
 import { useStoreWarranties } from '@/hooks/queries/useWarranties';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
 import { StoreDevicesPageSkeleton } from '@/components/ui/loading-skeletons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -34,31 +34,41 @@ import {
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useToast } from '@/components/ui/use-toast';
 import {
   Package,
   Search,
   Shield,
   Wrench,
-  Calendar,
-  User,
-  Phone,
-  Hash,
   CheckCircle,
   XCircle,
   Clock,
-  AlertCircle,
-  FileText,
   Download
 } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
 
-type WarrantyStatus = 'new' | 'active' | 'expired' | 'replaced';
-
-// Use WarrantyWithRelations directly instead of creating a new type
-type StoreWarranty = WarrantyWithRelations;
+type StoreWarranty = Warranty & {
+  device?: {
+    id: string;
+    imei: string;
+    imei2?: string | null;
+    device_models?: {
+      model_name: string;
+    } | null;
+    device_model?: {
+      model_name: string;
+    } | null;
+  } | null;
+  repairs?: Array<{
+    id: string;
+    status: string;
+    fault_type?: string;
+    lab_id?: string | null;
+    created_at?: string;
+    completed_at?: string | null;
+  }> | null;
+};
 
 export default function StoreDevicesPage() {
   // Load current user to get storeId
@@ -69,7 +79,7 @@ export default function StoreDevicesPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(50);
 
-  // React Query hook - fetch all warranties (stores typically have fewer devices)
+  // React Query hook - fetch all warranties
   const {
     warranties,
     total,
@@ -84,13 +94,15 @@ export default function StoreDevicesPage() {
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'expired'>('all');
   const [selectedWarranty, setSelectedWarranty] = useState<StoreWarranty | null>(null);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
+  const [replacementCounts, setReplacementCounts] = useState<Map<string, { pending: number; approved: number }>>(new Map());
 
   const { toast } = useToast();
-  const supabase = createClient();
   const router = useRouter();
 
-  // Calculate stats using useMemo to prevent infinite loops
+  // Calculate stats when warranties change
   const stats = useMemo(() => {
+    if (!warranties) return { total: 0, active: 0, expired: 0, inRepair: 0 };
+    
     const now = new Date();
     const activeCount = warranties.filter((w: any) =>
       new Date(w.expiry_date) > now && w.is_active
@@ -105,23 +117,66 @@ export default function StoreDevicesPage() {
     ).length;
 
     return {
-      total,
+      total: total || warranties.length,
       active: activeCount,
       expired: expiredCount,
       inRepair: inRepairCount,
     };
   }, [warranties, total]);
 
-  // Filter warranties using useMemo
+  // שליפת בקשות החלפה לכל המכשירים
+  useEffect(() => {
+    const fetchReplacementCounts = async () => {
+      if (!warranties || warranties.length === 0) {
+        setReplacementCounts(new Map());
+        return;
+      }
+
+      const deviceIds = warranties
+        .map((w: any) => w.device?.id)
+        .filter(Boolean);
+
+      if (deviceIds.length === 0) {
+        setReplacementCounts(new Map());
+        return;
+      }
+
+      const supabaseClient = createClient();
+      const { data: replacementData } = await supabaseClient
+        .from('replacement_requests')
+        .select('device_id, status')
+        .in('device_id', deviceIds);
+
+      const counts = new Map<string, { pending: number; approved: number }>();
+      deviceIds.forEach((id: string) => counts.set(id, { pending: 0, approved: 0 }));
+
+      (replacementData || []).forEach((req: any) => {
+        const deviceCounts = counts.get(req.device_id);
+        if (deviceCounts) {
+          if (req.status === 'pending') deviceCounts.pending++;
+          else if (req.status === 'approved') deviceCounts.approved++;
+        }
+      });
+
+      setReplacementCounts(counts);
+    };
+
+    fetchReplacementCounts();
+  }, [warranties?.length]); // תלות פשוטה יותר
+
+  // --- תיקון: שימוש ב-useMemo במקום useState+useEffect ---
   const filteredWarranties = useMemo(() => {
+    if (!warranties) return [];
+    
     let filtered = [...warranties];
 
     if (searchQuery) {
+      const lowerQuery = searchQuery.toLowerCase();
       filtered = filtered.filter(warranty =>
         warranty.device?.imei?.includes(searchQuery) ||
         warranty.device?.imei2?.includes(searchQuery) ||
-        warranty.device?.device_models?.model_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        warranty.customer_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        warranty.device?.device_models?.model_name?.toLowerCase().includes(lowerQuery) ||
+        warranty.customer_name?.toLowerCase().includes(lowerQuery) ||
         warranty.customer_phone?.includes(searchQuery)
       );
     }
@@ -142,12 +197,12 @@ export default function StoreDevicesPage() {
     return filtered;
   }, [warranties, searchQuery, filterStatus]);
 
-  // Reset to first page when filters change
+  // איפוס עמוד בעת שינוי סינון
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery, filterStatus]);
 
-  // Apply client-side pagination using useMemo
+  // חישוב פגינציה בזמן אמת
   const paginatedWarranties = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
     const endIndex = startIndex + itemsPerPage;
@@ -173,7 +228,7 @@ export default function StoreDevicesPage() {
     if (!repairs || repairs.length === 0) return null;
 
     const activeRepair = repairs.find(r =>
-      r.status && ['received', 'in_progress', 'replacement_requested'].includes(r.status)
+      ['received', 'in_progress', 'replacement_requested'].includes(r.status)
     );
 
     if (activeRepair) {
@@ -198,19 +253,48 @@ export default function StoreDevicesPage() {
     return null;
   };
 
+  const getReplacementBadge = (deviceId: string | undefined) => {
+    if (!deviceId) return null;
+    const counts = replacementCounts.get(deviceId);
+    if (!counts || (counts.pending === 0 && counts.approved === 0)) return null;
+  
+    return (
+      <div className="flex flex-col gap-1">
+        {counts.pending > 0 && (
+          <Badge variant="outline" className="text-orange-600 border-orange-200 bg-orange-50">
+            <Clock className="ms-1 h-3 w-3" />
+            ממתין
+          </Badge>
+        )}
+        {counts.approved > 0 && (
+          <Badge variant="default" className="bg-green-600 hover:bg-green-700">
+            <CheckCircle className="ms-1 h-3 w-3" />
+            אושר
+          </Badge>
+        )}
+      </div>
+    );
+  };
+
   const exportToCSV = () => {
     const csvContent = [
-      ['IMEI 1', 'IMEI 2', 'דגם', 'שם לקוח', 'טלפון', 'תאריך הפעלה', 'תוקף עד', 'סטטוס'],
-      ...filteredWarranties.map(warranty => [
-        warranty.device?.imei || '',
-        warranty.device?.imei2 || '',
-        warranty.device?.device_models?.model_name || '',
-        warranty.customer_name,
-        warranty.customer_phone,
-        formatDate(warranty.activation_date),
-        formatDate(warranty.expiry_date),
-        getWarrantyStatus(warranty).label
-      ]),
+      ['IMEI 1', 'IMEI 2', 'דגם', 'שם לקוח', 'טלפון', 'תאריך הפעלה', 'תוקף עד', 'סטטוס', 'בקשות החלפה ממתינות', 'בקשות החלפה מאושרות'],
+      ...filteredWarranties.map(warranty => {
+        const deviceId = warranty.device?.id;
+        const counts = deviceId ? (replacementCounts.get(deviceId) || { pending: 0, approved: 0 }) : { pending: 0, approved: 0 };
+        return [
+          warranty.device?.imei || '',
+          warranty.device?.imei2 || '',
+          warranty.device?.device_models?.model_name || '',
+          warranty.customer_name,
+          warranty.customer_phone,
+          formatDate(warranty.activation_date),
+          formatDate(warranty.expiry_date),
+          getWarrantyStatus(warranty).label,
+          counts.pending.toString(),
+          counts.approved.toString()
+        ];
+      }),
     ]
       .map(row => row.join(','))
       .join('\n');
@@ -396,6 +480,7 @@ export default function StoreDevicesPage() {
                 <TableHead>תוקף עד</TableHead>
                 <TableHead>סטטוס</TableHead>
                 <TableHead>מס' תיקונים</TableHead>
+                <TableHead>בקשות החלפה</TableHead>
                 <TableHead>פעולות</TableHead>
               </TableRow>
             </TableHeader>
@@ -451,6 +536,11 @@ export default function StoreDevicesPage() {
                           <span className="text-muted-foreground">-</span>
                         )}
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      {getReplacementBadge(warranty.device?.id) || (
+                        <span className="text-muted-foreground">-</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Button
@@ -544,7 +634,7 @@ export default function StoreDevicesPage() {
                                     repair.fault_type === 'board' ? 'לוח אם' : 'אחר'}
                           </p>
                           <p className="text-sm text-muted-foreground">
-                            {repair.created_at ? formatDate(repair.created_at) : '-'}
+                            {repair.created_at ? formatDate(repair.created_at) : ''}
                             {repair.completed_at ? ` - ${formatDate(repair.completed_at)}` : ''}
                           </p>
                         </div>

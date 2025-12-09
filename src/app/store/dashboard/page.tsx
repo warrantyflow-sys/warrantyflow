@@ -66,8 +66,9 @@ type DeviceWithWarranty = Device & {
     expiry_date: string;
     is_active: boolean;
   }[] | null;
-  // שדה חדש - האם האחריות שייכת לחנות הנוכחית
   is_own_warranty?: boolean;
+  pending_replacements?: number;
+  approved_replacements?: number;
 };
 
 type ReplacementRequestWithDevice = ReplacementRequest & {
@@ -90,6 +91,13 @@ export default function StoreDashboard() {
   const activationDateDisplay = formatDate(new Date());
   const [activeDevicesPage, setActiveDevicesPage] = useState(1);
   const [totalActiveDevices, setTotalActiveDevices] = useState(0);
+  const [searchResultReplacements, setSearchResultReplacements] = useState<{
+    id: string;
+    status: string;
+    reason: string;
+    created_at: string;
+    admin_notes?: string | null;
+  }[]>([]);
   const listRefreshDebounce = useRef<NodeJS.Timeout | null>(null);
   const DEVICES_PER_PAGE = 5;
   const router = useRouter();
@@ -119,11 +127,11 @@ export default function StoreDashboard() {
 
   const fetchActiveDevices = useCallback(async () => {
     if (!storeId) return;
-
+  
     try {
       const from = (activeDevicesPage - 1) * DEVICES_PER_PAGE;
       const to = from + DEVICES_PER_PAGE - 1;
-
+  
       const { data, error, count } = await supabase
         .from('warranties')
         .select(`
@@ -144,22 +152,57 @@ export default function StoreDashboard() {
         .gte('expiry_date', new Date().toISOString().split('T')[0])
         .order('created_at', { ascending: false })
         .range(from, to);
-
+  
       if (error) {
         console.error('Error fetching active devices:', error);
         return;
       }
-
-      const flattenedDevices = (data || []).map((warranty: any) => ({
-        ...warranty.devices,
-        device_models: warranty.devices.device_models,
-        warranties: [warranty],
-        is_own_warranty: true // תמיד true כי אנחנו שולפים רק של החנות שלנו
-      }));
-
+  
+      if (!data || data.length === 0) {
+        setActiveDevices([]);
+        setTotalActiveDevices(count || 0);
+        return;
+      }
+  
+      // חילוץ device_ids
+      const deviceIds = data.map((warranty: any) => warranty.devices.id);
+  
+      // שליפת בקשות החלפה לכל המכשירים
+      const { data: replacementData } = await supabase
+        .from('replacement_requests')
+        .select('device_id, status')
+        .in('device_id', deviceIds);
+  
+      // יצירת מפה של ספירות בקשות לכל מכשיר
+      const replacementCounts = new Map<string, { pending: number; approved: number }>();
+      deviceIds.forEach(id => replacementCounts.set(id, { pending: 0, approved: 0 }));
+      
+      (replacementData || []).forEach((req: any) => {
+        const counts = replacementCounts.get(req.device_id);
+        if (counts) {
+          if (req.status === 'pending') counts.pending++;
+          else if (req.status === 'approved') counts.approved++;
+        }
+      });
+  
+      // מיזוג הנתונים
+      const flattenedDevices = data.map((warranty: any) => {
+        const deviceId = warranty.devices.id;
+        const counts = replacementCounts.get(deviceId) || { pending: 0, approved: 0 };
+        
+        return {
+          ...warranty.devices,
+          device_models: warranty.devices.device_models,
+          warranties: [warranty],
+          is_own_warranty: true,
+          pending_replacements: counts.pending,
+          approved_replacements: counts.approved,
+        };
+      });
+  
       setActiveDevices(flattenedDevices);
       setTotalActiveDevices(count || 0);
-
+  
     } catch (error) {
       console.error('Error fetching active devices:', error);
     }
@@ -279,6 +322,7 @@ export default function StoreDashboard() {
           variant: 'destructive',
         });
         setSearchResult(null);
+        setSearchResultReplacements([]);
         return;
       }
 
@@ -332,6 +376,19 @@ export default function StoreDashboard() {
         
         setSearchResult(device);
         return;
+      }
+
+      // שליפת בקשות החלפה למכשיר (רק אם האחריות שלנו)
+      if (result.is_own_warranty && result.device_id) {
+        const { data: replacements } = await supabase
+          .from('replacement_requests')
+          .select('id, status, reason, created_at, admin_notes')
+          .eq('device_id', result.device_id)
+          .order('created_at', { ascending: false });
+        
+        setSearchResultReplacements(replacements || []);
+      } else {
+        setSearchResultReplacements([]);
       }
 
       // המשך רגיל - מכשיר שלנו או ללא אחריות
@@ -439,6 +496,7 @@ export default function StoreDashboard() {
       reset();
       setSearchImei('');
       setSearchResult(null);
+      setSearchResultReplacements([]);
 
       fetchActiveDevices();
       fetchReplacementRequests();
@@ -474,6 +532,7 @@ export default function StoreDashboard() {
 
       setIsReplacementDialogOpen(false);
       setSearchResult(null);
+      setSearchResultReplacements([]);
       setSearchImei('');
 
       fetchActiveDevices();
@@ -541,6 +600,7 @@ export default function StoreDashboard() {
         </div>
         <Button onClick={() => {
           setSearchResult(null);
+          setSearchResultReplacements([]);
           setSearchImei('');
           reset();
           setIsActivationDialogOpen(true);
@@ -648,6 +708,7 @@ export default function StoreDashboard() {
                         <TableHead>טלפון</TableHead>
                         <TableHead>תאריך הפעלה</TableHead>
                         <TableHead>תוקף</TableHead>
+                        <TableHead>בקשות החלפה</TableHead>
                         <TableHead>סטטוס</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -681,6 +742,10 @@ export default function StoreDashboard() {
                             </TableCell>
                             <TableCell>{formatDate(warranty.activation_date)}</TableCell>
                             <TableCell>{formatDate(warranty.expiry_date)}</TableCell>
+                            <TableCell>
+                              {(device.pending_replacements ?? 0) > 0 && <Badge variant="outline">ממתין: {device.pending_replacements}</Badge>}
+                              {(device.approved_replacements ?? 0) > 0 && <Badge>אושר: {device.approved_replacements}</Badge>}
+                            </TableCell>
                             <TableCell>
                               <Badge variant={status.variant}>
                                 {status.text}
@@ -931,6 +996,44 @@ export default function StoreDashboard() {
                       </div>
                     )}
 
+                    {searchResultReplacements.length > 0 && (
+                      <div className="border-t pt-4 space-y-3">
+                        <h4 className="font-semibold flex items-center gap-2">
+                          <RefreshCw className="h-4 w-4 text-orange-500" />
+                          בקשות החלפה ({searchResultReplacements.length})
+                        </h4>
+                        <div className="space-y-2">
+                          {searchResultReplacements.map((req) => {
+                            const status = getReplacementStatus(req.status);
+                            const StatusIcon = status.icon;
+                            return (
+                              <div key={req.id} className="flex items-center justify-between p-3 bg-muted rounded-lg text-sm">
+                                <div className="flex items-center gap-3">
+                                  <Badge variant={status.variant} className="flex items-center gap-1">
+                                    <StatusIcon className="h-3 w-3" />
+                                    {status.text}
+                                  </Badge>
+                                  <span className="text-muted-foreground">{formatDate(req.created_at)}</span>
+                                </div>
+                                <span className="text-muted-foreground truncate max-w-[200px]" title={req.reason}>
+                                  {req.reason}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {searchResultReplacements.some(r => r.admin_notes) && (
+                          <div className="text-sm">
+                            {searchResultReplacements.filter(r => r.admin_notes).map((req) => (
+                              <div key={req.id} className="text-muted-foreground">
+                                <span className="font-medium">הערת מנהל:</span> {req.admin_notes}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {/* כפתורי פעולה - רק אם מותר */}
                     {!searchResult.is_replaced && !isOtherStoreWarranty && (
                       <div className="flex gap-2 pt-2">
@@ -940,7 +1043,9 @@ export default function StoreDashboard() {
                             הפעל אחריות
                           </Button>
                         )}
-                        {hasOwnWarranty && (
+
+                        {/* כפתור הגש בקשת החלפה - רק אם אין בקשה ממתינה - ודווקא ממתינה */}
+                        {hasOwnWarranty && searchResultReplacements.length === 0 && (
                           <Button onClick={() => setIsReplacementDialogOpen(true)} variant="outline" className="flex-1">
                             <RefreshCw className="me-2 h-4 w-4" />
                             הגש בקשת החלפה
@@ -961,6 +1066,7 @@ export default function StoreDashboard() {
         setIsActivationDialogOpen(isOpen);
         if (!isOpen) {
           setSearchResult(null);
+          setSearchResultReplacements([]);
           setSearchImei('');
           reset();
         }

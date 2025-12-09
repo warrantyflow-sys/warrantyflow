@@ -97,6 +97,7 @@ type DeviceRow = Device & {
   // תיקון: עדכון הטיפוס כדי לתמוך במבנה שמגיע מה-Hook
   device_model?: { model_name: string } | null; 
   device_models?: DeviceModel | null;
+  repairs_count?: number;
   warranties?: (Warranty & {
     store?: Pick<{ id: string; email: string; full_name: string | null }, 'full_name' | 'email'> | null;
   })[] | null;
@@ -945,15 +946,15 @@ export default function DevicesPage() {
                             <span className="text-muted-foreground">{device.warranty_months || '-'} חודשים</span>
                           )}
                         </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1">
-                            {device.repairs && device.repairs.length > 0 ? (
-                              <>
-                                <Wrench className="h-3 w-3 text-muted-foreground" />
-                                <Badge variant="outline" className="font-mono">{device.repairs.length}</Badge>
-                              </>
-                            ) : (<span className="text-muted-foreground">-</span>)}
-                          </div>
+                        <TableCell className="text-center">
+                          {device.repairs_count > 0 ? (
+                            <Badge variant="outline" className="gap-1">
+                              <Wrench className="h-3 w-3" />
+                              {device.repairs_count}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
                         </TableCell>
                         <TableCell>{device.import_batch || '-'}</TableCell>
                         <TableCell>{formatDate(device.created_at)}</TableCell>

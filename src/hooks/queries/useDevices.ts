@@ -48,9 +48,9 @@ async function fetchDevices(filters: DevicesFilter): Promise<DevicesResponse> {
     .order('created_at', { ascending: false })
     .range(from, to);
 
-  if (error) {
-    throw new Error(`Failed to fetch devices: ${error.message}`);
-  }
+    if (error) {
+      throw new Error(`Failed to fetch devices: ${error.message}`);
+    }
 
   const mappedData = (data || []).map((row: any) => ({
     ...row,
@@ -104,9 +104,10 @@ export function useDevices(filters: DevicesFilter) {
     };
 
     const channel = supabase.channel('devices-list-updates')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'devices' }, triggerRefresh)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'warranties' }, triggerRefresh)
-      .subscribe();
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'devices' }, triggerRefresh)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'warranties' }, triggerRefresh)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'repairs' }, triggerRefresh)
+    .subscribe();
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
