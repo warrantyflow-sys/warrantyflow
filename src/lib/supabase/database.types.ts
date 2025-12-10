@@ -633,18 +633,6 @@ export type Database = {
       }
     }
     Views: {
-      devices_imei_lookup: {
-        Row: {
-          id: string
-          imei: string
-          imei2: string | null
-          is_replaced: boolean
-          model_name: string
-          has_active_warranty: boolean
-          has_active_repair: boolean
-        }
-        Relationships: []
-      }
       devices_with_status: {
         Row: {
           id: string

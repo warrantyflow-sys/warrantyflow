@@ -517,23 +517,6 @@ LEFT JOIN lab_payments lp ON u.id = lp.lab_id
 WHERE u.role = 'lab' AND u.is_active = true;
 
 -- ───────────────────────────────────────────────────────────────────────────────
--- 5.2 IMEI Lookup View
--- ───────────────────────────────────────────────────────────────────────────────
-CREATE OR REPLACE VIEW devices_imei_lookup AS
-SELECT
-  d.id, d.imei, d.imei2, d.is_replaced, dm.model_name,
-  EXISTS(
-    SELECT 1 FROM warranties w 
-    WHERE w.device_id = d.id AND w.is_active = true AND w.expiry_date >= (NOW() AT TIME ZONE 'Asia/Jerusalem')::DATE
-  ) AS has_active_warranty,
-  EXISTS(
-    SELECT 1 FROM repairs r 
-    WHERE r.device_id = d.id AND r.status IN ('received', 'in_progress')
-  ) AS has_active_repair
-FROM devices d
-LEFT JOIN device_models dm ON d.model_id = dm.id;
-
--- ───────────────────────────────────────────────────────────────────────────────
 -- 5.3 Devices with Status View
 -- ───────────────────────────────────────────────────────────────────────────────
 CREATE OR REPLACE VIEW devices_with_status AS
@@ -562,27 +545,6 @@ SELECT
   END AS warranty_status
 FROM devices d
 LEFT JOIN device_models dm ON d.model_id = dm.id;
-
--- ───────────────────────────────────────────────────────────────────────────────
--- 5.4 Active Warranties with Replacements View
--- ───────────────────────────────────────────────────────────────────────────────
-CREATE OR REPLACE VIEW active_warranties_with_replacements AS
-SELECT
-  w.id, w.device_id, w.store_id, w.activation_date, w.expiry_date, w.is_active,
-  w.customer_name, w.customer_phone, w.notes, w.created_at, w.updated_at,
-  d.imei, d.is_replaced, dm.model_name, u.full_name AS store_name,
-  CASE
-    WHEN w.expiry_date >= (NOW() AT TIME ZONE 'Asia/Jerusalem')::DATE AND w.is_active THEN 'active'
-    WHEN w.expiry_date < (NOW() AT TIME ZONE 'Asia/Jerusalem')::DATE THEN 'expired'
-    ELSE 'cancelled'
-  END AS warranty_status,
-  (SELECT COUNT(*) FROM replacement_requests rr WHERE rr.device_id = w.device_id AND rr.status = 'pending') AS pending_replacements,
-  (SELECT COUNT(*) FROM replacement_requests rr WHERE rr.device_id = w.device_id AND rr.status = 'approved') AS approved_replacements
-FROM warranties w
-JOIN devices d ON w.device_id = d.id
-LEFT JOIN device_models dm ON d.model_id = dm.id
-LEFT JOIN users u ON w.store_id = u.id
-WHERE w.is_active = true;
 
 -- ───────────────────────────────────────────────────────────────────────────────
 -- 5.5 Rich Devices View (For Admin Table)
@@ -618,18 +580,6 @@ FROM devices d
 LEFT JOIN device_models dm ON d.model_id = dm.id
 LEFT JOIN latest_warranties lw ON d.id = lw.device_id
 LEFT JOIN users u ON lw.store_id = u.id;
-
--- ───────────────────────────────────────────────────────────────────────────────
--- 5.6 Admin Dashboard Stats View
--- ───────────────────────────────────────────────────────────────────────────────
-CREATE OR REPLACE VIEW admin_dashboard_stats AS
-SELECT
-  (SELECT COUNT(*) FROM devices WHERE NOT is_replaced) AS total_devices,
-  (SELECT COUNT(*) FROM warranties WHERE is_active = true AND expiry_date >= (NOW() AT TIME ZONE 'Asia/Jerusalem')::DATE) AS active_warranties,
-  (SELECT COUNT(*) FROM repairs WHERE status IN ('received', 'in_progress')) AS pending_repairs,
-  (SELECT COUNT(*) FROM replacement_requests WHERE status = 'pending') AS pending_replacements,
-  (SELECT COUNT(*) FROM users WHERE is_active = true AND role = 'store') AS total_stores,
-  (SELECT COUNT(*) FROM users WHERE is_active = true AND role = 'lab') AS total_labs;
 
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -2847,11 +2797,8 @@ REVOKE EXECUTE ON FUNCTION custom_access_token_hook FROM authenticated, anon, pu
 
 -- Views: Read-only access for authenticated users
 GRANT SELECT ON view_lab_balances TO authenticated;
-GRANT SELECT ON devices_imei_lookup TO authenticated;
 GRANT SELECT ON devices_with_status TO authenticated;
 GRANT SELECT ON devices_rich_view TO authenticated;
-GRANT SELECT ON active_warranties_with_replacements TO authenticated;
-GRANT SELECT ON admin_dashboard_stats TO authenticated;
 
 -- Default privileges for future objects
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO service_role;
