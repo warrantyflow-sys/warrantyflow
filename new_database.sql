@@ -2910,7 +2910,7 @@ GRANT EXECUTE ON FUNCTION custom_access_token_hook TO supabase_auth_admin;
 
 -- Grant execute permission to authenticated users for the new functions
 GRANT EXECUTE ON FUNCTION get_lab_financial_summary() TO authenticated;
-GRANT EXECUTE ON FUNCTION get_admin_devices_paginated(INTEGER, INTEGER, TEXT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION get_admin_devices_paginated(INTEGER, INTEGER, TEXT, TEXT, TEXT) TO authenticated;
 
 -- ⚠️ SECURITY: Revoke execute on internal/system functions from authenticated users
 -- These functions should only be called by triggers, not directly by users

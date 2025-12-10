@@ -17,6 +17,11 @@ interface DevicesResponse {
   count: number;
 }
 
+interface RpcDevicesResponse {
+  data: any[];
+  count: number;
+}
+
 async function fetchDevices(filters: DevicesFilter): Promise<DevicesResponse> {
   const supabase = createClient();
   const { page, pageSize, search, model, warrantyStatus } = filters;
@@ -34,8 +39,9 @@ async function fetchDevices(filters: DevicesFilter): Promise<DevicesResponse> {
   }
 
   // וידוא שהנתונים קיימים
-  const rows = rpcResponse?.data || [];
-  const totalCount = rpcResponse?.count || 0;
+  const typedResponse = (rpcResponse as unknown as RpcDevicesResponse) || { data: [], count: 0 };
+  const rows = typedResponse.data || [];
+  const totalCount = typedResponse.count || 0;
 
   const mappedData = rows.map((row: any) => ({
     ...row,
