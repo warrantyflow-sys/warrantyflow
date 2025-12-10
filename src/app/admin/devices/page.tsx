@@ -184,7 +184,7 @@ export default function DevicesPage() {
       if (searchInput !== debouncedSearch) setPage(1);
     }, 500);
     return () => clearTimeout(timer);
-  }, [searchInput]);
+  }, [searchInput, debouncedSearch]);
 
   useEffect(() => {
     setPage(1);

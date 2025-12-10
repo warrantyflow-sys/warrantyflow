@@ -4,6 +4,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 
+// --- Interfaces ---
+
 export interface LabDashboardStats {
   pendingRepairs: number;
   inProgressRepairs: number;
@@ -30,6 +32,17 @@ export interface LabRepairItem {
     customer_name: string;
     customer_phone: string;
   } | null;
+}
+
+export interface LabFinancialSummary {
+  lab_id: string;
+  lab_name: string;
+  lab_email: string;
+  total_earned: number;
+  total_paid: number;
+  current_balance: number; // SQL column alias is current_balance
+  repairs_count: number;
+  payments_count: number;
 }
 
 // --- Fetcher Functions ---
@@ -91,6 +104,18 @@ async function fetchLabUrgentRepairs(labId: string): Promise<LabRepairItem[]> {
 
   if (error) throw new Error(`Failed to fetch urgent repairs: ${error.message}`);
   return (data || []) as any as LabRepairItem[];
+}
+
+async function fetchLabFinancialSummary(): Promise<LabFinancialSummary[]> {
+  const supabase = createClient();
+  // Calls the new RPC function replacing the view
+  const { data, error } = await supabase.rpc('get_lab_financial_summary');
+
+  if (error) {
+    throw new Error(`Failed to fetch financial summary: ${error.message}`);
+  }
+
+  return (data as unknown as LabFinancialSummary[]) || [];
 }
 
 // --- Hooks ---
@@ -246,6 +271,63 @@ export function useLabUrgentRepairs(labId: string | null) {
 
   return {
     repairs: query.data || [],
+    isLoading: query.isLoading,
+    isFetching: query.isFetching,
+    isError: query.isError,
+    error: query.error,
+    refetch: query.refetch,
+  };
+}
+
+// --- New Hook for Financial Summary ---
+
+export function useLabFinancialSummary() {
+  const queryClient = useQueryClient();
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
+  const query = useQuery({
+    queryKey: ['lab', 'financial-summary'],
+    queryFn: fetchLabFinancialSummary,
+  });
+
+  useEffect(() => {
+    const supabase = createClient();
+
+    const triggerRefresh = () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['lab', 'financial-summary'] });
+      }, 1000);
+    };
+
+    // Listen to changes in both 'repairs' (earnings) and 'payments' (deductions)
+    const repairsChannel = supabase
+      .channel('lab-finance-repairs')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'repairs' }, 
+        triggerRefresh
+      )
+      .subscribe();
+
+    const paymentsChannel = supabase
+      .channel('lab-finance-payments')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'payments' },
+        triggerRefresh
+      )
+      .subscribe();
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      supabase.removeChannel(repairsChannel);
+      supabase.removeChannel(paymentsChannel);
+    };
+  }, [queryClient]);
+
+  return {
+    data: query.data || [],
     isLoading: query.isLoading,
     isFetching: query.isFetching,
     isError: query.isError,

@@ -652,43 +652,30 @@ export type Database = {
         }
         Relationships: []
       }
-      active_warranties_with_replacements: {
-        Row: {
-          id: string
-          device_id: string
-          store_id: string
-          customer_name: string
-          customer_phone: string
-          activation_date: string
-          expiry_date: string
-          is_active: boolean
-          activated_by: string | null
-          notes: string | null
-          created_at: string
-          updated_at: string
-          imei: string
-          is_replaced: boolean
-          model_name: string
-          store_name: string | null
-          warranty_status: string
-          pending_replacements: number
-          approved_replacements: number
-        }
-        Relationships: []
-      }
-      admin_dashboard_stats: {
-        Row: {
-          total_devices: number
-          active_warranties: number
-          pending_repairs: number
-          pending_replacements: number
-          total_stores: number
-          total_labs: number
-        }
-        Relationships: []
-      }
     }
     Functions: {
+      get_lab_financial_summary: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          lab_id: string
+          lab_name: string
+          lab_email: string
+          total_earned: number
+          total_paid: number
+          balance: number
+          repairs_count: number
+          payments_count: number
+        }[]
+      }
+      get_admin_devices_paginated: {
+        Args: {
+          p_page?: number
+          p_page_size?: number
+          p_search?: string | null
+          p_status_filter?: string | null
+        }
+        Returns: Json
+      }
       get_dashboard_counts: {
         Args: Record<string, never>
         Returns: Json

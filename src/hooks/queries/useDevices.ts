@@ -21,39 +21,26 @@ async function fetchDevices(filters: DevicesFilter): Promise<DevicesResponse> {
   const supabase = createClient();
   const { page, pageSize, search, model, warrantyStatus } = filters;
 
-  const from = (page - 1) * pageSize;
-  const to = from + pageSize - 1;
+  const { data: rpcResponse, error } = await supabase.rpc('get_admin_devices_paginated', {
+    p_page: page,
+    p_page_size: pageSize,
+    p_search: search || null,
+    p_status_filter: warrantyStatus !== 'all' ? warrantyStatus : null,
+    p_model_filter: model !== 'all' ? model : null
+  });
 
-  // שימוש ב-View היעיל (כפי שהיה במקור)
-  let query = (supabase as any)
-    .from('devices_rich_view')
-    .select('*', { count: 'exact' });
-
-  // 1. סינון לפי סטטוס
-  if (warrantyStatus && warrantyStatus !== 'all') {
-    query = query.eq('warranty_status', warrantyStatus);
+  if (error) {
+    throw new Error(`Failed to fetch devices: ${error.message}`);
   }
 
-  // 2. סינון לפי דגם
-  if (model && model !== 'all') {
-    query = query.eq('model_name', model);
-  }
+  // וידוא שהנתונים קיימים
+  const rows = rpcResponse?.data || [];
+  const totalCount = rpcResponse?.count || 0;
 
-  // 3. חיפוש חכם
-  if (search) {
-    query = query.or(`imei.ilike.%${search}%,imei2.ilike.%${search}%,customer_name.ilike.%${search}%`);
-  }
-
-  const { data, error, count } = await query
-    .order('created_at', { ascending: false })
-    .range(from, to);
-
-    if (error) {
-      throw new Error(`Failed to fetch devices: ${error.message}`);
-    }
-
-  const mappedData = (data || []).map((row: any) => ({
+  const mappedData = rows.map((row: any) => ({
     ...row,
+    
+    // שחזור מבנה הנתונים המקונן שהקומפוננטה מצפה לו
     device_models: {
       id: row.model_id,
       model_name: row.model_name,
@@ -71,10 +58,12 @@ async function fetchDevices(filters: DevicesFilter): Promise<DevicesResponse> {
         full_name: row.store_name,
         email: row.store_email
       } : null
-    }] : []
+    }] : [],
+    // סטטוס האחריות מחושב כבר בשרת
+    warranty_status: row.warranty_status
   }));
 
-  return { data: mappedData, count: count || 0 };
+  return { data: mappedData, count: totalCount };
 }
 
 export function useDevices(filters: DevicesFilter) {
@@ -96,7 +85,6 @@ export function useDevices(filters: DevicesFilter) {
         clearTimeout(debounceRef.current);
       }
       
-
       debounceRef.current = setTimeout(() => {
         console.log('♻️ Refreshing devices list due to DB changes...');
         queryClient.invalidateQueries({ queryKey: ['devices'] });
@@ -104,10 +92,10 @@ export function useDevices(filters: DevicesFilter) {
     };
 
     const channel = supabase.channel('devices-list-updates')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'devices' }, triggerRefresh)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'warranties' }, triggerRefresh)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'repairs' }, triggerRefresh)
-    .subscribe();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'devices' }, triggerRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'warranties' }, triggerRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'repairs' }, triggerRefresh)
+      .subscribe();
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);

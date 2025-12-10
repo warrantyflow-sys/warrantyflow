@@ -74,7 +74,6 @@ async function fetchLabPayments(labId: string): Promise<LabPayment[]> {
   return (data || []) as LabPayment[];
 }
 
-// 🔧 FIX: Use the view_lab_balances VIEW instead of manual calculations
 async function fetchAllLabsBalances(): Promise<LabBalance[]> {
   const supabase = createClient();
 

@@ -484,37 +484,7 @@ DO $$ BEGIN RAISE NOTICE '👁️ Creating views...'; END $$;
 -- ───────────────────────────────────────────────────────────────────────────────
 -- 5.1 Lab Balances View
 -- ───────────────────────────────────────────────────────────────────────────────
-CREATE OR REPLACE VIEW view_lab_balances AS
-WITH lab_earnings AS (
-  SELECT 
-    lab_id, 
-    COALESCE(SUM(cost), 0) AS total_earned,
-    COUNT(id) AS repairs_count
-  FROM repairs 
-  WHERE status = 'completed'
-  GROUP BY lab_id
-),
-lab_payments AS (
-  SELECT 
-    lab_id, 
-    COALESCE(SUM(amount), 0) AS total_paid,
-    COUNT(id) AS payments_count
-  FROM payments 
-  GROUP BY lab_id
-)
-SELECT 
-  u.id AS lab_id,
-  u.full_name AS lab_name,
-  u.email AS lab_email,
-  COALESCE(le.total_earned, 0) AS total_earned,
-  COALESCE(lp.total_paid, 0) AS total_paid,
-  (COALESCE(le.total_earned, 0) - COALESCE(lp.total_paid, 0)) AS balance,
-  COALESCE(le.repairs_count, 0) AS repairs_count,
-  COALESCE(lp.payments_count, 0) AS payments_count
-FROM users u
-LEFT JOIN lab_earnings le ON u.id = le.lab_id
-LEFT JOIN lab_payments lp ON u.id = lp.lab_id
-WHERE u.role = 'lab' AND u.is_active = true;
+-- this view is not used anymore and replaced by the new function get_lab_financial_summary
 
 -- ───────────────────────────────────────────────────────────────────────────────
 -- 5.3 Devices with Status View
@@ -549,37 +519,7 @@ LEFT JOIN device_models dm ON d.model_id = dm.id;
 -- ───────────────────────────────────────────────────────────────────────────────
 -- 5.5 Rich Devices View (For Admin Table)
 -- ───────────────────────────────────────────────────────────────────────────────
-CREATE OR REPLACE VIEW devices_rich_view AS
-WITH latest_warranties AS (
-  SELECT DISTINCT ON (device_id) *
-  FROM warranties
-  ORDER BY device_id, created_at DESC
-)
-SELECT
-  d.id, d.imei, d.imei2, d.model_id, d.warranty_months, d.is_replaced, 
-  d.replaced_at, d.import_batch, d.created_at, d.updated_at,
-  dm.model_name,
-  dm.manufacturer,
-  lw.id AS warranty_id,
-  lw.customer_name,
-  lw.customer_phone,
-  lw.activation_date,
-  lw.expiry_date,
-  lw.is_active AS warranty_is_active,
-  u.id AS store_id,
-  u.full_name AS store_name,
-  u.email AS store_email,
-  CASE
-    WHEN d.is_replaced THEN 'replaced'
-    WHEN lw.id IS NOT NULL AND lw.is_active AND lw.expiry_date >= (NOW() AT TIME ZONE 'Asia/Jerusalem')::DATE THEN 'active'
-    WHEN lw.id IS NOT NULL THEN 'expired'
-    ELSE 'new'
-  END AS warranty_status,
-  (SELECT COUNT(*) FROM repairs r WHERE r.device_id = d.id) AS repairs_count
-FROM devices d
-LEFT JOIN device_models dm ON d.model_id = dm.id
-LEFT JOIN latest_warranties lw ON d.id = lw.device_id
-LEFT JOIN users u ON lw.store_id = u.id;
+-- this view is not used anymore and replaced by the new function get_admin_devices_paginated
 
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -1905,6 +1845,184 @@ END;
 $$;
 
 
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 7.16
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- לוגיקה:
+-- - אדמין מקבל את כל המעבדות
+-- - מעבדה מקבלת רק את עצמה
+-- - חנויות לא מקבלות גישה
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+CREATE OR REPLACE FUNCTION get_lab_financial_summary()
+RETURNS TABLE (
+  lab_id UUID,
+  lab_name TEXT,
+  lab_email TEXT,
+  total_earned NUMERIC,
+  total_paid NUMERIC,
+  balance NUMERIC,
+  repairs_count BIGINT,
+  payments_count BIGINT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_user_id UUID := auth.uid();
+  v_is_admin BOOLEAN;
+  v_is_lab BOOLEAN;
+BEGIN
+  -- בדיקת הרשאות ראשונית
+  v_is_admin := is_admin();
+  v_is_lab := is_lab();
+
+  -- אם המשתמש הוא לא אדמין ולא מעבדה - החזר ריק
+  IF NOT v_is_admin AND NOT v_is_lab THEN
+    RETURN;
+  END IF;
+
+  RETURN QUERY
+  WITH lab_earnings AS (
+    SELECT 
+      r.lab_id, 
+      COALESCE(SUM(r.cost), 0) AS earned,
+      COUNT(r.id) AS count_repairs
+    FROM repairs r
+    WHERE r.status = 'completed'
+    GROUP BY r.lab_id
+  ),
+  lab_payments_calc AS (
+    SELECT 
+      p.lab_id, 
+      COALESCE(SUM(p.amount), 0) AS paid,
+      COUNT(p.id) AS count_payments
+    FROM payments p
+    GROUP BY p.lab_id
+  )
+  SELECT 
+    u.id,
+    u.full_name,
+    u.email,
+    COALESCE(le.earned, 0),
+    COALESCE(lp.paid, 0),
+    (COALESCE(le.earned, 0) - COALESCE(lp.paid, 0)) AS current_balance,
+    COALESCE(le.count_repairs, 0),
+    COALESCE(lp.count_payments, 0)
+  FROM users u
+  LEFT JOIN lab_earnings le ON u.id = le.lab_id
+  LEFT JOIN lab_payments_calc lp ON u.id = lp.lab_id
+  WHERE 
+    u.role = 'lab' 
+    AND u.is_active = true
+    AND (
+      v_is_admin = true -- אדמין רואה הכל
+      OR 
+      u.id = v_user_id -- מעבדה רואה רק את עצמה
+    );
+END;
+$$;
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 7.17 פונקציית ניהול מכשירים עם פגינציה (מחליפה את devices_rich_view)
+-- ═══════════════════════════════════════════════════════════════════════════════
+CREATE OR REPLACE FUNCTION get_admin_devices_paginated(
+  p_page INTEGER DEFAULT 1,
+  p_page_size INTEGER DEFAULT 50,
+  p_search TEXT DEFAULT NULL,
+  p_status_filter TEXT DEFAULT NULL,
+  p_model_filter TEXT DEFAULT NULL
+)
+RETURNS JSON
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_offset INTEGER;
+  v_total BIGINT;
+  v_data JSON;
+BEGIN
+  -- בדיקת הרשאות
+  IF NOT is_admin() THEN
+    RAISE EXCEPTION 'Access denied';
+  END IF;
+
+  v_offset := (p_page - 1) * p_page_size;
+
+  -- שלב 1: איסוף וסינון הנתונים (ללא חישובים כבדים)
+  WITH filtered_devices AS (
+    SELECT 
+      d.id, d.imei, d.imei2, d.model_id, d.warranty_months, d.is_replaced, 
+      d.replaced_at, d.import_batch, d.created_at, d.updated_at,
+      dm.model_name,
+      dm.manufacturer,
+      w_lat.id AS warranty_id,
+      w_lat.customer_name,
+      w_lat.customer_phone,
+      w_lat.activation_date,
+      w_lat.expiry_date,
+      w_lat.is_active AS warranty_is_active,
+      w_lat.store_id,
+      store_u.full_name AS store_name,
+      store_u.email AS store_email
+    FROM devices d
+    LEFT JOIN device_models dm ON d.model_id = dm.id
+    LEFT JOIN LATERAL (
+      SELECT w.* FROM warranties w 
+      WHERE w.device_id = d.id 
+      ORDER BY w.created_at DESC 
+      LIMIT 1
+    ) w_lat ON true
+    LEFT JOIN users store_u ON w_lat.store_id = store_u.id
+    WHERE 
+      (p_search IS NULL OR 
+       d.imei ILIKE '%' || p_search || '%' OR 
+       d.imei2 ILIKE '%' || p_search || '%' OR
+       w_lat.customer_name ILIKE '%' || p_search || '%' OR
+       w_lat.customer_phone ILIKE '%' || p_search || '%')
+      AND (p_model_filter IS NULL OR dm.model_name = p_model_filter)
+  ),
+  -- שלב 2: חישוב סטטוס אחריות (פעולה מהירה בזיכרון)
+  calculated_status AS (
+    SELECT *,
+      CASE
+        WHEN is_replaced THEN 'replaced'
+        WHEN warranty_id IS NOT NULL AND warranty_is_active AND expiry_date >= CURRENT_DATE THEN 'active'
+        WHEN warranty_id IS NOT NULL THEN 'expired'
+        ELSE 'new'
+      END AS warranty_status
+    FROM filtered_devices
+  )
+  -- שלב 3: שליפה סופית + ספירה כבדה רק עבור העמוד הנוכחי
+  SELECT 
+    (SELECT COUNT(*) FROM calculated_status WHERE (p_status_filter IS NULL OR warranty_status = p_status_filter)),
+    COALESCE(json_agg(row_to_json(t)), '[]'::JSON)
+  INTO v_total, v_data
+  FROM (
+    SELECT 
+      cs.*,
+      (SELECT COUNT(*) FROM repairs r WHERE r.device_id = cs.id) AS repairs_count
+    FROM calculated_status cs
+    WHERE (p_status_filter IS NULL OR warranty_status = p_status_filter)
+    ORDER BY created_at DESC
+    LIMIT p_page_size
+    OFFSET v_offset
+  ) t;
+
+  RETURN json_build_object(
+    'data', v_data,
+    'count', v_total,
+    'page', p_page,
+    'pageSize', p_page_size,
+    'totalPages', CEIL(v_total::FLOAT / p_page_size)
+  );
+END;
+$$;
+
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- SECTION 8: TRIGGER FUNCTIONS
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -2775,6 +2893,10 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO authenticated;
 -- Grant execute permission to supabase_auth_admin for the auth hook
 GRANT EXECUTE ON FUNCTION custom_access_token_hook TO supabase_auth_admin;
 
+-- Grant execute permission to authenticated users for the new functions
+GRANT EXECUTE ON FUNCTION get_lab_financial_summary() TO authenticated;
+GRANT EXECUTE ON FUNCTION get_admin_devices_paginated(INTEGER, INTEGER, TEXT, TEXT) TO authenticated;
+
 -- ⚠️ SECURITY: Revoke execute on internal/system functions from authenticated users
 -- These functions should only be called by triggers, not directly by users
 REVOKE EXECUTE ON FUNCTION notify_admins(TEXT, TEXT, TEXT, JSONB, UUID) FROM authenticated;
@@ -2796,9 +2918,7 @@ REVOKE EXECUTE ON FUNCTION audit_replacement_request_creation() FROM authenticat
 REVOKE EXECUTE ON FUNCTION custom_access_token_hook FROM authenticated, anon, public;
 
 -- Views: Read-only access for authenticated users
-GRANT SELECT ON view_lab_balances TO authenticated;
 GRANT SELECT ON devices_with_status TO authenticated;
-GRANT SELECT ON devices_rich_view TO authenticated;
 
 -- Default privileges for future objects
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO service_role;
@@ -2873,19 +2993,4 @@ BEGIN
   RAISE NOTICE '   • Functions: %', function_count;
   RAISE NOTICE '   • Triggers:  %', trigger_count;
   RAISE NOTICE '   • Policies:  %', policy_count;
-  RAISE NOTICE '';
-  RAISE NOTICE '🔐 Security Features:';
-  RAISE NOTICE '   • RLS enabled on all tables';
-  RAISE NOTICE '   • New users created with is_active = false';
-  RAISE NOTICE '   • Internal functions protected from direct execution';
-  RAISE NOTICE '   • JWT includes user_role and user_active claims';
-  RAISE NOTICE '';
-  RAISE NOTICE '📝 Next Steps:';
-  RAISE NOTICE '   1. Create first admin: Sign up, then run:';
-  RAISE NOTICE '      UPDATE users SET role = ''admin'', is_active = true WHERE email = ''your@email.com'';';
-  RAISE NOTICE '   2. Test access: SELECT * FROM admin_dashboard_stats;';
-  RAISE NOTICE '   3. Import your device data if needed';
-  RAISE NOTICE '';
-  RAISE NOTICE '💡 Tip: Always backup before making changes!';
-  RAISE NOTICE '';
 END $$;
