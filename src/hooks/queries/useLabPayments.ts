@@ -77,14 +77,14 @@ async function fetchLabPayments(labId: string): Promise<LabPayment[]> {
 async function fetchAllLabsBalances(): Promise<LabBalance[]> {
   const supabase = createClient();
 
-  const { data, error } = await (supabase as any)
-    .from('view_lab_balances')
-    .select('*')
-    .order('balance', { ascending: false });
+  const { data, error } = await supabase
+    .rpc('get_lab_financial_summary');
 
   if (error) throw new Error(`Failed to fetch lab balances: ${error.message}`);
   
-  return (data || []) as LabBalance[];
+  const sortedData = (data || []).sort((a: any, b: any) => b.balance - a.balance);
+
+  return sortedData as LabBalance[];
 }
 
 // --- Hooks ---
@@ -186,8 +186,8 @@ export function useAllLabsBalances() {
   const query = useQuery({
     queryKey: ['labs', 'balances', 'all'],
     queryFn: fetchAllLabsBalances,
-    staleTime: 1000 * 60 * 5, // 5 minutes
-    refetchOnWindowFocus: true, // 🔧 Refetch when window regains focus
+    staleTime: 1000 * 60 * 5,
+    refetchOnWindowFocus: true,
   });
 
   useEffect(() => {
@@ -197,17 +197,16 @@ export function useAllLabsBalances() {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: ['labs', 'balances', 'all'] });
-      }, 1000); // Debounce for 1 second
+      }, 1000);
     };
 
-    // 🔧 Listen to both repairs and payments tables
     const channel = supabase
       .channel('labs-balances-all')
       .on('postgres_changes', { 
         event: '*', 
         schema: 'public', 
         table: 'repairs',
-        filter: 'status=eq.completed' // Only listen to completed repairs
+        filter: 'status=eq.completed'
       }, (payload) => {
         console.log('Repair change detected:', payload);
         triggerRefresh();
