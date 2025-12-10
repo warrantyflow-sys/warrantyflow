@@ -111,7 +111,14 @@ export default function LabRepairsPage() {
   const [replacementReason, setReplacementReason] = useState('');
   const [selectedRepairTypeId, setSelectedRepairTypeId] = useState<string>('');
   const [customRepairDescription, setCustomRepairDescription] = useState('');
+  const [updateNotes, setUpdateNotes] = useState('');
   const [customRepairPrice, setCustomRepairPrice] = useState('');
+  const [searchedDeviceReplacements, setSearchedDeviceReplacements] = useState<{
+    id: string;
+    status: string;
+    reason: string;
+    created_at: string;
+  }[]>([]);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -256,6 +263,7 @@ export default function LabRepairsPage() {
 
   useEffect(() => {
     if (isUpdateDialogOpen && selectedRepair) {
+      setUpdateNotes(selectedRepair.notes || '');
       // Pre-fill form if it's a custom repair
       if (selectedRepair.custom_repair_description) {
         setUpdateRepairTypeId('other');
@@ -325,6 +333,7 @@ export default function LabRepairsPage() {
           variant: 'destructive',
         });
         setSearchedDevice(null);
+        setSearchedDeviceReplacements([]);
         return;
       }
   
@@ -336,6 +345,7 @@ export default function LabRepairsPage() {
           variant: 'destructive',
         });
         setSearchedDevice(null);
+        setSearchedDeviceReplacements([]);
         return;
       }
   
@@ -347,6 +357,7 @@ export default function LabRepairsPage() {
           variant: 'destructive',
         });
         setSearchedDevice(null);
+        setSearchedDeviceReplacements([]);
         return;
       }
   
@@ -365,6 +376,15 @@ export default function LabRepairsPage() {
       };
   
       setSearchedDevice(data);
+
+      // שליפת בקשות החלפה למכשיר
+      const { data: replacements } = await supabase
+      .from('replacement_requests')
+      .select('id, status, reason, created_at')
+      .eq('device_id', result.device_id)
+      .order('created_at', { ascending: false });
+
+      setSearchedDeviceReplacements(replacements || []);
   
       // Auto-fill customer details from warranty
       if (result.warranty_id && result.customer_name) {
@@ -377,6 +397,7 @@ export default function LabRepairsPage() {
           variant: 'destructive',
         });
         setSearchedDevice(null);
+        setSearchedDeviceReplacements([]);
       }
   
     } catch (error) {
@@ -386,6 +407,7 @@ export default function LabRepairsPage() {
         variant: 'destructive',
       });
       setSearchedDevice(null);
+      setSearchedDeviceReplacements([]);
     } finally {
       setIsSearching(false);
     }
@@ -463,6 +485,7 @@ export default function LabRepairsPage() {
       setIsNewRepairDialogOpen(false);
       reset();
       setSearchedDevice(null);
+      setSearchedDeviceReplacements([]);
       setSearchIMEI('');
       setRepairCost('');
       setSelectedRepairTypeId('');
@@ -543,6 +566,10 @@ export default function LabRepairsPage() {
         // The trigger will automatically update the cost based on the new repair type
       }
 
+      if (updateNotes !== (selectedRepair.notes || '')) {
+        updateData.notes = updateNotes;
+      }
+
       // Check if there's anything to update
       if (Object.keys(updateData).length === 0) {
         toast({
@@ -551,6 +578,7 @@ export default function LabRepairsPage() {
           variant: 'default',
         });
         setIsUpdateDialogOpen(false);
+        setUpdateNotes('');
         return;
       }
 
@@ -1073,6 +1101,31 @@ export default function LabRepairsPage() {
                   )}
                 </div>
               )}
+
+              {searchedDeviceReplacements.length > 0 && (
+                <div className="p-3 border rounded-lg bg-orange-50 dark:bg-orange-950 border-orange-200 dark:border-orange-800">
+                  <div className="flex items-center gap-2 text-orange-700 dark:text-orange-300 mb-2">
+                    <RefreshCw className="h-4 w-4" />
+                    <span className="font-semibold">בקשות החלפה קודמות ({searchedDeviceReplacements.length})</span>
+                  </div>
+                  <div className="space-y-2">
+                    {searchedDeviceReplacements.map((req) => (
+                      <div key={req.id} className="flex items-center justify-between text-sm bg-white dark:bg-gray-800 p-2 rounded">
+                        <Badge variant={
+                          req.status === 'pending' ? 'outline' :
+                          req.status === 'approved' ? 'default' :
+                          'destructive'
+                        }>
+                          {req.status === 'pending' ? 'ממתין' :
+                          req.status === 'approved' ? 'אושר' : 'נדחה'}
+                        </Badge>
+                        <span className="text-muted-foreground">{formatDate(req.created_at)}</span>
+                        <span className="truncate max-w-[150px]" title={req.reason}>{req.reason}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             
             <div>
@@ -1140,6 +1193,7 @@ export default function LabRepairsPage() {
                   setIsNewRepairDialogOpen(false);
                   reset();
                   setSearchedDevice(null);
+                  setSearchedDeviceReplacements([]);
                   setSearchIMEI('');
                   setSelectedRepairTypeId('');
                 }}
@@ -1262,6 +1316,7 @@ export default function LabRepairsPage() {
             setUpdateRepairTypeId('');
             setCustomRepairDescription('');
             setCustomRepairPrice('');
+            setUpdateNotes('');
           }
         }}
       >
@@ -1297,7 +1352,6 @@ export default function LabRepairsPage() {
               >
                 <option value="">-- בחר סטטוס (אופציונלי) --</option>
                 <option value="received">התקבל</option>
-                <option value="in_progress">בטיפול</option>
                 <option value="completed">הושלם</option>
               </select>
             </div>
@@ -1352,6 +1406,19 @@ export default function LabRepairsPage() {
                 </div>
               </div>
             )}
+
+            {/* Notes */}
+            <div>
+              <Label htmlFor="update-notes">הערות</Label>
+              <Textarea
+                id="update-notes"
+                value={updateNotes}
+                onChange={(e) => setUpdateNotes(e.target.value)}
+                placeholder="הערות נוספות..."
+                rows={3}
+                className="mt-1"
+              />
+            </div>
           </div>
 
           <DialogFooter>
