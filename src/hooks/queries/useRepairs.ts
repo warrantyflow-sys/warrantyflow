@@ -138,7 +138,7 @@ export function useRepairsStats() {
 export function useRepairsTable(
   page: number, 
   pageSize: number, 
-  filters: { status: string; labId: string; search: string }
+  filters: { status: string; labId: string; search: string; repairTypeId?: string; modelId?: string; }
 ) {
   const queryClient = useQueryClient();
   const debounceRef = useRef<NodeJS.Timeout | null>(null);

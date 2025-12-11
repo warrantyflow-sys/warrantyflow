@@ -1030,7 +1030,7 @@ export default function LabRepairsPage() {
                               setSelectedRepair(repair);
                               setIsDetailsDialogOpen(true);
                             }}
-                            title="פרטים"
+                            title="הגש בקשת החלפה"
                           >
                             <FileText className="h-4 w-4" />
                           </Button>

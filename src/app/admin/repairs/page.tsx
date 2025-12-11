@@ -41,6 +41,8 @@ import {
 } from 'lucide-react';
 import ShekelIcon from '@/components/ui/shekel-icon';
 import { formatDate, formatDateTime, formatCurrency } from '@/lib/utils';
+import { fetchAllRepairTypes, RepairType } from '@/lib/api/repair_types'; // Import new API function and type
+import { fetchAllDeviceModels, DeviceModel } from '@/lib/api/device_models'; // Import new API function and type
 
 type RepairStatus = 'received' | 'in_progress' | 'completed' | 'replacement_requested';
 type FaultType = 'screen' | 'charging_port' | 'flash' | 'speaker' | 'board' | 'other';
@@ -64,6 +66,8 @@ export default function RepairsPage() {
 
   // Auxiliary Data
   const [labs, setLabs] = useState<any[]>([]);
+  const [allRepairTypes, setAllRepairTypes] = useState<RepairType[]>([]); // New state for repair types
+  const [allDeviceModels, setAllDeviceModels] = useState<DeviceModel[]>([]); // New state for device models
 
   // Dialogs
   const [selectedRepair, setSelectedRepair] = useState<any>(null);
@@ -88,11 +92,8 @@ export default function RepairsPage() {
     status: filterStatus,
     labId: filterLab,
     search: debouncedSearch,
-    // הערה: הוספת שדות אלו ל-Hook תלויה ביישום שלו, כרגע נשלחים למקרה שהוספת תמיכה
-    // repairType: filterRepairType,
-    // deviceModel: filterDeviceModel,
-    // dateFrom: filterDateFrom,
-    // dateTo: filterDateTo
+    repairTypeId: filterRepairType, // Pass new filter
+    modelId: filterDeviceModel,     // Pass new filter
   });
 
   const repairs = repairsData?.data || [];
@@ -117,17 +118,44 @@ export default function RepairsPage() {
     setPage(1);
   }, [filterStatus, filterLab, filterRepairType, filterDeviceModel, filterDateFrom, filterDateTo]);
 
-  // טעינת רשימת מעבדות (לפילטרים והקצאה)
+  // טעינת רשימת מעבדות, סוגי תיקונים ודגמי מכשירים (לפילטרים והקצאה)
   useEffect(() => {
-    const fetchLabs = async () => {
+    const fetchAuxiliaryData = async () => {
+      // Fetch Labs
       const { data: labsData } = await supabase
         .from('users')
         .select('id, full_name, email')
         .eq('role', 'lab');
       setLabs(labsData || []);
+
+      // Fetch Repair Types
+      try {
+        const repairTypesData = await fetchAllRepairTypes();
+        setAllRepairTypes(repairTypesData);
+      } catch (error) {
+        console.error("Failed to fetch repair types:", error);
+        toast({
+          title: 'שגיאה',
+          description: 'כשל בטעינת סוגי תיקונים',
+          variant: 'destructive',
+        });
+      }
+
+      // Fetch Device Models
+      try {
+        const deviceModelsData = await fetchAllDeviceModels();
+        setAllDeviceModels(deviceModelsData);
+      } catch (error) {
+        console.error("Failed to fetch device models:", error);
+        toast({
+          title: 'שגיאה',
+          description: 'כשל בטעינת דגמי מכשירים',
+          variant: 'destructive',
+        });
+      }
     };
-    fetchLabs();
-  }, []);
+    fetchAuxiliaryData();
+  }, [supabase, toast]);
 
   // --- Handlers ---
 
@@ -269,12 +297,12 @@ export default function RepairsPage() {
 
       {/* Stats Cards - שימוש במידע מה-Hook החדש */}
       <div className="grid gap-4 md:grid-cols-4">
-        <StatCard title='סה"כ תיקונים' value={statsData?.total || 0} icon={Wrench} color="blue" />
-        <StatCard title='בטיפול' value={statsData?.in_progress || 0} icon={Clock} color="orange" />
-        <StatCard title='הושלמו' value={statsData?.completed || 0} icon={CheckCircle} color="green" />
+        <StatCard title='סה"כ תיקונים' value={statsData?.total || 0} icon={Wrench} color="blue" /> 
+        <StatCard title='בטיפול' value={statsData?.received || 0} icon={Clock} color="orange" /> 
+        <StatCard title='הושלמו' value={statsData?.completed || 0} icon={CheckCircle} color="green" />  
         <StatCard 
           title='עלות כוללת' 
-          value={formatCurrency(statsData?.totalCost || 0)} 
+          value={formatCurrency(statsData?.total_cost || 0)} 
           icon={ShekelIcon} 
           color="purple" 
         />
@@ -333,7 +361,7 @@ export default function RepairsPage() {
               </select>
             </div>
 
-            {/* שאר הפילטרים (סוג תיקון, דגם, תאריכים) נשארו כפי שהם לשימוש עתידי ב-Hook */}
+            {/* סוג תיקון */}
             <div>
               <Label>סוג תיקון</Label>
               <select
@@ -343,11 +371,16 @@ export default function RepairsPage() {
                 onChange={(e) => setFilterRepairType(e.target.value)}
               >
                 <option value="all">כל הסוגים</option>
-                {/* אופציה: למלא דינמית אם יש רשימת סוגים */}
+                {allRepairTypes.map((type) => (
+                  <option key={type.id} value={type.id}>
+                    {type.name}
+                  </option>
+                ))}
               </select>
             </div>
 
-             <div>
+            {/* דגם מכשיר */}
+            <div>
               <Label>דגם</Label>
               <select
                 title="דגם"
@@ -356,6 +389,11 @@ export default function RepairsPage() {
                 onChange={(e) => setFilterDeviceModel(e.target.value)}
               >
                 <option value="all">כל הדגמים</option>
+                {allDeviceModels.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.model_name}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -367,8 +405,8 @@ export default function RepairsPage() {
                     setSearchQuery('');
                     setFilterStatus('all');
                     setFilterLab('all');
-                    setFilterRepairType('all');
-                    setFilterDeviceModel('all');
+                    setFilterRepairType('all'); // Reset new filter
+                    setFilterDeviceModel('all'); // Reset new filter
                     setFilterDateFrom('');
                     setFilterDateTo('');
                   }}

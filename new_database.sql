@@ -711,36 +711,7 @@ $$;
 -- ───────────────────────────────────────────────────────────────────────────────
 -- 6.10 Search Device (Admin)
 -- ───────────────────────────────────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION search_device(search_term TEXT)
-RETURNS TABLE(
-  id UUID,
-  imei TEXT,
-  imei2 TEXT,
-  model_name TEXT,
-  has_warranty BOOLEAN
-)
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-BEGIN
-  RETURN QUERY
-  SELECT 
-    d.id,
-    d.imei,
-    d.imei2,
-    dm.model_name,
-    EXISTS(
-      SELECT 1 FROM warranties w 
-      WHERE w.device_id = d.id AND w.is_active = true AND w.expiry_date >= (NOW() AT TIME ZONE 'Asia/Jerusalem')::DATE
-    ) AS has_warranty
-  FROM devices d
-  LEFT JOIN device_models dm ON d.model_id = dm.id
-  WHERE d.imei ILIKE '%' || search_term || '%'
-     OR d.imei2 ILIKE '%' || search_term || '%'
-  LIMIT 20;
-END;
-$$;
+-- this function is not used anymore and replaced by the new function search_device_by_imei
 
 -- ───────────────────────────────────────────────────────────────────────────────
 -- 6.7 Get User Notification Preference
@@ -896,6 +867,11 @@ DECLARE
   v_replacement_requested BIGINT;
   v_total_cost NUMERIC;
 BEGIN
+  -- בדיקת הרשאות
+  IF NOT is_admin() THEN
+    RAISE EXCEPTION 'Access denied: Only admins can view global repair statistics';
+  END IF;
+
   SELECT
     COUNT(*),
     COUNT(*) FILTER (WHERE status = 'received'),
@@ -932,6 +908,11 @@ DECLARE
   v_expired BIGINT;
   v_today DATE;
 BEGIN
+  -- בדיקת הרשאות
+  IF NOT is_admin() THEN
+    RAISE EXCEPTION 'Access denied: Only admins can view global warranty statistics';
+  END IF;
+
   v_today := (NOW() AT TIME ZONE 'Asia/Jerusalem')::DATE;
 
   SELECT
@@ -964,6 +945,11 @@ DECLARE
   v_approved BIGINT;
   v_rejected BIGINT;
 BEGIN
+  -- בדיקת הרשאות
+  IF NOT is_admin() THEN
+    RAISE EXCEPTION 'Access denied: Only admins can view global replacement statistics';
+  END IF;
+
   SELECT
     COUNT(*),
     COUNT(*) FILTER (WHERE status = 'pending'),
@@ -1056,45 +1042,8 @@ $$;
 -- ───────────────────────────────────────────────────────────────────────────────
 -- 7.7 Get Lab Monthly Stats (Alternative)
 -- ───────────────────────────────────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION get_lab_monthly_stats(p_lab_id UUID DEFAULT NULL)
-RETURNS JSON
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  v_lab_id UUID;
-  v_month_start TIMESTAMPTZ;
-  v_today_start TIMESTAMPTZ;
-  v_stats JSON;
-BEGIN
-  v_lab_id := COALESCE(p_lab_id, auth.uid());
-  
-  v_month_start := date_trunc('month', NOW() AT TIME ZONE 'Asia/Jerusalem') AT TIME ZONE 'Asia/Jerusalem';
-  v_today_start := date_trunc('day', NOW() AT TIME ZONE 'Asia/Jerusalem') AT TIME ZONE 'Asia/Jerusalem';
+-- this function is not used and replaced by get_lab_dashboard_stats and get_lab_financial_summary
 
-  WITH monthly_created_repairs AS (
-    SELECT * FROM repairs
-    WHERE lab_id = v_lab_id AND created_at >= v_month_start
-  ),
-  monthly_completed_repairs AS (
-    SELECT * FROM repairs
-    WHERE lab_id = v_lab_id AND status = 'completed' AND completed_at >= v_month_start
-  )
-  SELECT json_build_object(
-    'totalRepairs', (SELECT COUNT(*) FROM repairs WHERE lab_id = v_lab_id),
-    'activeRepairs', (SELECT COUNT(*) FROM repairs WHERE lab_id = v_lab_id AND status IN ('received', 'in_progress')),
-    'todayReceived', (SELECT COUNT(*) FROM repairs WHERE lab_id = v_lab_id AND created_at >= v_today_start),
-    'monthlyCompleted', (SELECT COUNT(*) FROM monthly_completed_repairs),
-    'monthlyRevenue', (SELECT COALESCE(SUM(cost), 0) FROM monthly_completed_repairs),
-    'averageRepairTime', (SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (completed_at - created_at)) / 3600), 0) FROM monthly_completed_repairs WHERE completed_at IS NOT NULL),
-    'topFaultType', (SELECT fault_type FROM monthly_completed_repairs GROUP BY fault_type ORDER BY COUNT(*) DESC LIMIT 1),
-    'completionRate', (CASE WHEN (SELECT COUNT(*) FROM monthly_created_repairs) > 0 THEN ((SELECT COUNT(*) FROM monthly_completed_repairs)::FLOAT / (SELECT COUNT(*) FROM monthly_created_repairs)::FLOAT) * 100 ELSE 0 END)
-  ) INTO v_stats;
-
-  RETURN v_stats;
-END;
-$$;
 -- ───────────────────────────────────────────────────────────────────────────────
 -- 7.4 Get Store Device Count
 -- ───────────────────────────────────────────────────────────────────────────────
@@ -1499,6 +1448,7 @@ $$;
 -- ───────────────────────────────────────────────────────────────────────────────
 -- 7.10 Create Replacement Request (Secure)
 -- ───────────────────────────────────────────────────────────────────────────────
+
 CREATE OR REPLACE FUNCTION create_replacement_request(
   p_device_id UUID,
   p_reason TEXT,
@@ -1517,12 +1467,22 @@ DECLARE
   v_customer_name TEXT;
   v_customer_phone TEXT;
   v_new_request_id UUID;
+  v_repair_device_id UUID;
 BEGIN
   SELECT role INTO v_user_role FROM users WHERE id = v_user_id;
 
   IF v_user_role IS NULL THEN
     RETURN QUERY SELECT false, 'User not found or inactive.'::TEXT, NULL::UUID;
     RETURN;
+  END IF;
+
+  IF p_repair_id IS NOT NULL THEN
+    SELECT device_id INTO v_repair_device_id FROM repairs WHERE id = p_repair_id;
+    
+    IF v_repair_device_id IS DISTINCT FROM p_device_id THEN
+       RETURN QUERY SELECT false, 'שגיאה: מספר התיקון אינו תואם למכשיר שנבחר'::TEXT, NULL::UUID;
+       RETURN;
+    END IF;
   END IF;
 
   -- Get warranty and customer details
@@ -1664,15 +1624,14 @@ $$;
 -- ───────────────────────────────────────────────────────────────────────────────
 -- 7.13 Get Repairs Paginated (Admin)
 -- ───────────────────────────────────────────────────────────────────────────────
--- ───────────────────────────────────────────────────────────────────────────────
--- 7.13 Get Repairs Paginated (Admin) - SECURED
--- ───────────────────────────────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION get_repairs_paginated(
   p_page INT DEFAULT 1,
   p_page_size INT DEFAULT 50,
   p_status TEXT DEFAULT NULL,
   p_lab_id UUID DEFAULT NULL,
-  p_search TEXT DEFAULT NULL
+  p_search TEXT DEFAULT NULL,
+  p_repair_type_id UUID DEFAULT NULL, -- New parameter for repair type filtering
+  p_model_id UUID DEFAULT NULL        -- New parameter for device model filtering
 )
 RETURNS JSON
 LANGUAGE plpgsql
@@ -1684,19 +1643,30 @@ DECLARE
   v_total BIGINT;
   v_data JSON;
 BEGIN
-  -- 🔒 תיקון אבטחה: וידוא שהמשתמש הוא אדמין
+  -- 🔒 Security check: Ensure the current user is an administrator
   IF NOT is_admin() THEN
     RAISE EXCEPTION 'Access denied: Only admins can view all repairs';
   END IF;
 
   v_offset := (p_page - 1) * p_page_size;
 
-  SELECT COUNT(*) INTO v_total
+  -- Calculate total records (COUNT)
+  -- The LEFT JOIN to devices is performed only if filtering by model or searching by text.
+  SELECT COUNT(r.id) INTO v_total
   FROM repairs r
-  WHERE (p_status IS NULL OR r.status::TEXT = p_status)
+  LEFT JOIN devices d ON r.device_id = d.id -- Required for device model filtering
+  WHERE 
+    -- Precise and faster filters
+    (p_status IS NULL OR r.status::TEXT = p_status)
     AND (p_lab_id IS NULL OR r.lab_id = p_lab_id)
-    AND (p_search IS NULL OR r.customer_name ILIKE '%' || p_search || '%' OR r.customer_phone ILIKE '%' || p_search || '%');
+    AND (p_repair_type_id IS NULL OR r.repair_type_id = p_repair_type_id)
+    AND (p_model_id IS NULL OR d.model_id = p_model_id)
+    -- Text search (slower)
+    AND (p_search IS NULL OR 
+         r.customer_name ILIKE '%' || p_search || '%' OR 
+         r.customer_phone ILIKE '%' || p_search || '%');
 
+  -- Fetch the actual data
   SELECT COALESCE(json_agg(row_to_json(t) ORDER BY t.created_at DESC), '[]'::JSON)
   INTO v_data
   FROM (
@@ -1705,15 +1675,18 @@ BEGIN
       r.cost, r.status, r.fault_type, r.customer_name, r.customer_phone,
       r.custom_repair_description, r.custom_repair_price,
       r.created_at, r.completed_at,
+      -- Nested Device object
       CASE WHEN d.id IS NOT NULL THEN
         json_build_object(
           'id', d.id, 'imei', d.imei, 'imei2', d.imei2,
           'device_models', CASE WHEN dm.id IS NOT NULL THEN json_build_object('model_name', dm.model_name) ELSE NULL END
         )
       ELSE NULL END AS device,
+      -- Nested Lab object
       CASE WHEN u.id IS NOT NULL THEN
         json_build_object('id', u.id, 'full_name', u.full_name, 'email', u.email)
       ELSE NULL END AS lab,
+      -- Nested Repair Type object
       CASE WHEN rt.id IS NOT NULL THEN
         json_build_object('id', rt.id, 'name', rt.name, 'description', rt.description)
       ELSE NULL END AS repair_type
@@ -1722,8 +1695,11 @@ BEGIN
     LEFT JOIN device_models dm ON d.model_id = dm.id
     LEFT JOIN users u ON r.lab_id = u.id
     LEFT JOIN repair_types rt ON r.repair_type_id = rt.id
-    WHERE (p_status IS NULL OR r.status::TEXT = p_status)
+    WHERE 
+      (p_status IS NULL OR r.status::TEXT = p_status)
       AND (p_lab_id IS NULL OR r.lab_id = p_lab_id)
+      AND (p_repair_type_id IS NULL OR r.repair_type_id = p_repair_type_id)
+      AND (p_model_id IS NULL OR d.model_id = p_model_id)
       AND (p_search IS NULL OR r.customer_name ILIKE '%' || p_search || '%' OR r.customer_phone ILIKE '%' || p_search || '%')
     ORDER BY r.created_at DESC
     LIMIT p_page_size
@@ -1819,8 +1795,15 @@ DECLARE
   v_total BIGINT;
   v_data JSON;
 BEGIN
+  -- 🔒 תיקון אבטחה: הגבלת גישה לאדמין בלבד
+  -- חנויות ומעבדות משתמשות בפונקציות ייעודיות אחרות
+  IF NOT is_admin() THEN
+    RAISE EXCEPTION 'Access denied: Only admins can search global repair history';
+  END IF;
+
   v_offset := (p_page - 1) * p_page_size;
 
+  -- (המשך הפונקציה ללא שינוי, רק הבדיקה למעלה נוספה)
   SELECT COUNT(*) INTO v_total
   FROM repairs r JOIN devices d ON r.device_id = d.id
   WHERE d.imei = p_imei OR d.imei2 = p_imei;

@@ -801,7 +801,7 @@ export default function DevicesPage() {
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="חיפוש לפי IMEI, דגם או אצווה..."
+                  placeholder="חיפוש לפי IMEI או IMEI2..."
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
                   className="pl-10"

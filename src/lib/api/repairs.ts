@@ -82,6 +82,8 @@ export interface RepairFilters {
   status?: string;
   labId?: string;
   search?: string;
+  repairTypeId?: string; // Added new filter
+  modelId?: string;     // Added new filter
 }
 
 export interface PaginatedRepairsResponse {
@@ -106,7 +108,7 @@ export interface PaginatedRepairsResponse {
  * 
  * @param page - מספר עמוד (1-based)
  * @param pageSize - כמות רשומות בעמוד
- * @param filters - פילטרים (status, labId, search)
+ * @param filters - פילטרים (status, labId, search, repairTypeId, modelId)
  */
 export async function fetchRepairsWithPagination(
   page: number = 1,
@@ -144,18 +146,24 @@ export async function fetchRepairsWithPagination(
     p_status: filters.status && filters.status !== 'all' ? filters.status : null,
     p_lab_id: filters.labId && filters.labId !== 'all' ? filters.labId : null,
     p_search: searchTerm || null,
+    p_repair_type_id: filters.repairTypeId && filters.repairTypeId !== 'all' ? filters.repairTypeId : null,
+    p_model_id: filters.modelId && filters.modelId !== 'all' ? filters.modelId : null,
   });
 
   if (error) {
     console.error('❌ Error fetching repairs:', error);
-    
-    // Fallback לשיטה הישנה אם ה-RPC לא קיים
-    if (error.message.includes('function') || error.code === '42883') {
-      console.warn('⚠️ RPC not found, falling back to direct query');
+
+    const errorMessage = error.message || '';
+    const errorCode = error.code || '';
+
+    // Fallback לשיטה הישנה אם ה-RPC לא קיים או שיש אי-התאמה בחתימה
+    // 42883 = Undefined Function
+    if (errorMessage.includes('function') || errorCode === '42883' || errorCode === 'PGRST202') {
+      console.warn('⚠️ RPC not found or signature mismatch, falling back to direct query');
       return fetchRepairsWithPaginationLegacy(page, pageSize, filters);
     }
     
-    throw new Error(`Failed to fetch repairs: ${error.message}`);
+    throw new Error(`Failed to fetch repairs: ${errorMessage}`);
   }
 
   return normalizeRpcResponse(data);

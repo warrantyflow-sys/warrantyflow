@@ -7,119 +7,181 @@ export type Json =
   | Json[]
 
 export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "13.0.5"
+  }
   public: {
     Tables: {
-      users: {
+      audit_log: {
         Row: {
-          id: string
-          email: string
-          full_name: string | null
-          phone: string | null
-          role: Database["public"]["Enums"]["user_role"]
-          is_active: boolean
-          notification_preferences: Json | null
+          action: string
+          actor_user_id: string
           created_at: string
-          updated_at: string
+          entity_id: string
+          entity_type: string
+          id: string
+          meta: Json | null
         }
         Insert: {
-          id: string
-          email: string
-          full_name?: string | null
-          phone?: string | null
-          role: Database["public"]["Enums"]["user_role"]
-          is_active?: boolean
-          notification_preferences?: Json | null
+          action: string
+          actor_user_id: string
           created_at?: string
-          updated_at?: string
+          entity_id: string
+          entity_type: string
+          id?: string
+          meta?: Json | null
         }
         Update: {
-          id?: string
-          email?: string
-          full_name?: string | null
-          phone?: string | null
-          role?: Database["public"]["Enums"]["user_role"]
-          is_active?: boolean
-          notification_preferences?: Json | null
+          action?: string
+          actor_user_id?: string
           created_at?: string
-          updated_at?: string
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          meta?: Json | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "audit_log_actor_user_id_fkey"
+            columns: ["actor_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       device_models: {
         Row: {
-          id: string
-          model_name: string
-          manufacturer: string | null
-          warranty_months: number
-          description: string | null
-          is_active: boolean
-          created_by: string | null
           created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          is_active: boolean
+          manufacturer: string | null
+          model_name: string
           updated_at: string
+          warranty_months: number
         }
         Insert: {
-          id?: string
-          model_name: string
-          manufacturer?: string | null
-          warranty_months?: number
-          description?: string | null
-          is_active?: boolean
-          created_by?: string | null
           created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          manufacturer?: string | null
+          model_name: string
           updated_at?: string
+          warranty_months?: number
         }
         Update: {
-          id?: string
-          model_name?: string
-          manufacturer?: string | null
-          warranty_months?: number
-          description?: string | null
-          is_active?: boolean
-          created_by?: string | null
           created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          manufacturer?: string | null
+          model_name?: string
           updated_at?: string
+          warranty_months?: number
         }
         Relationships: []
       }
+      device_search_log: {
+        Row: {
+          created_at: string
+          device_found: boolean
+          device_id: string | null
+          id: string
+          ip_address: unknown
+          search_term: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_found: boolean
+          device_id?: string | null
+          id?: string
+          ip_address?: unknown
+          search_term: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_found?: boolean
+          device_id?: string | null
+          id?: string
+          ip_address?: unknown
+          search_term?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "device_search_log_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "device_search_log_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "devices_with_status"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "device_search_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       devices: {
         Row: {
+          created_at: string
           id: string
           imei: string
           imei2: string | null
-          model_id: string
-          is_replaced: boolean
-          replaced_at: string | null
-          imported_by: string | null
           import_batch: string | null
+          imported_by: string | null
+          is_replaced: boolean
+          model_id: string
           notes: string | null
-          created_at: string
+          replaced_at: string | null
           updated_at: string
+          warranty_months: number
         }
         Insert: {
+          created_at?: string
           id?: string
           imei: string
           imei2?: string | null
-          model_id: string
-          is_replaced?: boolean
-          replaced_at?: string | null
-          imported_by?: string | null
           import_batch?: string | null
+          imported_by?: string | null
+          is_replaced?: boolean
+          model_id: string
           notes?: string | null
-          created_at?: string
+          replaced_at?: string | null
           updated_at?: string
+          warranty_months?: number
         }
         Update: {
+          created_at?: string
           id?: string
           imei?: string
           imei2?: string | null
-          model_id?: string
-          is_replaced?: boolean
-          replaced_at?: string | null
-          imported_by?: string | null
           import_batch?: string | null
+          imported_by?: string | null
+          is_replaced?: boolean
+          model_id?: string
           notes?: string | null
-          created_at?: string
+          replaced_at?: string | null
           updated_at?: string
+          warranty_months?: number
         }
         Relationships: [
           {
@@ -128,65 +190,38 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "device_models"
             referencedColumns: ["id"]
-          }
+          },
         ]
-      }
-      repair_types: {
-        Row: {
-          id: string
-          name: string
-          description: string | null
-          is_active: boolean
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          name: string
-          description?: string | null
-          is_active?: boolean
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          name?: string
-          description?: string | null
-          is_active?: boolean
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: []
       }
       lab_repair_prices: {
         Row: {
-          id: string
-          lab_id: string
-          repair_type_id: string
-          price: number
-          is_active: boolean
-          notes: string | null
           created_at: string
+          id: string
+          is_active: boolean
+          lab_id: string
+          notes: string | null
+          price: number
+          repair_type_id: string
           updated_at: string
         }
         Insert: {
-          id?: string
-          lab_id: string
-          repair_type_id: string
-          price: number
-          is_active?: boolean
-          notes?: string | null
           created_at?: string
+          id?: string
+          is_active?: boolean
+          lab_id: string
+          notes?: string | null
+          price: number
+          repair_type_id: string
           updated_at?: string
         }
         Update: {
-          id?: string
-          lab_id?: string
-          repair_type_id?: string
-          price?: number
-          is_active?: boolean
-          notes?: string | null
           created_at?: string
+          id?: string
+          is_active?: boolean
+          lab_id?: string
+          notes?: string | null
+          price?: number
+          repair_type_id?: string
           updated_at?: string
         }
         Relationships: [
@@ -203,123 +238,184 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "repair_types"
             referencedColumns: ["id"]
-          }
+          },
         ]
       }
-      warranties: {
+      notifications: {
         Row: {
-          id: string
-          device_id: string
-          store_id: string
-          customer_name: string
-          customer_phone: string
-          activation_date: string
-          expiry_date: string
-          is_active: boolean
-          activated_by: string | null
-          notes: string | null
           created_at: string
+          data: Json | null
+          id: string
+          is_opened: boolean
+          is_read: boolean
+          message: string
+          title: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          data?: Json | null
+          id?: string
+          is_opened?: boolean
+          is_read?: boolean
+          message: string
+          title: string
+          type: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          data?: Json | null
+          id?: string
+          is_opened?: boolean
+          is_read?: boolean
+          message?: string
+          title?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payments: {
+        Row: {
+          amount: number
+          created_at: string
+          created_by: string | null
+          id: string
+          lab_id: string
+          notes: string | null
+          payment_date: string
+          reference: string | null
           updated_at: string
         }
         Insert: {
-          id?: string
-          device_id: string
-          store_id: string
-          customer_name: string
-          customer_phone: string
-          activation_date?: string
-          expiry_date: string
-          is_active?: boolean
-          activated_by?: string | null
-          notes?: string | null
+          amount: number
           created_at?: string
+          created_by?: string | null
+          id?: string
+          lab_id: string
+          notes?: string | null
+          payment_date?: string
+          reference?: string | null
           updated_at?: string
         }
         Update: {
-          id?: string
-          device_id?: string
-          store_id?: string
-          customer_name?: string
-          customer_phone?: string
-          activation_date?: string
-          expiry_date?: string
-          is_active?: boolean
-          activated_by?: string | null
-          notes?: string | null
+          amount?: number
           created_at?: string
+          created_by?: string | null
+          id?: string
+          lab_id?: string
+          notes?: string | null
+          payment_date?: string
+          reference?: string | null
           updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "warranties_device_id_fkey"
-            columns: ["device_id"]
-            isOneToOne: false
-            referencedRelation: "devices"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "warranties_store_id_fkey"
-            columns: ["store_id"]
+            foreignKeyName: "payments_lab_id_fkey"
+            columns: ["lab_id"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
-          }
+          },
         ]
       }
-      repairs: {
+      repair_types: {
         Row: {
-          id: string
-          device_id: string
-          lab_id: string
-          warranty_id: string | null
-          repair_type_id: string | null
-          customer_name: string
-          customer_phone: string
-          fault_type: Database["public"]["Enums"]["fault_type"] | null
-          fault_description: string | null
-          status: Database["public"]["Enums"]["repair_status"]
-          cost: number | null
-          completed_at: string | null
-          created_by: string | null
-          notes: string | null
           created_at: string
+          description: string | null
+          id: string
+          is_active: boolean
+          name: string
           updated_at: string
         }
         Insert: {
-          id?: string
-          device_id: string
-          lab_id: string
-          warranty_id?: string | null
-          repair_type_id?: string | null
-          customer_name: string
-          customer_phone: string
-          fault_type?: Database["public"]["Enums"]["fault_type"] | null
-          fault_description?: string | null
-          status?: Database["public"]["Enums"]["repair_status"]
-          cost?: number | null
-          completed_at?: string | null
-          created_by?: string | null
-          notes?: string | null
           created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
           updated_at?: string
         }
         Update: {
+          created_at?: string
+          description?: string | null
           id?: string
-          device_id?: string
-          lab_id?: string
-          warranty_id?: string | null
+          is_active?: boolean
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      repairs: {
+        Row: {
+          completed_at: string | null
+          cost: number | null
+          created_at: string
+          created_by: string | null
+          custom_repair_description: string | null
+          custom_repair_price: number | null
+          customer_name: string
+          customer_phone: string
+          device_id: string
+          fault_description: string | null
+          fault_type: Database["public"]["Enums"]["fault_type"] | null
+          id: string
+          lab_id: string
+          notes: string | null
+          repair_type_id: string | null
+          status: Database["public"]["Enums"]["repair_status"]
+          updated_at: string
+          warranty_id: string | null
+        }
+        Insert: {
+          completed_at?: string | null
+          cost?: number | null
+          created_at?: string
+          created_by?: string | null
+          custom_repair_description?: string | null
+          custom_repair_price?: number | null
+          customer_name: string
+          customer_phone: string
+          device_id: string
+          fault_description?: string | null
+          fault_type?: Database["public"]["Enums"]["fault_type"] | null
+          id?: string
+          lab_id: string
+          notes?: string | null
           repair_type_id?: string | null
+          status?: Database["public"]["Enums"]["repair_status"]
+          updated_at?: string
+          warranty_id?: string | null
+        }
+        Update: {
+          completed_at?: string | null
+          cost?: number | null
+          created_at?: string
+          created_by?: string | null
+          custom_repair_description?: string | null
+          custom_repair_price?: number | null
           customer_name?: string
           customer_phone?: string
-          fault_type?: Database["public"]["Enums"]["fault_type"] | null
+          device_id?: string
           fault_description?: string | null
-          status?: Database["public"]["Enums"]["repair_status"]
-          cost?: number | null
-          completed_at?: string | null
-          created_by?: string | null
+          fault_type?: Database["public"]["Enums"]["fault_type"] | null
+          id?: string
+          lab_id?: string
           notes?: string | null
-          created_at?: string
+          repair_type_id?: string | null
+          status?: Database["public"]["Enums"]["repair_status"]
           updated_at?: string
+          warranty_id?: string | null
         }
         Relationships: [
           {
@@ -327,6 +423,13 @@ export type Database = {
             columns: ["device_id"]
             isOneToOne: false
             referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "repairs_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "devices_with_status"
             referencedColumns: ["id"]
           },
           {
@@ -349,57 +452,57 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "warranties"
             referencedColumns: ["id"]
-          }
+          },
         ]
       }
       replacement_requests: {
         Row: {
-          id: string
+          admin_notes: string | null
+          created_at: string
+          customer_name: string
+          customer_phone: string
           device_id: string
-          warranty_id: string | null
+          id: string
+          reason: string
           repair_id: string | null
           requester_id: string
-          customer_name: string
-          customer_phone: string
-          reason: string
-          status: Database["public"]["Enums"]["request_status"]
-          admin_notes: string | null
-          resolved_by: string | null
           resolved_at: string | null
-          created_at: string
+          resolved_by: string | null
+          status: Database["public"]["Enums"]["request_status"]
           updated_at: string
+          warranty_id: string | null
         }
         Insert: {
-          id?: string
-          device_id: string
-          warranty_id?: string | null
-          repair_id?: string | null
-          requester_id: string
+          admin_notes?: string | null
+          created_at?: string
           customer_name: string
           customer_phone: string
+          device_id: string
+          id?: string
           reason: string
-          status?: Database["public"]["Enums"]["request_status"]
-          admin_notes?: string | null
-          resolved_by?: string | null
+          repair_id?: string | null
+          requester_id: string
           resolved_at?: string | null
-          created_at?: string
+          resolved_by?: string | null
+          status?: Database["public"]["Enums"]["request_status"]
           updated_at?: string
+          warranty_id?: string | null
         }
         Update: {
-          id?: string
-          device_id?: string
-          warranty_id?: string | null
-          repair_id?: string | null
-          requester_id?: string
+          admin_notes?: string | null
+          created_at?: string
           customer_name?: string
           customer_phone?: string
+          device_id?: string
+          id?: string
           reason?: string
-          status?: Database["public"]["Enums"]["request_status"]
-          admin_notes?: string | null
-          resolved_by?: string | null
+          repair_id?: string | null
+          requester_id?: string
           resolved_at?: string | null
-          created_at?: string
+          resolved_by?: string | null
+          status?: Database["public"]["Enums"]["request_status"]
           updated_at?: string
+          warranty_id?: string | null
         }
         Relationships: [
           {
@@ -410,10 +513,10 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "replacement_requests_warranty_id_fkey"
-            columns: ["warranty_id"]
+            foreignKeyName: "replacement_requests_device_id_fkey"
+            columns: ["device_id"]
             isOneToOne: false
-            referencedRelation: "warranties"
+            referencedRelation: "devices_with_status"
             referencedColumns: ["id"]
           },
           {
@@ -436,446 +539,369 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
-          }
+          },
+          {
+            foreignKeyName: "replacement_requests_warranty_id_fkey"
+            columns: ["warranty_id"]
+            isOneToOne: false
+            referencedRelation: "warranties"
+            referencedColumns: ["id"]
+          },
         ]
       }
-      payments: {
+      settings: {
         Row: {
-          id: string
-          lab_id: string
-          amount: number
-          payment_date: string
-          reference: string | null
-          notes: string | null
-          created_by: string | null
           created_at: string
+          key: string
+          updated_at: string
+          value: Json
+        }
+        Insert: {
+          created_at?: string
+          key: string
+          updated_at?: string
+          value: Json
+        }
+        Update: {
+          created_at?: string
+          key?: string
+          updated_at?: string
+          value?: Json
+        }
+        Relationships: []
+      }
+      users: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          email: string
+          full_name: string | null
+          id: string
+          is_active: boolean
+          notification_preferences: Json | null
+          phone: string | null
+          role: Database["public"]["Enums"]["user_role"]
           updated_at: string
         }
         Insert: {
-          id?: string
-          lab_id: string
-          amount: number
-          payment_date?: string
-          reference?: string | null
-          notes?: string | null
-          created_by?: string | null
           created_at?: string
+          created_by?: string | null
+          email: string
+          full_name?: string | null
+          id: string
+          is_active?: boolean
+          notification_preferences?: Json | null
+          phone?: string | null
+          role?: Database["public"]["Enums"]["user_role"]
           updated_at?: string
         }
         Update: {
-          id?: string
-          lab_id?: string
-          amount?: number
-          payment_date?: string
-          reference?: string | null
-          notes?: string | null
-          created_by?: string | null
           created_at?: string
+          created_by?: string | null
+          email?: string
+          full_name?: string | null
+          id?: string
+          is_active?: boolean
+          notification_preferences?: Json | null
+          phone?: string | null
+          role?: Database["public"]["Enums"]["user_role"]
           updated_at?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "payments_lab_id_fkey"
-            columns: ["lab_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          }
-        ]
+        Relationships: []
       }
-      device_search_log: {
+      warranties: {
         Row: {
-          id: string
-          user_id: string
-          search_term: string
-          device_found: boolean
-          device_id: string | null
-          ip_address: string | null
+          activated_by: string | null
+          activation_date: string
           created_at: string
+          customer_name: string
+          customer_phone: string
+          device_id: string
+          expiry_date: string
+          id: string
+          is_active: boolean
+          notes: string | null
+          store_id: string | null
+          updated_at: string
         }
         Insert: {
-          id?: string
-          user_id: string
-          search_term: string
-          device_found: boolean
-          device_id?: string | null
-          ip_address?: string | null
+          activated_by?: string | null
+          activation_date?: string
           created_at?: string
+          customer_name: string
+          customer_phone: string
+          device_id: string
+          expiry_date: string
+          id?: string
+          is_active?: boolean
+          notes?: string | null
+          store_id?: string | null
+          updated_at?: string
         }
         Update: {
-          id?: string
-          user_id?: string
-          search_term?: string
-          device_found?: boolean
-          device_id?: string | null
-          ip_address?: string | null
+          activated_by?: string | null
+          activation_date?: string
           created_at?: string
+          customer_name?: string
+          customer_phone?: string
+          device_id?: string
+          expiry_date?: string
+          id?: string
+          is_active?: boolean
+          notes?: string | null
+          store_id?: string | null
+          updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "device_search_log_device_id_fkey"
+            foreignKeyName: "warranties_device_id_fkey"
             columns: ["device_id"]
             isOneToOne: false
             referencedRelation: "devices"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "device_search_log_user_id_fkey"
-            columns: ["user_id"]
+            foreignKeyName: "warranties_device_id_fkey"
+            columns: ["device_id"]
             isOneToOne: false
-            referencedRelation: "users"
+            referencedRelation: "devices_with_status"
             referencedColumns: ["id"]
-          }
-        ]
-      }
-      notifications: {
-        Row: {
-          id: string
-          user_id: string
-          type: string
-          title: string
-          message: string
-          data: Json | null
-          is_read: boolean
-          is_opened: boolean
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          type: string
-          title: string
-          message: string
-          data?: Json | null
-          is_read?: boolean
-          is_opened?: boolean
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          user_id?: string
-          type?: string
-          title?: string
-          message?: string
-          data?: Json | null
-          is_read?: boolean
-          is_opened?: boolean
-          created_at?: string
-        }
-        Relationships: [
+          },
           {
-            foreignKeyName: "notifications_user_id_fkey"
-            columns: ["user_id"]
+            foreignKeyName: "warranties_store_id_fkey"
+            columns: ["store_id"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
-          }
+          },
         ]
-      }
-      audit_log: {
-        Row: {
-          id: string
-          actor_user_id: string
-          action: string
-          entity_type: string
-          entity_id: string
-          meta: Json | null
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          actor_user_id: string
-          action: string
-          entity_type: string
-          entity_id: string
-          meta?: Json | null
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          actor_user_id?: string
-          action?: string
-          entity_type?: string
-          entity_id?: string
-          meta?: Json | null
-          created_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "audit_log_actor_user_id_fkey"
-            columns: ["actor_user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          }
-        ]
-      }
-      settings: {
-        Row: {
-          key: string
-          value: Json
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          key: string
-          value: Json
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          key?: string
-          value?: Json
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: []
       }
     }
     Views: {
       devices_with_status: {
         Row: {
-          id: string
-          imei: string
+          created_at: string | null
+          id: string | null
+          imei: string | null
           imei2: string | null
-          model_id: string
-          is_replaced: boolean
-          replaced_at: string | null
-          imported_by: string | null
           import_batch: string | null
+          imported_by: string | null
+          is_replaced: boolean | null
+          model_id: string | null
+          model_name: string | null
           notes: string | null
-          created_at: string
-          updated_at: string
-          model_name: string
-          warranty_months: number
-          warranty_status: string
+          replaced_at: string | null
+          updated_at: string | null
+          warranty_months: number | null
+          warranty_status: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "devices_model_id_fkey"
+            columns: ["model_id"]
+            isOneToOne: false
+            referencedRelation: "device_models"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Functions: {
-      get_lab_financial_summary: {
-        Args: Record<PropertyKey, never>
+      activate_warranty: {
+        Args: {
+          p_customer_name: string
+          p_customer_phone: string
+          p_device_id: string
+          p_notes?: string
+        }
         Returns: {
-          lab_id: string
-          lab_name: string
-          lab_email: string
-          total_earned: number
-          total_paid: number
-          balance: number
-          repairs_count: number
-          payments_count: number
+          expiry_date: string
+          message: string
+          success: boolean
+          warranty_id: string
         }[]
       }
+      approve_replacement: {
+        Args: { p_admin_notes?: string; p_request_id: string }
+        Returns: {
+          message: string
+          success: boolean
+        }[]
+      }
+      create_replacement_request: {
+        Args: { p_device_id: string; p_reason: string; p_repair_id?: string }
+        Returns: {
+          message: string
+          request_id: string
+          success: boolean
+        }[]
+      }
+      current_user_role: {
+        Args: never
+        Returns: Database["public"]["Enums"]["user_role"]
+      }
+      custom_access_token_hook: { Args: { event: Json }; Returns: Json }
       get_admin_devices_paginated: {
         Args: {
+          p_model_filter?: string
           p_page?: number
           p_page_size?: number
-          p_search?: string | null
-          p_status_filter?: string | null
+          p_search?: string
+          p_status_filter?: string
         }
         Returns: Json
       }
-      get_dashboard_counts: {
-        Args: Record<string, never>
+      get_dashboard_counts: { Args: never; Returns: Json }
+      get_lab_balance: { Args: never; Returns: number }
+      get_lab_dashboard_stats: { Args: never; Returns: Json }
+      get_lab_device_count: { Args: never; Returns: number }
+      get_lab_financial_summary: {
+        Args: never
+        Returns: {
+          balance: number
+          lab_email: string
+          lab_id: string
+          lab_name: string
+          payments_count: number
+          repairs_count: number
+          total_earned: number
+          total_paid: number
+        }[]
+      }
+      get_lab_monthly_stats: { Args: { p_lab_id?: string }; Returns: Json }
+      get_lab_repairs_paginated: {
+        Args: { p_lab_id: string; p_page?: number; p_page_size?: number }
         Returns: Json
       }
-      get_repair_stats: {
-        Args: Record<string, never>
-        Returns: Json
-      }
-      get_warranty_stats: {
-        Args: Record<string, never>
-        Returns: Json
-      }
-      get_replacement_stats: {
-        Args: Record<string, never>
-        Returns: Json
-      }
-      get_my_role: {
-        Args: Record<string, never>
-        Returns: string
-      }
-      is_admin: {
-        Args: Record<string, never>
-        Returns: boolean
-      }
-      is_store: {
-        Args: Record<string, never>
-        Returns: boolean
-      }
-      is_lab: {
-        Args: Record<string, never>
-        Returns: boolean
-      }
-      get_user_notification_preference: {
+      get_my_role: { Args: never; Returns: string }
+      get_repair_stats: { Args: never; Returns: Json }
+      get_repairs_paginated: {
         Args: {
-          p_user_id: string
-          p_preference_key: string
+          p_lab_id?: string
+          p_page?: number
+          p_page_size?: number
+          p_search?: string
+          p_status?: string
         }
+        Returns: Json
+      }
+      get_replacement_stats: { Args: never; Returns: Json }
+      get_store_device_count: { Args: never; Returns: number }
+      get_user_notification_preference: {
+        Args: { p_preference_key: string; p_user_id: string }
+        Returns: boolean
+      }
+      get_warranty_stats: { Args: never; Returns: Json }
+      is_admin: { Args: never; Returns: boolean }
+      is_lab: { Args: never; Returns: boolean }
+      is_store: { Args: never; Returns: boolean }
+      lab_check_imei_exists: {
+        Args: { p_imei: string }
+        Returns: {
+          device_exists: boolean
+          device_id: string
+          has_active_warranty: boolean
+          message: string
+          model_name: string
+        }[]
+      }
+      mark_notification_as_opened: {
+        Args: { notification_id: string }
+        Returns: boolean
+      }
+      mark_notifications_as_read: {
+        Args: { notification_ids: string[] }
         Returns: boolean
       }
       notify_admins: {
         Args: {
-          title: string
-          message: string
-          type?: string
-          data?: Json
+          p_data?: Json
+          p_excluded_user_id?: string
+          p_message: string
+          p_title: string
+          p_type: string
         }
         Returns: undefined
       }
       notify_user: {
         Args: {
-          user_id: string
-          title: string
-          message: string
-          type?: string
-          data?: Json
+          p_data?: Json
+          p_message: string
+          p_title: string
+          p_type: string
+          p_user_id: string
         }
         Returns: undefined
       }
-      search_device: {
-        Args: {
-          search_term: string
-        }
+      reject_replacement: {
+        Args: { p_admin_notes: string; p_request_id: string }
         Returns: {
+          message: string
+          success: boolean
+        }[]
+      }
+      search_device: {
+        Args: { search_term: string }
+        Returns: {
+          has_warranty: boolean
           id: string
           imei: string
-          imei2: string | null
+          imei2: string
           model_name: string
-          has_warranty: boolean
-        }[]
-      }
-      get_store_dashboard_stats: {
-        Args: Record<string, never>
-        Returns: Json
-      }
-      get_lab_dashboard_stats: {
-        Args: Record<string, never>
-        Returns: Json
-      }
-      get_lab_balance: {
-        Args: Record<string, never>
-        Returns: number
-      }
-      mark_notifications_as_read: {
-        Args: {
-          notification_ids: string[]
-        }
-        Returns: boolean
-      }
-      mark_notification_as_opened: {
-        Args: {
-          notification_id: string
-        }
-        Returns: boolean
-      }
-      approve_replacement: {
-        Args: {
-          p_request_id: string
-          p_admin_notes?: string
-        }
-        Returns: {
-          success: boolean
-          message: string
-        }[]
-      }
-      reject_replacement: {
-        Args: {
-          p_request_id: string
-          p_admin_notes: string
-        }
-        Returns: {
-          success: boolean
-          message: string
-        }[]
-      }
-      get_store_device_count: {
-        Args: Record<string, never>
-        Returns: number
-      }
-      activate_warranty: {
-        Args: {
-          p_device_id: string
-          p_customer_name: string
-          p_customer_phone: string
-          p_notes?: string
-        }
-        Returns: {
-          success: boolean
-          message: string
-          warranty_id: string
-          expiry_date: string
-        }[]
-      }
-      create_replacement_request: {
-        Args: {
-          p_device_id: string
-          p_reason: string
-          p_repair_id?: string
-        }
-        Returns: {
-          success: boolean
-          message: string
         }[]
       }
       search_device_by_imei: {
-        Args: {
-          p_imei: string
-          p_user_ip?: string | null
-        }
+        Args: { p_imei: string; p_user_ip?: string }
         Returns: {
-          device_id: string | null
-          imei: string | null
-          imei2: string | null
-          model_id: string | null
-          model_name: string | null
-          manufacturer: string | null
-          warranty_months: number | null
-          is_replaced: boolean | null
-          replaced_at: string | null
-          has_active_warranty: boolean | null
-          warranty_id: string | null
-          warranty_expiry_date: string | null
-          customer_name: string | null
-          customer_phone: string | null
-          message: string | null
+          customer_name: string
+          customer_phone: string
           device_found: boolean
-          is_own_warranty: boolean | null
+          device_id: string
+          has_active_warranty: boolean
+          imei: string
+          imei2: string
+          is_own_warranty: boolean
+          is_replaced: boolean
+          manufacturer: string
+          message: string
+          model_id: string
+          model_name: string
+          replaced_at: string
+          warranty_expiry_date: string
+          warranty_id: string
+          warranty_months: number
         }[]
       }
-      get_repairs_paginated: {
-        Args: {
-          p_page?: number
-          p_page_size?: number
-          p_status?: string | null
-          p_lab_id?: string | null
-          p_search?: string | null
-        }
-        Returns: Json
-      }
-      get_lab_repairs_paginated: {
-        Args: {
-          p_lab_id: string
-          p_page?: number
-          p_page_size?: number
-        }
-        Returns: Json
-      }
       search_repairs_by_imei: {
-        Args: {
-          p_imei: string
-          p_page?: number
-          p_page_size?: number
-        }
+        Args: { p_imei: string; p_page?: number; p_page_size?: number }
         Returns: Json
+      }
+      store_check_imei_exists: {
+        Args: { p_imei: string }
+        Returns: {
+          device_exists: boolean
+          device_id: string
+          is_mine: boolean
+          message: string
+        }[]
       }
     }
     Enums: {
-      user_role: "admin" | "store" | "lab"
-      fault_type: "screen" | "charging_port" | "flash" | "speaker" | "board" | "other"
-      repair_status: "received" | "in_progress" | "completed" | "replacement_requested" | "cancelled"
+      fault_type:
+        | "screen"
+        | "charging_port"
+        | "flash"
+        | "speaker"
+        | "board"
+        | "other"
+      repair_status:
+        | "received"
+        | "in_progress"
+        | "completed"
+        | "replacement_requested"
+        | "cancelled"
       request_status: "pending" | "approved" | "rejected"
+      user_role: "admin" | "store" | "lab"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -883,7 +909,143 @@ export type Database = {
   }
 }
 
-// Helper types for backward compatibility
-export type Tables<T extends keyof Database['public']['Tables']> = Database['public']['Tables'][T]['Row']
-export type TablesInsert<T extends keyof Database['public']['Tables']> = Database['public']['Tables'][T]['Insert']
-export type TablesUpdate<T extends keyof Database['public']['Tables']> = Database['public']['Tables'][T]['Update']
+type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
+
+export type Tables<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+      Row: infer R
+    }
+    ? R
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])
+    ? (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+        Row: infer R
+      }
+      ? R
+      : never
+    : never
+
+export type TablesInsert<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Insert: infer I
+    }
+    ? I
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Insert: infer I
+      }
+      ? I
+      : never
+    : never
+
+export type TablesUpdate<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Update: infer U
+    }
+    ? U
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Update: infer U
+      }
+      ? U
+      : never
+    : never
+
+export type Enums<
+  DefaultSchemaEnumNameOrOptions extends
+    | keyof DefaultSchema["Enums"]
+    | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+    : never = never,
+> = DefaultSchemaEnumNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
+    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+    : never
+
+export type CompositeTypes<
+  PublicCompositeTypeNameOrOptions extends
+    | keyof DefaultSchema["CompositeTypes"]
+    | { schema: keyof DatabaseWithoutInternals },
+  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    : never = never,
+> = PublicCompositeTypeNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
+    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+    : never
+
+export const Constants = {
+  public: {
+    Enums: {
+      fault_type: [
+        "screen",
+        "charging_port",
+        "flash",
+        "speaker",
+        "board",
+        "other",
+      ],
+      repair_status: [
+        "received",
+        "in_progress",
+        "completed",
+        "replacement_requested",
+        "cancelled",
+      ],
+      request_status: ["pending", "approved", "rejected"],
+      user_role: ["admin", "store", "lab"],
+    },
+  },
+} as const

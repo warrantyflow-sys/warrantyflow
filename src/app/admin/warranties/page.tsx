@@ -388,7 +388,7 @@ export default function WarrantiesPage() {
                   <TableCell>{getStatusBadge(warranty)}</TableCell>
                   <TableCell>
                     {warranty.is_active && (
-                      <Button size="sm" variant="ghost" onClick={() => handleCancelWarranty(warranty.id)}>
+                      <Button size="sm" variant="ghost" onClick={() => handleCancelWarranty(warranty.id)} title="בטל אחריות">
                         <XCircle className="h-4 w-4 text-red-600" />
                       </Button>
                     )}
