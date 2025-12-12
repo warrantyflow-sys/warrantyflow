@@ -85,7 +85,7 @@ export async function fetchWarrantiesWithPagination(
 }
 
 /**
- * שליפת אחריות של חנות (נשאר ללא שינוי לשימוש בפורטל החנות)
+ * Fetch warranties for a store
  */
 export async function fetchStoreWarranties(
   storeId: string,

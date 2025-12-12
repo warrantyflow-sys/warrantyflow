@@ -10,6 +10,7 @@ import type { Device, DeviceModel, Warranty, Repair } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { StatCard } from '@/components/shared/stat-card';
 import {
   Table,
   TableBody,
@@ -70,7 +71,6 @@ type WarrantyStatus = 'new' | 'active' | 'expired' | 'replaced';
 const calculateWarrantyStatus = (device: DeviceRow): WarrantyStatus => {
   if (device.is_replaced) return 'replaced';
 
-  // אם המידע כבר קיים מה-view, נשתמש בו
   if (device.warranty_status) return device.warranty_status;
 
   const activeWarranty = device.warranties?.find(w => w.is_active);
@@ -94,7 +94,6 @@ const deviceSchema = z.object({
 type DeviceFormData = z.infer<typeof deviceSchema>;
 
 type DeviceRow = Device & {
-  // תיקון: עדכון הטיפוס כדי לתמוך במבנה שמגיע מה-Hook
   device_model?: { model_name: string } | null; 
   device_models?: DeviceModel | null;
   repairs_count?: number;
@@ -221,7 +220,6 @@ export default function DevicesPage() {
     return variants[status] || variants.new;
   };
 
-  // --- תיקון: מיפוי נכון של שם הדגם ---
   const devicesWithStatus = useMemo(() => {
     return devices.map((device: any) => {
       const warrantyStatus = calculateWarrantyStatus(device);
@@ -230,7 +228,6 @@ export default function DevicesPage() {
 
       return {
         ...device,
-        // חילוץ שם הדגם מתוך האובייקט המקונן device_model
         model_name: device.device_model?.model_name || device.model_name || 'לא ידוע',
         _computed: {
           warrantyStatus,
@@ -320,7 +317,7 @@ export default function DevicesPage() {
 
       const { data: { user } } = await supabase.auth.getUser();
       if (user && newDevice) {
-        supabase.from('audit_log').insert({
+        await supabase.from('audit_log').insert({
           actor_user_id: user.id,
           action: 'device.create',
           entity_type: 'device',
@@ -418,7 +415,7 @@ export default function DevicesPage() {
 
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        supabase.from('audit_log').insert({
+        await supabase.from('audit_log').insert({
           actor_user_id: user.id,
           action: 'device.update',
           entity_type: 'device',
@@ -448,7 +445,7 @@ export default function DevicesPage() {
 
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        supabase.from('audit_log').insert({
+       await supabase.from('audit_log').insert({
           actor_user_id: user.id,
           action: 'device.delete',
           entity_type: 'device',
@@ -494,19 +491,18 @@ export default function DevicesPage() {
       const { data, error } = await query.order('created_at', { ascending: false });
 
       if (error) throw error;
-
-      const csvContent = [
-        ['דגם', 'IMEI1', 'IMEI2', 'סטטוס', 'אצווה'],
-        ...(data || []).map((device: any) => [
+      
+      const csvContent = Papa.unparse({
+        fields: ['דגם', 'IMEI1', 'IMEI2', 'סטטוס', 'אצווה'],
+        data: (data || []).map((device: any) => [
           device.model_name || '',
           device.imei,
           device.imei2 || '',
           device.warranty_status || 'new',
           device.import_batch || ''
-        ]),
-      ]
-        .map(row => row.join(','))
-        .join('\n');
+        ])
+      });
+
 
       const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
@@ -541,6 +537,11 @@ export default function DevicesPage() {
       complete: async (results) => {
         const data = results.data as any[];
         setPreview(data.slice(0, 5));
+        const MAX_ROWS = 10000;
+        if (data.length > MAX_ROWS) {
+          toast({ title: 'שגיאה', description: 'קובץ גדול מדי', variant: 'destructive' });
+          return;
+        }
         if (data.length > 0) {
           await importDevices(data);
         }
@@ -564,9 +565,40 @@ export default function DevicesPage() {
 
     const devicesToInsert: Partial<Device>[] = [];
     const modelCache = new Map<string, string>();
-    
-    // --- אופטימיזציה: בדיקת כפילויות מרוכזת (Batch Check) ---
-    // אוספים את כל ה-IMEIs מהקובץ
+    // Internal duplicates check
+    const seenIMEIs = new Set<string>();
+    const internalDuplicates: string[] = [];
+  
+    data.forEach((row, idx) => {
+      const imei1 = row['IMEI1'] || row['imei1'] || row['IMEI'] || row['imei'] || '';
+      const imei2 = row['IMEI2'] || row['imei2'] || '';
+  
+      if (imei1 && seenIMEIs.has(imei1)) {
+        internalDuplicates.push(`שורה ${idx + 2}: IMEI ${imei1} מופיע יותר מפעם אחת בקובץ`);
+      }
+      if (imei2 && seenIMEIs.has(imei2)) {
+        internalDuplicates.push(`שורה ${idx + 2}: IMEI ${imei2} מופיע יותר מפעם אחת בקובץ`);
+      }
+  
+      if (imei1) seenIMEIs.add(imei1);
+      if (imei2) seenIMEIs.add(imei2);
+    });
+  
+    if (internalDuplicates.length > 0 && !forceAdd) {
+      setImportResult({
+        total: data.length,
+        success: 0,
+        failed: internalDuplicates.length,
+        errors: internalDuplicates
+      });
+      setIsImporting(false);
+      toast({
+        title: 'נמצאו כפילויות בקובץ',
+        description: `${internalDuplicates.length} מספרי IMEI כפולים`,
+        variant: 'destructive'
+      });
+      return;
+    }
     const imeisToCheck = new Set<string>();
     data.forEach(row => {
         const imei1 = row['IMEI1'] || row['imei1'] || row['IMEI'] || row['imei'];
@@ -579,13 +611,11 @@ export default function DevicesPage() {
     let firstDuplicate: { imei: string; device: DeviceRow; row: number } | null = null;
 
     if (!forceAdd && imeisToCheck.size > 0) {
-        // בודקים מול השרת בצ'אנקים של 50 למניעת שגיאת URL ארוך מדי
         const imeiArray = Array.from(imeisToCheck);
         const chunkSize = 50;
         
         for (let i = 0; i < imeiArray.length; i += chunkSize) {
             const chunk = imeiArray.slice(i, i + chunkSize);
-            // שאילתה אחת בודקת 50 מספרים במקביל
             const { data: found } = await supabase
                 .from('devices_with_status')
                 .select('*')
@@ -600,7 +630,45 @@ export default function DevicesPage() {
             }
         }
     }
-    // --- סוף אופטימיזציה ---
+      // Load all existing models
+      const { data: existingModels } = await supabase
+      .from('device_models')
+      .select('id, model_name');
+
+    if (existingModels) {
+      existingModels.forEach(m => modelCache.set(m.model_name, m.id));
+    }
+
+    // Collect new models to create
+    const newModelNames = new Set<string>();
+    data.forEach(row => {
+      const modelName = (row['דגם'] || row['model'] || row['Model'] || '').trim();
+      if (modelName && !modelCache.has(modelName)) {
+        newModelNames.add(modelName);
+      }
+    });
+
+    // Create new models in batch
+    if (newModelNames.size > 0) {
+      const modelsToCreate = Array.from(newModelNames).map(name => ({
+        model_name: name,
+        warranty_months: 12,
+        is_active: true
+      }));
+
+      const { data: createdModels, error: modelsError } = await supabase
+        .from('device_models')
+        .insert(modelsToCreate)
+        .select('id, model_name');
+
+      if (modelsError) {
+        toast({ title: 'שגיאה', description: 'שגיאה ביצירת דגמים', variant: 'destructive' });
+        setIsImporting(false);
+        return;
+      }
+
+      createdModels?.forEach(m => modelCache.set(m.model_name, m.id));
+    }
 
     for (let i = 0; i < data.length; i++) {
       setImportProgress(Math.round(((i + 1) / data.length) * 100));
@@ -628,7 +696,12 @@ export default function DevicesPage() {
         continue;
       }
 
-      // בדיקת כפילות מול המטמון המקומי במקום קריאת שרת
+      if (imei2 && !validateIMEI(imei2)) {
+        result.failed++;
+        result.errors.push(`שורה ${i + 2}: IMEI2 לא תקין`);
+        continue;
+      }
+
       if (!forceAdd) {
         const existingDevice = existingDevicesMap.get(imei1) || (imei2 ? existingDevicesMap.get(imei2) : null);
         
@@ -646,37 +719,11 @@ export default function DevicesPage() {
         }
       }
 
-      let modelId = modelCache.get(modelName.trim());
+      const modelId = modelCache.get(modelName.trim());
       if (!modelId) {
-        try {
-          const { data: existingModel } = await (supabase as any)
-            .from('device_models')
-            .select('id')
-            .eq('model_name', modelName.trim())
-            .single();
-
-          if (existingModel) {
-            modelId = existingModel.id;
-          } else {
-            const { data: newModel, error: createError } = await (supabase as any)
-              .from('device_models')
-              .insert({
-                model_name: modelName.trim(),
-                warranty_months: 12,
-                is_active: true
-              })
-              .select('id')
-              .single();
-
-            if (createError) throw createError;
-            modelId = newModel!.id;
-          }
-          modelCache.set(modelName.trim(), modelId!);
-        } catch (error: any) {
-          result.failed++;
-          result.errors.push(`שורה ${i + 2}: שגיאה ביצירת דגם`);
-          continue;
-        }
+        result.failed++;
+        result.errors.push(`שורה ${i + 2}: דגם לא נמצא`);
+        continue;
       }
 
       devicesToInsert.push({
@@ -723,7 +770,7 @@ export default function DevicesPage() {
             entity_id: device.id,
             meta: { imei: device.imei, source: 'csv' }
           }));
-          supabase.from('audit_log').insert(auditLogs);
+          await supabase.from('audit_log').insert(auditLogs);
         }
 
         toast({
@@ -786,8 +833,13 @@ export default function DevicesPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-5">
-        {/* ... (כרטיסי סטטיסטיקה ללא שינוי) */}
+      <div className="grid gap-4 md:grid-cols-6">
+        <StatCard title='סה"כ מכשירים' value={stats.total} icon={Smartphone} color='blue' />
+        <StatCard title='חדשים במלאי' value={stats.new} icon={Package} color='green' />
+        <StatCard title='אחריות פעילה' value={stats.active} icon={Shield} color='cyan' />
+        <StatCard title='פגי תוקף' value={stats.expired} icon={XCircle} color='red' />
+        <StatCard title='הוחלפו' value={stats.replaced} icon={RefreshCw} color='purple' />
+        <StatCard title='בתיקון' value={stats.inRepair} icon={Wrench} color='orange' />
       </div>
 
       {/* Filters */}
@@ -1123,8 +1175,6 @@ export default function DevicesPage() {
                   <Label>סטטוס</Label>
                   <p>
                   {(() => {
-                    // תיקון: שימוש ב-getStatusBadge במקום חיפוש בתוך ה-device ישירות ב-Dialog
-                    // במקרה שה-computed לא קיים ב-selectedDevice שאינו חלק מהטבלה הראשית
                     const status = calculateWarrantyStatus(selectedDevice);
                     const badge = getStatusBadge(status);
                     return <Badge variant={badge.variant}>{badge.label}</Badge>;

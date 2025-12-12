@@ -42,36 +42,18 @@ export function useCurrentUser() {
         if (error) throw error;
         return userData as UserData;
       }
-    
-      // הלוגיקה הקיימת של JWT parsing...
-      if (session.access_token && typeof window !== 'undefined') {
-        try {
-          const tokenParts = session.access_token.split('.');
-          if (tokenParts.length === 3) {
-            const base64Url = tokenParts[1];
-            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-            const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function(c) {
-                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-            }).join(''));
 
-            const payload: JWTPayload = JSON.parse(jsonPayload);
-            
-            if (payload.user_role && payload.user_active !== undefined) {
-              return {
-                id: session.user.id,
-                email: session.user.email || '',
-                full_name: session.user.user_metadata?.full_name || '',
-                phone: session.user.user_metadata?.phone || '',
-                role: payload.user_role,
-                is_active: payload.user_active,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-              } as UserData;
-            }
-          }
-        } catch (e) {
-          console.warn('JWT parsing failed, falling back to DB', e);
-        }
+      if (session.user.app_metadata?.user_role && session.user.app_metadata?.user_active !== undefined) {
+        return {
+          id: session.user.id,
+          email: session.user.email || '',
+          full_name: session.user.user_metadata?.full_name || '',
+          phone: session.user.user_metadata?.phone || '',
+          role: session.user.app_metadata?.user_role,
+          is_active: session.user.app_metadata?.user_active,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        } as UserData;
       }
 
       // 3. Fallback: קריאה למסד הנתונים אם המידע חסר בטוקן

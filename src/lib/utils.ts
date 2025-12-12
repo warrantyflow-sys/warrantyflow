@@ -147,3 +147,13 @@ export function debounce<T extends (...args: any[]) => any>(
     timeout = setTimeout(later, wait);
   };
 }
+export function sanitizePostgrestFilter(value: string): string {
+  if (!value) return '';
+
+  return value
+    .replace(/\\/g, '\\\\')  // Escape backslash first (order matters!)
+    .replace(/,/g, '\\,')    // Escape comma (condition separator)
+    .replace(/\./g, '\\.')   // Escape dot (field.operator.value separator)
+    .replace(/\(/g, '\\(')   // Escape opening parenthesis
+    .replace(/\)/g, '\\)');  // Escape closing parenthesis
+}

@@ -1795,15 +1795,13 @@ DECLARE
   v_total BIGINT;
   v_data JSON;
 BEGIN
-  -- 🔒 תיקון אבטחה: הגבלת גישה לאדמין בלבד
-  -- חנויות ומעבדות משתמשות בפונקציות ייעודיות אחרות
+
   IF NOT is_admin() THEN
     RAISE EXCEPTION 'Access denied: Only admins can search global repair history';
   END IF;
 
   v_offset := (p_page - 1) * p_page_size;
 
-  -- (המשך הפונקציה ללא שינוי, רק הבדיקה למעלה נוספה)
   SELECT COUNT(*) INTO v_total
   FROM repairs r JOIN devices d ON r.device_id = d.id
   WHERE d.imei = p_imei OR d.imei2 = p_imei;
@@ -1924,7 +1922,7 @@ END;
 $$;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- 7.17 פונקציית ניהול מכשירים עם פגינציה (מחליפה את devices_rich_view)
+-- 7.17 פונקציית ניהול מכשירים עם פגינציה
 -- ═══════════════════════════════════════════════════════════════════════════════
 CREATE OR REPLACE FUNCTION get_admin_devices_paginated(
   p_page INTEGER DEFAULT 1,

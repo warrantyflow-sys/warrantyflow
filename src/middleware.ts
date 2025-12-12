@@ -4,209 +4,233 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { isSupabaseConfigured, validateSupabaseEnv } from '@/lib/env-validation';
 
-export async function middleware(request: NextRequest) {
-  // Check if environment variables are set using centralized validation
-  if (!isSupabaseConfigured()) {
-    console.warn('⚠️ Supabase environment variables not configured properly');
-    console.warn('Please update .env.local with your Supabase credentials');
+// ============================================================================
+// ROUTE CONFIGURATION
+// ============================================================================
 
-    // Redirect to login when Supabase is not configured
-    if (request.nextUrl.pathname === '/' ||
-        request.nextUrl.pathname.startsWith('/admin') ||
-        request.nextUrl.pathname.startsWith('/store') ||
-        request.nextUrl.pathname.startsWith('/lab') ||
-        request.nextUrl.pathname.startsWith('/register')) {
-      const url = request.nextUrl.clone();
-      url.pathname = '/login';
-      return NextResponse.redirect(url);
+type UserRole = 'admin' | 'store' | 'lab';
+
+// Role-based route prefixes (pages and API)
+const ROLE_ROUTE_PREFIXES: Record<UserRole, string[]> = {
+  admin: ['/admin', '/api/admin'],
+  store: ['/store', '/api/store'],
+  lab: ['/lab', '/api/lab'],
+};
+
+// All protected prefixes (derived from ROLE_ROUTE_PREFIXES)
+const PROTECTED_PREFIXES = Object.values(ROLE_ROUTE_PREFIXES).flat();
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+function isProtectedRoute(pathname: string): boolean {
+  return PROTECTED_PREFIXES.some(prefix => pathname.startsWith(prefix));
+}
+
+function isAuthPage(pathname: string): boolean {
+  return pathname === '/login' || pathname === '/register';
+}
+
+function isApiRoute(pathname: string): boolean {
+  return pathname.startsWith('/api/');
+}
+
+function getRoleForRoute(pathname: string): UserRole | null {
+  for (const [role, prefixes] of Object.entries(ROLE_ROUTE_PREFIXES)) {
+    if (prefixes.some(prefix => pathname.startsWith(prefix))) {
+      return role as UserRole;
     }
+  }
+  return null;
+}
 
+function getDashboardByRole(role: UserRole): string {
+  const dashboards: Record<UserRole, string> = {
+    admin: '/admin/dashboard',
+    store: '/store/dashboard',
+    lab: '/lab/dashboard',
+  };
+  return dashboards[role] || '/login';
+}
+
+function isRouteAllowedForRole(pathname: string, userRole: UserRole): boolean {
+  const requiredRole = getRoleForRoute(pathname);
+
+  // If route doesn't require a specific role, deny access (fail-closed)
+  if (!requiredRole) {
+    return false;
+  }
+
+  return userRole === requiredRole;
+}
+
+function createRedirectResponse(
+  request: NextRequest,
+  pathname: string,
+  searchParams?: Record<string, string>
+): NextResponse {
+  const url = request.nextUrl.clone();
+  url.pathname = pathname;
+  if (searchParams) {
+    Object.entries(searchParams).forEach(([key, value]) => {
+      url.searchParams.set(key, value);
+    });
+  }
+  return NextResponse.redirect(url);
+}
+
+function createUnauthorizedResponse(message: string = 'Unauthorized'): NextResponse {
+  return NextResponse.json({ error: message }, { status: 401 });
+}
+
+function createForbiddenResponse(message: string = 'Forbidden'): NextResponse {
+  return NextResponse.json({ error: message }, { status: 403 });
+}
+
+// ============================================================================
+// MIDDLEWARE
+// ============================================================================
+
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // ------------------------------------------
+  // 1. Check Supabase configuration
+  // ------------------------------------------
+  if (!isSupabaseConfigured()) {
+    console.warn('⚠️ Supabase environment variables not configured');
+
+    if (pathname === '/' || isProtectedRoute(pathname)) {
+      return createRedirectResponse(request, '/login');
+    }
     return NextResponse.next();
   }
 
-  // Get validated environment variables (uses cache after first validation)
+  // ------------------------------------------
+  // 2. Initialize Supabase client
+  // ------------------------------------------
   const { url: supabaseUrl, anonKey: supabaseAnonKey } = validateSupabaseEnv();
 
-  // Initialize response
-  let supabaseResponse = NextResponse.next({
-    request,
+  let supabaseResponse = NextResponse.next({ request });
+
+  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll();
+      },
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+        supabaseResponse = NextResponse.next({ request });
+        cookiesToSet.forEach(({ name, value, options }) =>
+          supabaseResponse.cookies.set(name, value, options)
+        );
+      },
+    },
   });
 
+  // ------------------------------------------
+  // 3. Get user and their data
+  // ------------------------------------------
+  let user = null;
+  let userData: { role: UserRole; is_active: boolean } | null = null;
+
   try {
-    const supabase = createServerClient(
-      supabaseUrl,
-      supabaseAnonKey,
-      {
-        cookies: {
-          getAll() {
-            return request.cookies.getAll();
-          },
-          setAll(cookiesToSet) {
-            cookiesToSet.forEach(({ name, value }) =>
-              request.cookies.set(name, value)
-            );
-            supabaseResponse = NextResponse.next({
-              request,
-            });
-            cookiesToSet.forEach(({ name, value, options }) =>
-              supabaseResponse.cookies.set(name, value, options)
-            );
-          },
-        },
-      }
-    );
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    user = authUser;
 
-    const { data: { user } } = await supabase.auth.getUser();
-
-    // אופטימיזציה: נסה לקרוא role ו-is_active מה-JWT claims תחילה
-    // זה חוסך קריאת DB בכל request! (80-90% הפחתה בעומס)
-    let userData = null;
     if (user) {
-      try {
-        // Get session to access JWT token
-        // Note: We use getUser() first for security validation, then getSession() for JWT claims
-        const { data: { session } } = await supabase.auth.getSession();
+      // Always fetch from DB to ensure we have the latest role/active status
+      // This prevents security issues where JWT claims are stale after admin changes
+      const { data: dbData } = await supabase
+        .from('users')
+        .select('role, is_active')
+        .eq('id', user.id)
+        .single();
 
-        if (session?.access_token) {
-          // Decode JWT payload to read custom claims added by Auth Hook
-          const tokenParts = session.access_token.split('.');
-          if (tokenParts.length === 3) {
-            const payload = JSON.parse(
-              Buffer.from(tokenParts[1], 'base64').toString()
-            );
-
-            // Custom claims are at root level of JWT payload
-            if (payload.user_role !== undefined && payload.user_active !== undefined) {
-              userData = {
-                role: payload.user_role,
-                is_active: payload.user_active
-              };
-            }
-          }
-        }
-      } catch (error) {
-        // JWT decoding failed, will fall back to DB
-        if (process.env.NODE_ENV === 'development') {
-          console.error('Error decoding JWT:', error);
-        }
-      }
-
-      // Fallback: אם לא הצלחנו לקרוא מה-JWT, שאל את מסד הנתונים
-      if (!userData) {
-        if (process.env.NODE_ENV === 'development') {
-          console.warn('⚠️ JWT claims not found, falling back to database query.');
-        }
-        const { data: dbData } = await supabase
-          .from('users')
-          .select('role, is_active')
-          .eq('id', user.id)
-          .single();
-        userData = dbData;
+      if (dbData) {
+        userData = {
+          role: dbData.role as UserRole,
+          is_active: dbData.is_active,
+        };
       }
     }
-
-    const isAuthPage = request.nextUrl.pathname.startsWith('/login');
-    const isRegisterPage = request.nextUrl.pathname.startsWith('/register');
-    const isProtectedRoute = request.nextUrl.pathname.startsWith('/admin') ||
-                             request.nextUrl.pathname.startsWith('/store') ||
-                             request.nextUrl.pathname.startsWith('/lab');
-
-    // 1. Handle root path ('/') redirection
-    if (request.nextUrl.pathname === '/') {
-      if (user && userData?.is_active) {
-        const url = request.nextUrl.clone();
-        switch (userData.role) {
-          case 'admin': url.pathname = '/admin/dashboard'; break;
-          case 'store': url.pathname = '/store/dashboard'; break;
-          case 'lab': url.pathname = '/lab/dashboard'; break;
-          default: url.pathname = '/login';
-        }
-        return NextResponse.redirect(url);
-      }
-      // If no user or not active, redirect to login
-      const url = request.nextUrl.clone();
-      url.pathname = '/login';
-      return NextResponse.redirect(url);
-    }
-
-    // 2. Block public registration
-    if (isRegisterPage) {
-      const url = request.nextUrl.clone();
-      url.pathname = '/login';
-      return NextResponse.redirect(url);
-    }
-
-    // 3. Redirect unauthenticated users from protected routes
-    if (!user && isProtectedRoute && !request.nextUrl.pathname.startsWith('/api')) {
-      const url = request.nextUrl.clone();
-      url.pathname = '/login';
-      return NextResponse.redirect(url);
-    }
-
-    // 4. Handle authenticated users trying to access auth pages
-    if (user && isAuthPage) {
-      if (userData?.is_active) {
-        const url = request.nextUrl.clone();
-        switch (userData.role) {
-          case 'admin': url.pathname = '/admin/dashboard'; break;
-          case 'store': url.pathname = '/store/dashboard'; break;
-          case 'lab': url.pathname = '/lab/dashboard'; break;
-          default: url.pathname = '/';
-        }
-        return NextResponse.redirect(url);
-      } else {
-        // If user is not active, log them out
-        await supabase.auth.signOut();
-        const url = request.nextUrl.clone();
-        url.pathname = '/login';
-        url.searchParams.set('error', 'inactive');
-        return NextResponse.redirect(url);
-      }
-    }
-
-    // 5. Role-based access control for protected routes
-    if (user && isProtectedRoute && !request.nextUrl.pathname.startsWith('/api')) {
-      if (!userData || !userData.is_active) {
-        await supabase.auth.signOut();
-        const url = request.nextUrl.clone();
-        url.pathname = '/login';
-        url.searchParams.set('error', 'unauthorized');
-        return NextResponse.redirect(url);
-      }
-
-      const pathname = request.nextUrl.pathname;
-      const userRole = userData.role;
-
-      const isAdminOnlyRoute = [
-        '/admin/users',
-        '/admin/payments',
-        '/admin/settings',
-      ].some(route => pathname.startsWith(route));
-
-      if (isAdminOnlyRoute && userRole !== 'admin') {
-        const url = request.nextUrl.clone();
-        url.pathname = `/${userRole}/dashboard`;
-        return NextResponse.redirect(url);
-      }
-
-      if (
-        (pathname.startsWith('/admin') && userRole !== 'admin') ||
-        (pathname.startsWith('/store') && userRole !== 'store') ||
-        (pathname.startsWith('/lab') && userRole !== 'lab')
-      ) {
-        const url = request.nextUrl.clone();
-        url.pathname = `/${userRole}/dashboard`;
-        return NextResponse.redirect(url);
-      }
-    }
-
   } catch (error) {
-    console.error('Middleware error:', error);
+    console.error('Middleware: Error fetching user data:', error);
+
+    // FAIL-CLOSED: Block access on error for protected routes
+    if (isProtectedRoute(pathname)) {
+      if (isApiRoute(pathname)) {
+        return createUnauthorizedResponse('Authentication error');
+      }
+      return createRedirectResponse(request, '/login', { error: 'auth_error' });
+    }
     return supabaseResponse;
+  }
+
+  // ------------------------------------------
+  // 4. Handle root path redirect
+  // ------------------------------------------
+  if (pathname === '/') {
+    if (user && userData?.is_active) {
+      return createRedirectResponse(request, getDashboardByRole(userData.role));
+    }
+    return createRedirectResponse(request, '/login');
+  }
+
+  // ------------------------------------------
+  // 5. Handle unauthenticated users
+  // ------------------------------------------
+  if (!user) {
+    if (isProtectedRoute(pathname)) {
+      if (isApiRoute(pathname)) {
+        return createUnauthorizedResponse();
+      }
+      return createRedirectResponse(request, '/login');
+    }
+    return supabaseResponse;
+  }
+
+  // ------------------------------------------
+  // 6. Handle authenticated users on auth pages
+  // ------------------------------------------
+  if (isAuthPage(pathname)) {
+    if (userData?.is_active) {
+      return createRedirectResponse(request, getDashboardByRole(userData.role));
+    }
+    // Inactive user trying to access auth pages - sign them out
+    await supabase.auth.signOut();
+    return createRedirectResponse(request, '/login', { error: 'inactive' });
+  }
+
+  // ------------------------------------------
+  // 7. Handle protected routes
+  // ------------------------------------------
+  if (isProtectedRoute(pathname)) {
+    // Check if user is active
+    if (!userData?.is_active) {
+      await supabase.auth.signOut();
+      if (isApiRoute(pathname)) {
+        return createUnauthorizedResponse('Account inactive');
+      }
+      return createRedirectResponse(request, '/login', { error: 'inactive' });
+    }
+
+    // Check role-based access
+    if (!isRouteAllowedForRole(pathname, userData.role)) {
+      if (isApiRoute(pathname)) {
+        return createForbiddenResponse('Access denied for your role');
+      }
+      return createRedirectResponse(request, getDashboardByRole(userData.role));
+    }
   }
 
   return supabaseResponse;
 }
+
+// ============================================================================
+// MATCHER CONFIGURATION
+// ============================================================================
 
 export const config = {
   matcher: [
@@ -215,7 +239,7 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
-     * - public folder
+     * - Static assets (svg, png, jpg, jpeg, gif, webp)
      * - .well-known (for various services)
      */
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$|.well-known).*)',
