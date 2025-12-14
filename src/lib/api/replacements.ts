@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/client';
 import type { ReplacementRequestWithRelations } from '@/types';
 import type { Database } from '@/lib/supabase/database.types';
+import { sanitizePostgrestFilter } from '@/lib/utils';
 
 export type ReplacementRequest = ReplacementRequestWithRelations;
 
@@ -59,7 +60,7 @@ export async function fetchReplacementsWithPagination(
 
   // חיפוש (IMEI או שם לקוח)
   if (hasSearch) {
-    const s = filters.search;
+    const s = sanitizePostgrestFilter(filters.search!);
     query = query.or(`customer_name.ilike.%${s}%,device.imei.ilike.%${s}%`);
   }
 

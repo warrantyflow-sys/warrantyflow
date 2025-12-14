@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/client';
 import type { Database } from '@/lib/supabase/database.types';
+import { sanitizePostgrestFilter } from '@/lib/utils';
 
 type RepairStatus = Database["public"]["Enums"]["repair_status"];
 
@@ -263,7 +264,7 @@ async function fetchRepairsWithPaginationLegacy(
     countQuery = countQuery.eq('lab_id', filters.labId);
   }
   if (filters.search && filters.search.trim()) {
-    const searchTerm = filters.search.trim();
+    const searchTerm = sanitizePostgrestFilter(filters.search.trim());
     countQuery = countQuery.or(
       `customer_name.ilike.%${searchTerm}%,customer_phone.ilike.%${searchTerm}%`
     );
@@ -329,7 +330,7 @@ async function fetchRepairsWithPaginationLegacy(
     dataQuery = dataQuery.eq('lab_id', filters.labId);
   }
   if (filters.search && filters.search.trim()) {
-    const searchTerm = filters.search.trim();
+    const searchTerm = sanitizePostgrestFilter(filters.search.trim());
     dataQuery = dataQuery.or(
       `customer_name.ilike.%${searchTerm}%,customer_phone.ilike.%${searchTerm}%`
     );

@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./node_modules/.bin/tsc:*)",
+      "Bash(dir:*)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:postgrest.org)",
+      "WebFetch(domain:docs.postgrest.org)"
+    ]
+  }
+}

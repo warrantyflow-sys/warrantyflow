@@ -58,7 +58,7 @@ import {
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
-import { formatDate, validateIMEI } from '@/lib/utils';
+import { formatDate, validateIMEI, sanitizePostgrestFilter, sanitizePostgrestList } from '@/lib/utils';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -469,7 +469,8 @@ export default function DevicesPage() {
       let query = supabase.from('devices_with_status').select('*');
 
       if (debouncedSearch) {
-        query = query.or(`imei.ilike.%${debouncedSearch}%,imei2.ilike.%${debouncedSearch}%,import_batch.ilike.%${debouncedSearch}%`);
+        const sanitizedSearch = sanitizePostgrestFilter(debouncedSearch);
+        query = query.or(`imei.ilike.%${sanitizedSearch}%,imei2.ilike.%${sanitizedSearch}%,import_batch.ilike.%${sanitizedSearch}%`);
       }
 
       if (filterStatus !== 'all') {
@@ -616,10 +617,11 @@ export default function DevicesPage() {
         
         for (let i = 0; i < imeiArray.length; i += chunkSize) {
             const chunk = imeiArray.slice(i, i + chunkSize);
+            const sanitizedList = sanitizePostgrestList(chunk);
             const { data: found } = await supabase
                 .from('devices_with_status')
                 .select('*')
-                .or(`imei.in.(${chunk.join(',')}),imei2.in.(${chunk.join(',')})`)
+                .or(`imei.in.(${sanitizedList}),imei2.in.(${sanitizedList})`)
                 .returns<DeviceRow[]>();
             
             if (found) {

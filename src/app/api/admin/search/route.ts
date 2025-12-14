@@ -2,18 +2,20 @@
 import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/auth/jwt-helper';
+import { sanitizePostgrestFilter } from '@/lib/utils';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAdmin();
   if (!auth.success) return auth.response;
 
   const { searchParams } = new URL(request.url);
-  const query = searchParams.get('query');
+  const rawQuery = searchParams.get('query');
 
-  if (!query) {
+  if (!rawQuery) {
     return NextResponse.json({ error: 'Query parameter is required' }, { status: 400 });
   }
 
+  const query = sanitizePostgrestFilter(rawQuery);
   const supabase = await createClient();
   const results: any[] = [];
 

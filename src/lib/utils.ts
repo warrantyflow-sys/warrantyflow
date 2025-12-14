@@ -136,24 +136,52 @@ export function debounce<T extends (...args: any[]) => any>(
   wait: number
 ): (...args: Parameters<T>) => void {
   let timeout: NodeJS.Timeout;
-  
+
   return function executedFunction(...args: Parameters<T>) {
     const later = () => {
       clearTimeout(timeout);
       func(...args);
     };
-    
+
     clearTimeout(timeout);
     timeout = setTimeout(later, wait);
   };
 }
-export function sanitizePostgrestFilter(value: string): string {
-  if (!value) return '';
 
-  return value
-    .replace(/\\/g, '\\\\')  // Escape backslash first (order matters!)
-    .replace(/,/g, '\\,')    // Escape comma (condition separator)
-    .replace(/\./g, '\\.')   // Escape dot (field.operator.value separator)
-    .replace(/\(/g, '\\(')   // Escape opening parenthesis
-    .replace(/\)/g, '\\)');  // Escape closing parenthesis
+// clean input for postgrest filter
+export function sanitizePostgrestFilter(value: string, addWildcards: boolean = true): string {
+  if (!value) return addWildcards ? '%' : '';
+
+  const hasReservedChars = /[,.:()*)"]/.test(value);
+  const hasBackslash = /\\/.test(value);
+
+  const prefix = addWildcards ? '%' : '';
+  const suffix = addWildcards ? '%' : '';
+
+  if (!hasReservedChars && !hasBackslash) {
+    return `${prefix}${value}${suffix}`;
+  }
+
+  let escaped = value
+    .replace(/\\/g, '\\\\')  
+    .replace(/"/g, '\\"');   
+
+  return `"${prefix}${escaped}${suffix}"`;
+}
+
+
+// clean input for postgrest list
+export function sanitizePostgrestList(values: string[]): string {
+  if (!values || values.length === 0) return '';
+  return values.map(val => {
+    const hasReservedChars = /[,.:()"]/.test(val);
+    const hasBackslash = /\\/.test(val);
+    if (!hasReservedChars && !hasBackslash) {
+      return val;
+    }
+    const escaped = val
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"');
+    return `"${escaped}"`;
+  }).join(',');
 }

@@ -262,84 +262,24 @@ export default function AdminReportsPage() {
 
   const generateRepairsReport = async () => {
     if (typeof window === 'undefined') return undefined; // Skip during SSR
-    const { data: repairs } = await supabase
-      .from('repairs')
-      .select(`
-        status,
-        fault_type,
-        cost,
-        created_at,
-        completed_at,
-        lab:users!repairs_lab_id_fkey(id, full_name, email),
-        repair_type:repair_types(id, name)
-      `)
-      .gte('created_at', startDate)
-      .lte('created_at', endDate);
-
-    const repairsList = (repairs ?? []) as Array<{
-      status: string;
-      fault_type: string | null;
-      cost: number | null;
-      created_at: string;
-      completed_at: string | null;
-      lab: { id: string; full_name: string | null; email: string | null } | null;
-      repair_type: { id: string; name: string } | null;
-    }>;
-    const byStatus: Record<string, number> = {};
-    const byRepairType: Record<string, number> = {};
-    const byLab: Record<string, { count: number; revenue: number }> = {};
-    const monthlyRepairs: Record<string, { count: number; revenue: number }> = {};
-
-    // Legacy fault type labels for backwards compatibility
-    const faultTypeLabels: Record<string, string> = {
-      screen: 'מסך',
-      charging_port: 'שקע טעינה',
-      flash: 'פנס',
-      speaker: 'רמקול',
-      board: 'לוח אם',
-      other: 'אחר',
-    };
-
-    const getRepairTypeName = (repair: typeof repairsList[0]): string => {
-      if (repair.repair_type?.name) return repair.repair_type.name;
-      if (repair.fault_type) return faultTypeLabels[repair.fault_type] || repair.fault_type;
-      return 'אחר';
-    };
-
-    repairsList.forEach(repair => {
-      // By status
-      byStatus[repair.status] = (byStatus[repair.status] || 0) + 1;
-
-      // By repair type
-      const repairTypeName = getRepairTypeName(repair);
-      byRepairType[repairTypeName] = (byRepairType[repairTypeName] || 0) + 1;
-
-      // By lab
-      if (repair.lab) {
-        const labName = repair.lab.full_name || repair.lab.email || 'מעבדה';
-        if (!byLab[labName]) {
-          byLab[labName] = { count: 0, revenue: 0 };
-        }
-        byLab[labName].count++;
-        byLab[labName].revenue += repair.cost || 0;
-      }
-
-      // Monthly repairs
-      if (repair.created_at) {
-        const month = new Date(repair.created_at).toISOString().slice(0, 7);
-        if (!monthlyRepairs[month]) {
-          monthlyRepairs[month] = { count: 0, revenue: 0 };
-        }
-        monthlyRepairs[month].count++;
-        monthlyRepairs[month].revenue += repair.cost || 0;
-      }
+    
+    // Use the optimized server-side RPC function instead of fetching all records
+    const { data, error } = await supabase.rpc('get_periodic_repair_stats', {
+      p_start_date: startDate,
+      p_end_date: endDate + 'T23:59:59'
     });
 
-    return {
-      byStatus,
-      byRepairType,
-      byLab,
-      monthlyRepairs: Object.entries(monthlyRepairs).map(([month, data]) => ({ month, ...data })),
+    if (error) {
+      console.error('Error fetching repair stats:', error);
+      return undefined;
+    }
+
+    // The RPC returns the exact structure we need, just need to cast it
+    return data as {
+      byStatus: Record<string, number>;
+      byRepairType: Record<string, number>;
+      byLab: Record<string, { count: number; revenue: number }>;
+      monthlyRepairs: { month: string; count: number; revenue: number }[];
     };
   };
 

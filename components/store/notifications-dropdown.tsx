@@ -20,6 +20,7 @@ import {
   DialogFooter
 } from '@/components/ui/dialog';
 import { formatDateTime } from '@/lib/utils';
+import { useToast } from '@/components/ui/use-toast';
 
 interface Notification {
   id: string;
@@ -37,17 +38,26 @@ export function StoreNotificationsDropdown() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
   const supabase = createClient();
+  const { toast } = useToast();
+
+  useEffect(() => {
+    const getUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) setUserId(user.id);
+    };
+    getUser();
+  }, [supabase]);
 
   const loadNotifications = useCallback(async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+    if (!userId) return;
 
+    try {
       const { data, error } = await supabase
         .from('notifications')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .order('created_at', { ascending: false })
         .limit(20);
 
@@ -59,19 +69,33 @@ export function StoreNotificationsDropdown() {
     } catch (error) {
       console.error('Error loading notifications:', error);
     }
-  }, [supabase]);
+  }, [supabase, userId]);
 
   useEffect(() => {
+    if (!userId) return;
+
     loadNotifications();
 
-    // Realtime subscription for instant updates (no polling needed)
     const channel = supabase
-      .channel('store-notifications')
+      .channel(`store-notifications-${userId}`)
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'notifications' },
+        { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'notifications',
+          filter: `user_id=eq.${userId}`
+        },
         (payload) => {
-            loadNotifications();
+           // Optimistic update
+           const newNotification = payload.new as Notification;
+           setNotifications(prev => [newNotification, ...prev]);
+           setUnreadCount(prev => prev + 1);
+           
+           toast({
+             title: newNotification.title,
+             description: newNotification.message,
+           });
         }
       )
       .subscribe();
@@ -79,7 +103,7 @@ export function StoreNotificationsDropdown() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [loadNotifications, supabase]);
+  }, [loadNotifications, supabase, userId, toast]);
 
   const markAsOpened = async (notificationId: string) => {
     try {
@@ -105,10 +129,9 @@ export function StoreNotificationsDropdown() {
   };
 
   const markAllAsRead = async () => {
+    if (!userId) return;
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      await supabase.from('notifications').update({ is_read: true }).eq('user_id', user.id).eq('is_read', false);
+      await supabase.from('notifications').update({ is_read: true }).eq('user_id', userId).eq('is_read', false);
       setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
       setUnreadCount(0);
     } catch (error) {

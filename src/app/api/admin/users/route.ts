@@ -27,6 +27,26 @@ export async function POST(request: Request) {
 
     if (authError2) throw authError2;
 
+    // Safety Check: Verify we are not overwriting an existing OLD user
+    // נבדוק אם המשתמש כבר קיים ב-public.users
+    const { data: existingUser } = await supabaseService
+      .from('users')
+      .select('created_at')
+      .eq('id', authData.user!.id)
+      .maybeSingle();
+
+    if (existingUser) {
+      // אם המשתמש קיים, נוודא שהוא נוצר בדקה האחרונה (ע"י הטריגר)
+      const createdTime = new Date(existingUser.created_at).getTime();
+      const isFresh = (Date.now() - createdTime) < 60000; // 60 שניות
+
+      if (!isFresh) {
+        // מחיקת המשתמש החדש שנוצר ב-Auth כדי למנוע זבל
+        await supabaseService.auth.admin.deleteUser(authData.user!.id);
+        throw new Error('Safety Check Failed: User ID collision with an existing old record');
+      }
+    }
+
     // Create user in public.users table manually
     // הטריגר אמור לעשות זאת, אבל לפעמים הוא נכשל בגלל RLS
     // נשתמש ב-upsert כדי למנוע duplicates אם הטריגר עבד

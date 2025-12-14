@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/client';
 import { User } from '@/types';
+import { sanitizePostgrestFilter } from '@/lib/utils';
 
 export interface UsersResponse {
   users: User[];
@@ -41,8 +42,8 @@ export async function fetchUsersWithPagination(
 
   // חיפוש (שם, אימייל, טלפון)
   if (filters.search) {
-    const s = filters.search;
-    query = query.or(`full_name.ilike.%${s}%,email.ilike.%${s}%,phone.ilike.%${s}%`);
+    const s = sanitizePostgrestFilter(filters.search);
+    query = query.or(`full_name.ilike.${s},email.ilike.${s},phone.ilike.${s}`);
   }
 
   const { data, error, count } = await query

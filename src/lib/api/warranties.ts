@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/client';
 import type { WarrantyWithRelations } from '@/types';
+import { sanitizePostgrestFilter } from '@/lib/utils';
 
 export type Warranty = WarrantyWithRelations;
 
@@ -48,19 +49,20 @@ export async function fetchWarrantiesWithPagination(
 
   if (filters.search) {
     const s = filters.search.trim();
-    // Escape underscore for PostgREST ilike pattern (underscore is a wildcard in SQL LIKE)
-    const escapedSearch = s.replace(/_/g, '\\_');
+    // Sanitize for PostgREST filter injection, then escape underscore for SQL LIKE wildcard
+    const sanitized = sanitizePostgrestFilter(s);
+    const escapedSearch = sanitized.replace(/_/g, '\\_');
     const searchPattern = `%${escapedSearch}%`;
-    
+
     // PostgREST doesn't support nested fields (device.imei) in or() filter
     // So we search devices separately and filter by device_id
     const { data: matchingDevices } = await supabase
       .from('devices')
       .select('id')
       .ilike('imei', searchPattern);
-    
+
     const deviceIds = matchingDevices?.map(d => d.id) || [];
-    
+
     // Build or() condition: customer fields OR device_id in matching devices
     if (deviceIds.length > 0) {
       // Combine customer fields search with device_id filter
