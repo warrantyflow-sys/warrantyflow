@@ -346,14 +346,13 @@ CREATE TABLE IF NOT EXISTS notifications (
 
   CONSTRAINT notifications_pkey PRIMARY KEY (id),
   CONSTRAINT notifications_user_id_fkey FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
-  CONSTRAINT notifications_type_check CHECK (type IN (
-    'replacement_request_new',
-    'replacement_request_updated',
-    'repair_new',
-    'repair_updated',
-    'payment_new',
-    'user_registered',
-    'repair_completed'
+CONSTRAINT notifications_type_check CHECK (type IN (
+  'warranty_activated',
+  'replacement_request_new',
+  'replacement_request_updated',
+  'repair_new',
+  'repair_completed',
+  'payment_received'
   ))
 );
 
@@ -2327,10 +2326,10 @@ BEGIN
       'תיקון חדש נוצר',
       'תיקון חדש נוצר (' || COALESCE(v_model_name, 'דגם לא ידוע') || ') על ידי ' || COALESCE(v_lab_name, 'מעבדה') || ' למכשיר ' || v_device_imei,
       jsonb_build_object(
-        'device_imei', v_device_imei,
-        'model_name', COALESCE(v_model_name, 'לא ידוע'),
-        'lab_name', COALESCE(v_lab_name, 'מעבדה'),
-        'fault_type', NEW.fault_type
+        'IMEI:', v_device_imei,
+        'דגם: ', COALESCE(v_model_name, 'לא ידוע'),
+        'שם המעבדה: ', COALESCE(v_lab_name, 'מעבדה'),
+        'סוג תקלה: ', NEW.fault_type
       )
     );
   ELSIF (TG_OP = 'UPDATE') THEN
@@ -2369,28 +2368,19 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
 AS $$
-DECLARE
-  v_lab_name TEXT;
-  v_actor_id UUID;
 BEGIN
-  v_actor_id := auth.uid();
-
-  SELECT full_name INTO v_lab_name FROM users WHERE id = NEW.lab_id;
-
-  PERFORM notify_admins(
-    'payment_new',
-    'תשלום חדש התקבל',
-    'תשלום בסך ' || NEW.amount || ' ₪ התקבל מ-' || COALESCE(v_lab_name, 'מעבדה'),
+  PERFORM notify_user(
+    NEW.lab_id,
+    'payment_received',
+    'תשלום התקבל',
+    'תשלום בסך ' || NEW.amount || ' ₪ נרשם עבורך',
     jsonb_build_object(
       'payment_id', NEW.id,
-      'lab_id', NEW.lab_id,
-      'lab_name', v_lab_name,
       'amount', NEW.amount,
-      'payment_date', NEW.payment_date
-    ),
-    v_actor_id
+      'payment_date', NEW.payment_date,
+      'notes', COALESCE(NEW.notes, '')
+    )
   );
-
   RETURN NEW;
 END;
 $$;
@@ -2465,6 +2455,52 @@ BEGIN
     );
   END IF;
 
+  RETURN NEW;
+END;
+$$;
+
+-- ───────────────────────────────────────────────────────────────────────────────
+-- 8.12 Notify on Warranty Activation
+-- ───────────────────────────────────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION notify_on_warranty_activation()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_device_imei TEXT;
+  v_model_name TEXT;
+  v_store_name TEXT;
+  v_activated_by_name TEXT;
+BEGIN
+  SELECT d.imei, dm.model_name
+  INTO v_device_imei, v_model_name
+  FROM devices d
+  LEFT JOIN device_models dm ON d.model_id = dm.id
+  WHERE d.id = NEW.device_id;
+
+  IF NEW.store_id IS NOT NULL THEN
+    SELECT full_name INTO v_store_name FROM users WHERE id = NEW.store_id;
+  ELSE
+    SELECT full_name INTO v_activated_by_name FROM users WHERE id = NEW.activated_by;
+    v_store_name := COALESCE(v_activated_by_name, 'מנהל');
+  END IF;
+
+  PERFORM notify_admins(
+    'warranty_activated',
+    'אחריות חדשה הופעלה',
+    'אחריות הופעלה למכשיר ' || COALESCE(v_model_name, v_device_imei) || 
+    ' על ידי ' || COALESCE(v_store_name, 'משתמש'),
+    jsonb_build_object(
+      'warranty_id', NEW.id,
+      'device_id', NEW.device_id,
+      'device_imei', v_device_imei,
+      'model_name', COALESCE(v_model_name, 'לא ידוע'),
+      'store_name', COALESCE(v_store_name, 'לא ידוע'),
+      'customer_name', NEW.customer_name
+    )
+  );
   RETURN NEW;
 END;
 $$;
@@ -2712,6 +2748,12 @@ CREATE TRIGGER trigger_notify_replacement_status
   AFTER UPDATE ON replacement_requests
   FOR EACH ROW
   EXECUTE FUNCTION notify_on_replacement_status_change();
+
+DROP TRIGGER IF EXISTS trigger_notify_warranty_activation ON warranties;
+CREATE TRIGGER trigger_notify_warranty_activation
+  AFTER INSERT ON warranties
+  FOR EACH ROW
+  EXECUTE FUNCTION notify_on_warranty_activation();
 
 DROP TRIGGER IF EXISTS on_replacement_request_created ON replacement_requests;
 CREATE TRIGGER on_replacement_request_created
@@ -2965,6 +3007,7 @@ REVOKE EXECUTE ON FUNCTION handle_repair_notifications() FROM authenticated;
 REVOKE EXECUTE ON FUNCTION notify_on_new_payment() FROM authenticated;
 REVOKE EXECUTE ON FUNCTION notify_on_replacement_request() FROM authenticated;
 REVOKE EXECUTE ON FUNCTION notify_on_replacement_status_change() FROM authenticated;
+REVOKE EXECUTE ON FUNCTION notify_on_warranty_activation() FROM authenticated;
 REVOKE EXECUTE ON FUNCTION audit_replacement_request_creation() FROM authenticated;
 REVOKE EXECUTE ON FUNCTION custom_access_token_hook FROM authenticated, anon, public;
 

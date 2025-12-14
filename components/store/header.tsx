@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { User, Moon, Sun, Settings, LogOut, Package } from 'lucide-react';
+import { Moon, Sun, Settings, LogOut, Package, User } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import {
@@ -16,7 +16,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { UserData } from '@/types/user';
-import { StoreNotificationsDropdown } from './notifications-dropdown'; // Import the new component
+import { NotificationsDropdown } from '@/components/shared/notifications-dropdown';
 
 export function StoreHeader() {
   const [user, setUser] = useState<UserData | null>(null);
@@ -84,8 +84,8 @@ export function StoreHeader() {
               )}
             </Button>
 
-            {/* Notifications */}
-            <StoreNotificationsDropdown />
+            {/* Notifications - using shared component */}
+            <NotificationsDropdown userRole="store" />
 
             {/* User menu */}
             <DropdownMenu>

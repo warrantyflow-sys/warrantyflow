@@ -1,13 +1,13 @@
 'use client'
 
 import * as React from 'react'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { UserData } from '@/types/user'
 import { Search, User, Moon, Sun, Settings, LogOut, Shield, Smartphone, Wrench, Store } from 'lucide-react'
 import { useTheme } from 'next-themes'
-import { NotificationsDropdown } from './notifications-dropdown'
+import { NotificationsDropdown } from '@/components/shared/notifications-dropdown';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,15 +22,6 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Spinner } from '@/components/ui/spinner'
 import { DeviceDetailsModal } from './device-details-modal'
 import { UserDetailsModal } from './user-details-modal'
-
-interface Notification {
-  id: string
-  title: string
-  description: string
-  type: 'info' | 'warning' | 'error'
-  created_at: string
-  read: boolean
-}
 
 interface SearchResult {
   id?: string;
@@ -61,7 +52,6 @@ interface AdminHeaderProps {
 
 export function AdminHeader({ isCollapsed, setIsCollapsed }: AdminHeaderProps = {}) {
   const [user, setUser] = useState<UserData | null>(null)
-  const [notifications, setNotifications] = useState<Notification[]>([])
   const { theme, setTheme, resolvedTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
   const router = useRouter()
@@ -101,14 +91,7 @@ export function AdminHeader({ isCollapsed, setIsCollapsed }: AdminHeaderProps = 
       }
     }
 
-    const fetchNotifications = async () => {
-      // Fetch notifications logic here
-      const newNotifications: Notification[] = []
-      setNotifications(newNotifications)
-    }
-
     fetchUserData()
-    fetchNotifications()
   }, [supabase])
 
   useEffect(() => {
@@ -160,8 +143,6 @@ export function AdminHeader({ isCollapsed, setIsCollapsed }: AdminHeaderProps = 
       default: return <Search className="h-4 w-4" />;
     }
   }
-
-  const unreadCount = notifications.filter(n => !n.read).length
 
   return (
     <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -233,8 +214,8 @@ export function AdminHeader({ isCollapsed, setIsCollapsed }: AdminHeaderProps = 
             )}
           </Button>
 
-          {/* Notifications */}
-          <NotificationsDropdown />
+          {/* Notifications - using shared component */}
+          <NotificationsDropdown userRole="admin" />
 
           {/* User menu */}
           <DropdownMenu>

@@ -16,7 +16,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { UserData } from '@/types/user';
-import { LabNotificationsDropdown } from './notifications-dropdown'; // Import the new component
+import { NotificationsDropdown } from '@/components/shared/notifications-dropdown';
 
 export function LabHeader() {
   const [user, setUser] = useState<UserData | null>(null);
@@ -84,8 +84,8 @@ export function LabHeader() {
               )}
             </Button>
 
-            {/* Notifications */}
-            <LabNotificationsDropdown />
+            {/* Notifications - using shared component */}
+            <NotificationsDropdown userRole="lab" />
 
             {/* User menu */}
             <DropdownMenu>
