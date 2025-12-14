@@ -59,7 +59,7 @@ type DeviceWithWarranty = Device & {
   device_models?: DeviceModel | null;
   warranties?: {
     id: string;
-    store_id: string;
+    store_id: string | null;
     customer_name: string;
     customer_phone: string;
     activation_date: string;
@@ -278,7 +278,7 @@ export default function StoreDashboard() {
       const { data: searchResultData, error: searchError } = await supabase
         .rpc('search_device_by_imei', {
           p_imei: trimmedIMEI,
-          p_user_ip: null
+          p_user_ip: undefined
         });
 
       console.log('Search result:', { searchResultData, error: searchError });
@@ -350,6 +350,7 @@ export default function StoreDashboard() {
           replaced_at: result.replaced_at || null,
           imported_by: null,
           import_batch: null,
+          warranty_months: result.warranty_months || 12,
           device_models: {
             id: result.model_id!,
             model_name: result.model_name || 'לא ידוע',
@@ -404,6 +405,7 @@ export default function StoreDashboard() {
         replaced_at: result.replaced_at || null,
         imported_by: null,
         import_batch: null,
+        warranty_months: result.warranty_months || 12,
         device_models: {
           id: result.model_id!,
           model_name: result.model_name || 'לא ידוע',
@@ -584,6 +586,15 @@ export default function StoreDashboard() {
     }
   };
 
+  if (isUserLoading) {
+    return (
+      <div className="flex items-center justify-center h-[50vh]">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+        <span className="sr-only">טוען נתונים...</span>
+      </div>
+    );
+  }
+  
   return (
     <div className="space-y-6">
       <BackgroundRefreshIndicator

@@ -3,9 +3,8 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { fetchLabRepairTypes } from '@/lib/api/repairs';
+import { fetchLabRepairTypes, fetchLabPricingData } from '@/lib/api/repairs';
 import type { RepairType } from '@/types';
-
 export interface Lab {
   id: string;
   full_name: string | null;
@@ -286,6 +285,59 @@ export function useLabRepairPrices(repairTypeId: string | null) {
     isFetching: query.isFetching,
     isError: query.isError,
     error: query.error,
+    refetch: query.refetch,
+  };
+}
+
+// 1. הוסף לייבואים למעלה:
+ // הוספנו את fetchLabPricingData
+
+/**
+ * Hook לניהול מחירון מעבדה (Active & Inactive)
+ */
+export function useLabPricingData(labId: string | null) {
+  const queryClient = useQueryClient();
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
+  const query = useQuery({
+    queryKey: ['lab-pricing-management', labId],
+    queryFn: () => {
+      if (!labId) throw new Error('Lab ID is required');
+      return fetchLabPricingData(labId);
+    },
+    enabled: !!labId,
+  });
+
+  // Realtime Subscription
+  useEffect(() => {
+    if (!labId) return;
+    const supabase = createClient();
+
+    const triggerRefresh = () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['lab-pricing-management', labId] });
+      }, 1000);
+    };
+
+    const channel = supabase
+      .channel(`lab-pricing-management-${labId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'lab_repair_prices', filter: `lab_id=eq.${labId}` },
+        triggerRefresh
+      )
+      .subscribe();
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      supabase.removeChannel(channel);
+    };
+  }, [labId, queryClient]);
+
+  return {
+    pricingData: query.data || [],
+    isLoading: query.isLoading,
     refetch: query.refetch,
   };
 }

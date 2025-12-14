@@ -36,7 +36,6 @@ import {
 import { useRouter } from 'next/navigation';
 import { formatDate } from '@/lib/utils';
 
-// LabUser is now imported from @/types
 
 const editLabSchema = z.object({
   email: z.string().email('כתובת אימייל לא תקינה'),
@@ -75,12 +74,9 @@ interface LabStats {
 }
 
 export default function LabsPage() {
-  // React Query hook with Realtime - filter for labs only
   const { users: allUsers, isLoading, isFetching } = useAllUsers();
-  const labs = useMemo(() => allUsers.filter(u => u.role === 'lab'), [allUsers]);
+  const labs = useMemo(() => (allUsers || []).filter(u => u.role === 'lab'), [allUsers]);
 
-  // Local state
-  const [filteredLabs, setFilteredLabs] = useState<LabUser[]>([]);
   const [selectedLab, setSelectedLab] = useState<LabUser | null>(null);
 
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -124,24 +120,29 @@ export default function LabsPage() {
     inactive: labs.filter(l => !l.is_active).length,
   };
 
-  useEffect(() => {
+  const filteredLabs = useMemo(() => {
+    if (!labs) return [];
+
     let filtered = labs;
 
+    // סינון לפי סטטוס
     if (statusFilter !== 'all') {
       const isActive = statusFilter === 'active';
       filtered = filtered.filter(l => l.is_active === isActive);
     }
 
     if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(l =>
-        l.email?.toLowerCase().includes(query) ||
-        l.full_name?.toLowerCase().includes(query) ||
-        l.phone?.includes(query)
-      );
+      const query = searchQuery.toLowerCase().trim();
+      if (query.length > 0) {
+        filtered = filtered.filter(l =>
+          (l.email || '').toLowerCase().includes(query) ||
+          (l.full_name || '').toLowerCase().includes(query) ||
+          (l.phone || '').includes(query)
+        );
+      }
     }
 
-    setFilteredLabs(filtered);
+    return filtered;
   }, [labs, searchQuery, statusFilter]);
 
   const fetchLabStats = async (lab: LabUser) => {

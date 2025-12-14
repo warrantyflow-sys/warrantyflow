@@ -1941,18 +1941,16 @@ BEGIN
        w_lat.customer_phone ILIKE '%' || p_search || '%')
       AND (p_model_filter IS NULL OR dm.model_name = p_model_filter)
   ),
-  -- שלב 2: חישוב סטטוס אחריות (פעולה מהירה בזיכרון)
   calculated_status AS (
     SELECT *,
       CASE
         WHEN is_replaced THEN 'replaced'
-        WHEN warranty_id IS NOT NULL AND warranty_is_active AND expiry_date >= CURRENT_DATE THEN 'active'
+        WHEN warranty_id IS NOT NULL AND warranty_is_active AND expiry_date >= CURRENT_DATE  THEN 'active'
         WHEN warranty_id IS NOT NULL THEN 'expired'
         ELSE 'new'
       END AS warranty_status
     FROM filtered_devices
   )
-  -- שלב 3: שליפה סופית + ספירה כבדה רק עבור העמוד הנוכחי
   SELECT 
     (SELECT COUNT(*) FROM calculated_status WHERE (p_status_filter IS NULL OR warranty_status = p_status_filter)),
     COALESCE(json_agg(row_to_json(t)), '[]'::JSON)

@@ -774,6 +774,13 @@ export type Database = {
         Returns: Json
       }
       get_my_role: { Args: never; Returns: string }
+      get_periodic_repair_stats: {
+        Args: {
+          p_start_date: string
+          p_end_date: string
+        }
+        Returns: Json
+      }
       get_repair_stats: { Args: never; Returns: Json }
       get_repairs_paginated: {
         Args: {

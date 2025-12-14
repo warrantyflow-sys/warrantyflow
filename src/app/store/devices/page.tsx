@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
-import { createClient } from '@/lib/supabase/client';
-import type { Device, DeviceModel, Warranty, Repair } from '@/types';
+import type { Warranty } from '@/types';
 import { useStoreWarranties } from '@/hooks/queries/useWarranties';
+// שימוש ב-Hook הקיים שלך ששולף את כל הבקשות של החנות ומנהל Realtime
+import { useStoreReplacementRequests } from '@/hooks/queries/useReplacements';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
 import { StoreDevicesPageSkeleton } from '@/components/ui/loading-skeletons';
@@ -34,7 +35,7 @@ import {
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { useToast } from '@/components/ui/use-toast';
+// import { useToast } from '@/components/ui/use-toast'; // לא בשימוש כרגע, אפשר להחזיר אם צריך
 import {
   Package,
   Search,
@@ -46,8 +47,8 @@ import {
   Download
 } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
-import { useRouter } from 'next/navigation';
 
+// הגדרת הטיפוסים (נשאר זהה למקור)
 type StoreWarranty = Warranty & {
   device?: {
     id: string;
@@ -79,25 +80,53 @@ export default function StoreDevicesPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(50);
 
-  // React Query hook - fetch all warranties
+  // 1. שליפת כל האחריויות
   const {
     warranties,
     total,
     isLoading: isWarrantiesLoading,
-    isFetching,
-    refetch: refetchWarranties,
+    isFetching: isWarrantiesFetching,
   } = useStoreWarranties(storeId, 1, 10000); // Large page size to get all data
 
-  const isLoading = isUserLoading || isWarrantiesLoading;
+  // 2. שליפת כל בקשות ההחלפה של החנות (כולל Realtime)
+  const { 
+    requests: replacementRequests, 
+    isLoading: isReplacementsLoading,
+    isFetching: isReplacementsFetching
+  } = useStoreReplacementRequests(storeId);
+
+  const isLoading = isUserLoading || isWarrantiesLoading || isReplacementsLoading;
+  const isFetching = isWarrantiesFetching || isReplacementsFetching;
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'expired'>('all');
   const [selectedWarranty, setSelectedWarranty] = useState<StoreWarranty | null>(null);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
-  const [replacementCounts, setReplacementCounts] = useState<Map<string, { pending: number; approved: number }>>(new Map());
 
-  const { toast } = useToast();
-  const router = useRouter();
+  // 3. עיבוד בקשות ההחלפה ל-Map לגישה מהירה (O(1)) לפי device_id
+  const replacementCounts = useMemo(() => {
+    const counts = new Map<string, { pending: number; approved: number }>();
+    
+    if (!replacementRequests || !Array.isArray(replacementRequests)) return counts;
+
+    replacementRequests.forEach((req: any) => {
+      // req מגיע מה-Hook שלך, אנו מניחים שיש לו device_id ו-status לפי השאילתה ב-Supabase
+      const deviceId = req.device_id;
+      if (!deviceId) return;
+
+      const current = counts.get(deviceId) || { pending: 0, approved: 0 };
+
+      if (req.status === 'pending') {
+        current.pending++;
+      } else if (req.status === 'approved') {
+        current.approved++;
+      }
+
+      counts.set(deviceId, current);
+    });
+
+    return counts;
+  }, [replacementRequests]);
 
   // Calculate stats when warranties change
   const stats = useMemo(() => {
@@ -124,47 +153,7 @@ export default function StoreDevicesPage() {
     };
   }, [warranties, total]);
 
-  // שליפת בקשות החלפה לכל המכשירים
-  useEffect(() => {
-    const fetchReplacementCounts = async () => {
-      if (!warranties || warranties.length === 0) {
-        setReplacementCounts(new Map());
-        return;
-      }
-
-      const deviceIds = warranties
-        .map((w: any) => w.device?.id)
-        .filter(Boolean);
-
-      if (deviceIds.length === 0) {
-        setReplacementCounts(new Map());
-        return;
-      }
-
-      const supabaseClient = createClient();
-      const { data: replacementData } = await supabaseClient
-        .from('replacement_requests')
-        .select('device_id, status')
-        .in('device_id', deviceIds);
-
-      const counts = new Map<string, { pending: number; approved: number }>();
-      deviceIds.forEach((id: string) => counts.set(id, { pending: 0, approved: 0 }));
-
-      (replacementData || []).forEach((req: any) => {
-        const deviceCounts = counts.get(req.device_id);
-        if (deviceCounts) {
-          if (req.status === 'pending') deviceCounts.pending++;
-          else if (req.status === 'approved') deviceCounts.approved++;
-        }
-      });
-
-      setReplacementCounts(counts);
-    };
-
-    fetchReplacementCounts();
-  }, [warranties]);
-
-  // --- תיקון: שימוש ב-useMemo במקום useState+useEffect ---
+  // סינון
   const filteredWarranties = useMemo(() => {
     if (!warranties) return [];
     
@@ -202,7 +191,7 @@ export default function StoreDevicesPage() {
     setCurrentPage(1);
   }, [searchQuery, filterStatus]);
 
-  // חישוב פגינציה בזמן אמת
+  // חישוב פגינציה
   const paginatedWarranties = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
     const endIndex = startIndex + itemsPerPage;
@@ -255,9 +244,10 @@ export default function StoreDevicesPage() {
 
   const getReplacementBadge = (deviceId: string | undefined) => {
     if (!deviceId) return null;
+    // שימוש ב-Map המחושב
     const counts = replacementCounts.get(deviceId);
     if (!counts || (counts.pending === 0 && counts.approved === 0)) return null;
-  
+    
     return (
       <div className="flex flex-col gap-1">
         {counts.pending > 0 && (

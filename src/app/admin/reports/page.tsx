@@ -2,8 +2,6 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-
-// Force dynamic rendering to prevent prerendering issues
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 import { createClient } from '@/lib/supabase/client';
@@ -16,24 +14,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
-  FileText,
   Download,
   TrendingUp,
-  BarChart3,
-  PieChart,
-  Calendar,
   Package,
   Wrench,
   Shield,
-  Building2,
-  Users,
-  CheckCircle,
-  AlertCircle,
-  RefreshCw,
-  Printer
+  Printer,
+  Store, 
+  AlertTriangle, 
+  CheckCircle2, 
+  XCircle, 
 } from 'lucide-react';
 import ShekelIcon from '@/components/ui/shekel-icon';
 import { formatDate, formatCurrency } from '@/lib/utils';
@@ -75,7 +68,7 @@ interface ReportData {
     totalRevenue: number;
     paidAmount: number;
     pendingAmount: number;
-    byLab: Record<string, { paid: number; pending: number }>;
+    byLab: Array<{ name: string; paid: number; pending: number }>;
     monthlyPayments: { month: string; amount: number }[];
   };
   performance?: {
@@ -92,7 +85,6 @@ export default function AdminReportsPage() {
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [reportData, setReportData] = useState<ReportData>({});
-  const [isLoading, setIsLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const supabase = createClient();
 
@@ -165,7 +157,7 @@ export default function AdminReportsPage() {
   }, [generateReport]);
 
   const generateSummaryReport = async () => {
-    if (typeof window === 'undefined') return undefined; // Skip during SSR
+    if (typeof window === 'undefined') return undefined;
     const { count: totalDevices } = await supabase
       .from('devices')
       .select('*', { count: 'exact', head: true });
@@ -218,7 +210,7 @@ export default function AdminReportsPage() {
     if (typeof window === 'undefined') return undefined; // Skip during SSR
     const { data: devices } = await supabase
       .from('devices')
-      .select('created_at, device_models(model_name), warranties!devices_id_fkey(is_active)')
+      .select('created_at, device_models(model_name), warranties(is_active)')
       .gte('created_at', startDate)
       .lte('created_at', endDate);
 
@@ -249,7 +241,7 @@ export default function AdminReportsPage() {
     });
 
     const totalDevices = deviceList.length || 0;
-    const activeDevices = byStatus['active'] || 0;
+    const activeDevices = byStatus['באחריות'] || 0;
     const activationRate = totalDevices > 0 ? (activeDevices / totalDevices) * 100 : 0;
 
     return {
@@ -394,7 +386,11 @@ export default function AdminReportsPage() {
       totalRevenue,
       paidAmount,
       pendingAmount: 0,
-      byLab,
+      byLab: Object.entries(byLab).map(([name, stats]) => ({
+        name,
+        paid: stats.paid,
+        pending: stats.pending
+      })), 
       monthlyPayments: Object.entries(monthlyPayments).map(([month, amount]) => ({ month, amount })),
     };
   };
@@ -553,17 +549,6 @@ export default function AdminReportsPage() {
     link.click();
   };
 
-  const getFaultTypeLabel = (type: string) => {
-    const labels: Record<string, string> = {
-      screen: 'מסך',
-      charging_port: 'שקע טעינה',
-      flash: 'פנס',
-      speaker: 'רמקול',
-      board: 'לוח אם',
-      other: 'אחר',
-    };
-    return labels[type] || type;
-  };
 
   return (
     <div className="space-y-6">
@@ -834,6 +819,171 @@ export default function AdminReportsPage() {
                 </Card>
               </div>
             </>
+          )}
+
+          {/* Warranties Report */}
+          {reportType === 'warranties' && reportData.warranties && (
+                  <div className="space-y-6">
+                    {/* KPI Cards */}
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <Card>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                          <CardTitle className="text-sm font-medium">אחריות פעילה</CardTitle>
+                          <CheckCircle2 className="h-4 w-4 text-green-500" />
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-2xl font-bold">{reportData.warranties.activeCount}</div>
+                          <p className="text-xs text-muted-foreground">מכשירים מכוסים כרגע</p>
+                        </CardContent>
+                      </Card>
+
+                      <Card>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                          <CardTitle className="text-sm font-medium">פג תוקף</CardTitle>
+                          <XCircle className="h-4 w-4 text-red-500" />
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-2xl font-bold">{reportData.warranties.expiredCount}</div>
+                          <p className="text-xs text-muted-foreground">בתקופה שנבחרה</p>
+                        </CardContent>
+                      </Card>
+
+                      <Card>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                          <CardTitle className="text-sm font-medium">פג תוקף בקרוב</CardTitle>
+                          <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-2xl font-bold">{reportData.warranties.expiringNext30Days}</div>
+                          <p className="text-xs text-muted-foreground">ב-30 הימים הקרובים</p>
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {/* Top Stores */}
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2">
+                            <Store className="h-5 w-5" />
+                            חנויות מובילות
+                          </CardTitle>
+                          <CardDescription>כמות הפעלות אחריות לפי חנות</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <ScrollArea className="h-[300px] pr-4">
+                            <div className="space-y-4">
+                              {Object.entries(reportData.warranties.byStore)
+                                .sort(([, a], [, b]) => b - a) // מיון מהגדול לקטן
+                                .map(([storeName, count], index) => (
+                                  <div key={storeName} className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <Badge variant="outline" className="w-6 h-6 flex items-center justify-center p-0 rounded-full">
+                                        {index + 1}
+                                      </Badge>
+                                      <span className="font-medium text-sm">{storeName}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <span className="font-bold">{count}</span>
+                                      <span className="text-xs text-muted-foreground">הפעלות</span>
+                                    </div>
+                                  </div>
+                                ))}
+                            </div>
+                          </ScrollArea>
+                        </CardContent>
+                      </Card>
+
+                      {/* Monthly Activations Trend */}
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2">
+                            <TrendingUp className="h-5 w-5" />
+                            מגמת הפעלות
+                          </CardTitle>
+                          <CardDescription>הפעלות חדשות לפי חודש</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-4">
+                            {reportData.warranties.monthlyActivations.length > 0 ? (
+                                reportData.warranties.monthlyActivations
+                                .slice(-6) // הצג רק 6 חודשים אחרונים
+                                .map((item) => (
+                                  <div key={item.month} className="flex items-center gap-2">
+                                    <span className="w-16 text-sm text-muted-foreground">{item.month}</span>
+                                    <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
+                                      <div 
+                                        className="h-full bg-primary" 
+                                        style={{ 
+                                          width: `${(item.count / Math.max(...reportData.warranties!.monthlyActivations.map((i: any) => i.count))) * 100}%` 
+                                        }} 
+                                      />
+                                    </div>
+                                    <span className="w-8 text-sm font-medium text-right">{item.count}</span>
+                                  </div>
+                                ))
+                            ) : (
+                              <div className="text-center py-8 text-muted-foreground">אין נתונים להצגה</div>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  </div>
+                )}
+          {/* Payments Report */}
+          {reportType === 'payments' && reportData.payments && (
+            <div className="grid gap-4 md:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>סיכום פיננסי</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center border-b pb-2">
+                      <span className="text-muted-foreground">סה"כ הכנסות</span>
+                      <span className="text-xl font-bold">{formatCurrency(reportData.payments.totalRevenue)}</span>
+                    </div>
+                    <div className="flex justify-between items-center border-b pb-2">
+                      <span className="text-muted-foreground">שולם בפועל</span>
+                      <span className="text-xl font-bold text-green-600">{formatCurrency(reportData.payments.paidAmount)}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-muted-foreground">יתרה לתשלום</span>
+                      <span className="text-xl font-bold text-red-600">{formatCurrency(reportData.payments.pendingAmount)}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>תשלומים לפי מעבדה</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ScrollArea className="h-[300px]">
+                    <div className="space-y-4">
+                      {reportData.payments.byLab.map((lab: any, index: number) => (
+                        <div key={index} className="flex items-center justify-between">
+                          <div className="space-y-1">
+                            <p className="font-medium leading-none">{lab.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatCurrency(lab.paid)} שולם
+                            </p>
+                          </div>
+                          <div className="font-bold">
+                            {formatCurrency(lab.paid + lab.pending)}
+                          </div>
+                        </div>
+                      ))}
+                      {reportData.payments.byLab.length === 0 && (
+                        <p className="text-center text-muted-foreground py-4">אין נתונים לתצוגה</p>
+                      )}
+                    </div>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+            </div>
           )}
 
           {/* Performance Report */}

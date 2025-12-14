@@ -4,23 +4,6 @@ import { sanitizePostgrestFilter } from '@/lib/utils';
 
 type RepairStatus = Database["public"]["Enums"]["repair_status"];
 
-/**
- * API Functions for Repairs - OPTIMIZED VERSION v2.0
- * 
- * ✅ אופטימיזציות שבוצעו:
- * 1. שימוש ב-RPC functions במקום שאילתות ישירות
- * 2. ספירה נפרדת ללא JOINs (פותר timeout)
- * 3. LEFT JOINs במקום INNER JOINs
- * 4. חיפוש IMEI נפרד עם פונקציה ייעודית
- * 
- * @version 2.0
- * @date 2025-01
- */
-
-// ═══════════════════════════════════════════════════════════════
-// TYPES
-// ═══════════════════════════════════════════════════════════════
-
 export interface RepairType {
   id: string;
   name: string;
@@ -83,8 +66,8 @@ export interface RepairFilters {
   status?: string;
   labId?: string;
   search?: string;
-  repairTypeId?: string; // Added new filter
-  modelId?: string;     // Added new filter
+  repairTypeId?: string;
+  modelId?: string;
 }
 
 export interface PaginatedRepairsResponse {
@@ -95,22 +78,6 @@ export interface PaginatedRepairsResponse {
   totalPages?: number;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// MAIN FUNCTIONS
-// ═══════════════════════════════════════════════════════════════
-
-/**
- * ✅ שליפת תיקונים עם pagination ופילטרים (מאופטם עם RPC)
- * 
- * שיפורים בגרסה 2.0:
- * - ספירה ללא JOINs (פותר timeout על טבלאות גדולות)
- * - שימוש ב-RPC function במקום שאילתה ישירה
- * - חיפוש IMEI נפרד לביצועים טובים יותר
- * 
- * @param page - מספר עמוד (1-based)
- * @param pageSize - כמות רשומות בעמוד
- * @param filters - פילטרים (status, labId, search, repairTypeId, modelId)
- */
 export async function fetchRepairsWithPagination(
   page: number = 1,
   pageSize: number = 50,
@@ -120,9 +87,6 @@ export async function fetchRepairsWithPagination(
   
   const searchTerm = filters.search?.trim() || '';
   
-  // ═══════════════════════════════════════════════════════════════
-  // אם החיפוש הוא IMEI (15 ספרות) - השתמש בפונקציה ייעודית
-  // ═══════════════════════════════════════════════════════════════
   if (/^\d{15}$/.test(searchTerm)) {
     const { data, error } = await supabase.rpc('search_repairs_by_imei', {
       p_imei: searchTerm,
@@ -131,36 +95,29 @@ export async function fetchRepairsWithPagination(
     });
 
     if (error) {
-      console.error('❌ Error searching repairs by IMEI:', error);
       throw new Error(`Failed to search repairs: ${error.message}`);
     }
 
     return normalizeRpcResponse(data);
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // שאילתה רגילה - שימוש ב-RPC המאופטם
-  // ═══════════════════════════════════════════════════════════════
   const { data, error } = await supabase.rpc('get_repairs_paginated', {
     p_page: page,
     p_page_size: pageSize,
-    p_status: filters.status && filters.status !== 'all' ? filters.status : null,
-    p_lab_id: filters.labId && filters.labId !== 'all' ? filters.labId : null,
-    p_search: searchTerm || null,
+    p_status: filters.status && filters.status !== 'all' ? filters.status : undefined,
+    p_lab_id: filters.labId && filters.labId !== 'all' ? filters.labId : undefined,
+    p_search: searchTerm || undefined,
     p_repair_type_id: filters.repairTypeId && filters.repairTypeId !== 'all' ? filters.repairTypeId : null,
     p_model_id: filters.modelId && filters.modelId !== 'all' ? filters.modelId : null,
   });
 
   if (error) {
-    console.error('❌ Error fetching repairs:', error);
 
     const errorMessage = error.message || '';
     const errorCode = error.code || '';
 
-    // Fallback לשיטה הישנה אם ה-RPC לא קיים או שיש אי-התאמה בחתימה
-    // 42883 = Undefined Function
+
     if (errorMessage.includes('function') || errorCode === '42883' || errorCode === 'PGRST202') {
-      console.warn('⚠️ RPC not found or signature mismatch, falling back to direct query');
       return fetchRepairsWithPaginationLegacy(page, pageSize, filters);
     }
     
@@ -185,11 +142,8 @@ export async function fetchLabRepairsWithPagination(
   });
 
   if (error) {
-    console.error('❌ Error fetching lab repairs:', error);
     
-    // Fallback לשיטה הישנה אם ה-RPC לא קיים
     if (error.message.includes('function') || error.code === '42883') {
-      console.warn('⚠️ RPC not found, falling back to direct query');
       return fetchLabRepairsWithPaginationLegacy(labId, page, pageSize);
     }
     
@@ -199,9 +153,6 @@ export async function fetchLabRepairsWithPagination(
   return normalizeRpcResponse(data);
 }
 
-/**
- * ✅ שליפת סוגי תיקונים זמינים למעבדה
- */
 export async function fetchLabRepairTypes(labId: string): Promise<RepairType[]> {
   const supabase = createClient();
 
@@ -233,14 +184,6 @@ export async function fetchLabRepairTypes(labId: string): Promise<RepairType[]> 
   return repairTypesWithPrices;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// LEGACY FALLBACK FUNCTIONS
-// ═══════════════════════════════════════════════════════════════
-
-/**
- * @deprecated Fallback function - use RPC version
- * משמש כ-fallback אם ה-RPC עדיין לא הותקן
- */
 async function fetchRepairsWithPaginationLegacy(
   page: number = 1,
   pageSize: number = 50,
@@ -250,9 +193,6 @@ async function fetchRepairsWithPaginationLegacy(
   const startIndex = (page - 1) * pageSize;
   const endIndex = startIndex + pageSize - 1;
 
-  // ═══════════════════════════════════════════════════════════════
-  // שלב 1: ספירה מהירה - ללא JOINs
-  // ═══════════════════════════════════════════════════════════════
   let countQuery = supabase
     .from('repairs')
     .select('id', { count: 'exact', head: true });
@@ -273,14 +213,9 @@ async function fetchRepairsWithPaginationLegacy(
   const { count, error: countError } = await countQuery;
 
   if (countError) {
-    console.error('❌ Error counting repairs:', countError);
     throw new Error(`Failed to count repairs: ${countError.message}`);
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // שלב 2: שליפת נתונים עם JOINs - רק על העמוד הנוכחי
-  // שימוש ב-LEFT JOIN במקום INNER JOIN
-  // ═══════════════════════════════════════════════════════════════
   let dataQuery = supabase
     .from('repairs')
     .select(`
@@ -341,11 +276,9 @@ async function fetchRepairsWithPaginationLegacy(
     .range(startIndex, endIndex);
 
   if (error) {
-    console.error('❌ Error fetching repairs:', error);
     throw new Error(`Failed to fetch repairs: ${error.message}`);
   }
 
-  // נורמליזציה
   const normalizedData = normalizeRepairsData(data || []);
 
   return { 
@@ -357,9 +290,6 @@ async function fetchRepairsWithPaginationLegacy(
   };
 }
 
-/**
- * @deprecated Fallback function - use RPC version
- */
 async function fetchLabRepairsWithPaginationLegacy(
   labId: string,
   page: number = 1,
@@ -415,7 +345,6 @@ async function fetchLabRepairsWithPaginationLegacy(
     .range(startIndex, endIndex);
 
   if (error) {
-    console.error('❌ Error fetching lab repairs:', error);
     throw new Error(`Failed to fetch repairs: ${error.message}`);
   }
 
@@ -430,22 +359,13 @@ async function fetchLabRepairsWithPaginationLegacy(
   };
 }
 
-// ═══════════════════════════════════════════════════════════════
-// HELPER FUNCTIONS
-// ═══════════════════════════════════════════════════════════════
-
-/**
- * נורמליזציה של תשובת RPC
- */
 function normalizeRpcResponse(data: any): PaginatedRepairsResponse {
   if (!data) {
     return { data: [], count: 0, page: 1, pageSize: 50, totalPages: 0 };
   }
 
-  // הנתונים מגיעים כבר בפורמט הנכון מה-RPC
   const repairs = Array.isArray(data.data) ? data.data : [];
   
-  // נורמליזציה לתאימות לאחור
   const normalizedRepairs = repairs.map((repair: any) => ({
     ...repair,
     device: repair.device ? {
@@ -489,16 +409,32 @@ function normalizeRepairsData(data: any[]): Repair[] {
   }));
 }
 
-// ═══════════════════════════════════════════════════════════════
-// DEPRECATED FUNCTIONS
-// ═══════════════════════════════════════════════════════════════
 
-/**
- * @deprecated 
- */
 export async function fetchLabRepairs(labId: string): Promise<Repair[]> {
-  console.warn('⚠️ fetchLabRepairs is deprecated. Use fetchLabRepairsWithPagination instead.');
   
   const result = await fetchLabRepairsWithPagination(labId, 1, 100);
   return result.data;
+}
+
+export async function fetchLabPricingData(labId: string) {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from('lab_repair_prices')
+    .select(`
+      *,
+      repair_types:repair_types (
+        id,
+        name,
+        description
+      )
+    `)
+    .eq('lab_id', labId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    throw new Error(`Failed to fetch lab pricing: ${error.message}`);
+  }
+
+  return data || [];
 }
