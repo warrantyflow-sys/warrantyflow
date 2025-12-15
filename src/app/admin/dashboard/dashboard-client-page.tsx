@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation'; // הוספת ייבואים
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useAdminDashboardStats } from '@/hooks/queries/useAdminDashboard';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
@@ -23,22 +23,17 @@ import {
   FileBarChart
 } from 'lucide-react';
 
-// הגדרת טיפוס לדיאלוגים הפעילים למניעת ריבוי משתני state
 type ActiveDialog = 'models' | 'repair-types' | 'lab-prices' | null;
 
 export default function AdminDashboard() {
-  // 1. Data Fetching
   const { stats, isFetching, isError } = useAdminDashboardStats();
   const { user, isLoading: isUserLoading } = useCurrentUser();
   
-  // ניהול URL ו-Router
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  // 2. UI State Management
   const [activeDialog, setActiveDialog] = useState<ActiveDialog>(null);
 
-  // 3. Effect: האזנה לשינויים ב-URL ופתיחת הדיאלוג המתאים
   useEffect(() => {
     const dialogParam = searchParams.get('dialog');
     if (dialogParam === 'models' || dialogParam === 'repair-types' || dialogParam === 'lab-prices') {
@@ -48,24 +43,19 @@ export default function AdminDashboard() {
     }
   }, [searchParams]);
 
-  // פונקציית עזר לסגירת דיאלוג וניקוי ה-URL
   const handleCloseDialog = (isOpen: boolean) => {
     if (!isOpen) {
       setActiveDialog(null);
-      // מנקה את הפרמטר מה-URL כדי שריענון הדף לא יפתח את הדיאלוג שוב
-      // וכדי לאפשר פתיחה מחדש בלחיצה נוספת על הקישור
       router.push('/admin/dashboard', { scroll: false });
     }
   };
 
-  // פונקציית עזר לפתיחת דיאלוג ועדכון ה-URL (לחיצה מתוך הדשבורד)
   const handleOpenDialog = (dialogName: ActiveDialog) => {
     if (dialogName) {
       router.push(`/admin/dashboard?dialog=${dialogName}`, { scroll: false });
     }
   };
 
-  // הגדרת קיצורי הדרך במערך לניקיון הקוד
   const quickLinks = [
     { title: "ניהול משתמשים", description: "צפייה ועריכת משתמשי מערכת", icon: Users, href: "/admin/users", color: "blue" },
     { title: "ניהול מכשירים", description: "מאגר המכשירים והאחריויות", icon: Smartphone, href: "/admin/devices", color: "indigo" },
@@ -73,7 +63,6 @@ export default function AdminDashboard() {
     { title: "דוחות", description: "דוחות פעילות ומלאי", icon: FileBarChart, href: "/admin/reports", color: "green" }
   ];
 
-  // הגדרת כרטיסי ההגדרות - עודכנו להשתמש ב-handleOpenDialog
   const settingsCards = [
     { 
       title: "ניהול דגמים", 
@@ -95,7 +84,6 @@ export default function AdminDashboard() {
     }
   ];
 
-  // הגדרת כרטיסי הסטטיסטיקה (Stats)
   const statCards = [
     { title: 'סה"כ מכשירים', value: stats.total, icon: Smartphone, color: 'blue', bg: 'bg-blue-100', text: 'text-blue-600' },
     { title: 'חדשים במלאי', value: stats.new, icon: Package, color: 'green', bg: 'bg-green-100', text: 'text-green-600' },
@@ -173,7 +161,6 @@ export default function AdminDashboard() {
         </div>
       </section>
 
-      {/* Dialogs - מעודכנים להשתמש ב-handleCloseDialog */}
       <DeviceModelsDialog
         open={activeDialog === 'models'}
         onOpenChange={handleCloseDialog}

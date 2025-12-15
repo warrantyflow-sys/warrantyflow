@@ -194,7 +194,6 @@ export function DeviceModelsDialog({ open, onOpenChange }: DeviceModelsDialogPro
       if (editingModel) {
         const { error } = await supabase
           .from('device_models')
-          // @ts-ignore - Supabase type inference issue
           .update(dataToSave)
           .eq('id', editingModel.id);
 
@@ -207,7 +206,6 @@ export function DeviceModelsDialog({ open, onOpenChange }: DeviceModelsDialogPro
       } else {
         const { error } = await supabase
           .from('device_models')
-          // @ts-ignore - Supabase type inference issue
           .insert([dataToSave]);
 
         if (error) throw error;

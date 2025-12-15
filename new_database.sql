@@ -44,6 +44,7 @@ DO $$ BEGIN RAISE NOTICE '📦 Installing extensions...'; END $$;
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- SECTION 2: ENUMS
@@ -461,6 +462,28 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_actor ON audit_log(actor_user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON audit_log(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action);
 CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at DESC);
+
+-- Index for common admin filters (status + lab + created_at)
+CREATE INDEX IF NOT EXISTS idx_repairs_admin_filters 
+ON repairs(status, lab_id, created_at DESC);
+
+-- Index for repair type filter
+CREATE INDEX IF NOT EXISTS idx_repairs_type_created 
+ON repairs(repair_type_id, created_at DESC) 
+WHERE repair_type_id IS NOT NULL;
+
+-- Composite index for device model filtering
+CREATE INDEX IF NOT EXISTS idx_devices_model_id 
+ON devices(model_id);
+
+-- Trigram indexes for fast ILIKE search (requires pg_trgm)
+CREATE INDEX IF NOT EXISTS idx_repairs_customer_name_trgm 
+ON repairs USING gin (customer_name gin_trgm_ops)
+WHERE customer_name IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_repairs_customer_phone_trgm 
+ON repairs USING gin (customer_phone gin_trgm_ops)
+WHERE customer_phone IS NOT NULL;
 
 -- Update statistics
 ANALYZE users;
@@ -1589,8 +1612,8 @@ CREATE OR REPLACE FUNCTION get_repairs_paginated(
   p_status TEXT DEFAULT NULL,
   p_lab_id UUID DEFAULT NULL,
   p_search TEXT DEFAULT NULL,
-  p_repair_type_id UUID DEFAULT NULL, -- New parameter for repair type filtering
-  p_model_id UUID DEFAULT NULL        -- New parameter for device model filtering
+  p_repair_type_id UUID DEFAULT NULL,
+  p_model_id UUID DEFAULT NULL
 )
 RETURNS JSON
 LANGUAGE plpgsql
@@ -1601,69 +1624,151 @@ DECLARE
   v_offset INT;
   v_total BIGINT;
   v_data JSON;
+  v_needs_device_join BOOLEAN;
+  v_search_term TEXT;
 BEGIN
-  -- 🔒 Security check: Ensure the current user is an administrator
   IF NOT is_admin() THEN
     RAISE EXCEPTION 'Access denied: Only admins can view all repairs';
   END IF;
 
   v_offset := (p_page - 1) * p_page_size;
+  
+  -- Normalize search term (NULL if empty)
+  v_search_term := NULLIF(TRIM(COALESCE(p_search, '')), '');
+  
+  -- Determine if we need the device JOIN (only for model filter)
+  v_needs_device_join := (p_model_id IS NOT NULL);
 
-  -- Calculate total records (COUNT)
-  -- The LEFT JOIN to devices is performed only if filtering by model or searching by text.
-  SELECT COUNT(r.id) INTO v_total
-  FROM repairs r
-  LEFT JOIN devices d ON r.device_id = d.id -- Required for device model filtering
-  WHERE 
-    -- Precise and faster filters
-    (p_status IS NULL OR r.status::TEXT = p_status)
-    AND (p_lab_id IS NULL OR r.lab_id = p_lab_id)
-    AND (p_repair_type_id IS NULL OR r.repair_type_id = p_repair_type_id)
-    AND (p_model_id IS NULL OR d.model_id = p_model_id)
-    -- Text search (slower)
-    AND (p_search IS NULL OR 
-         r.customer_name ILIKE '%' || p_search || '%' OR 
-         r.customer_phone ILIKE '%' || p_search || '%');
-
-  -- Fetch the actual data
-  SELECT COALESCE(json_agg(row_to_json(t) ORDER BY t.created_at DESC), '[]'::JSON)
-  INTO v_data
-  FROM (
+  -- ═══════════════════════════════════════════════════════════════════════════
+  -- CASE 1: Need device JOIN (filtering by model)
+  -- ═══════════════════════════════════════════════════════════════════════════
+  IF v_needs_device_join THEN
+    WITH filtered_repairs AS (
+      SELECT 
+        r.id, r.device_id, r.lab_id, r.warranty_id, r.repair_type_id,
+        r.cost, r.status, r.fault_type, r.customer_name, r.customer_phone,
+        r.custom_repair_description, r.custom_repair_price,
+        r.created_at, r.completed_at,
+        COUNT(*) OVER() AS total_count
+      FROM repairs r
+      INNER JOIN devices d ON r.device_id = d.id
+      WHERE 
+        (p_status IS NULL OR r.status::TEXT = p_status)
+        AND (p_lab_id IS NULL OR r.lab_id = p_lab_id)
+        AND (p_repair_type_id IS NULL OR r.repair_type_id = p_repair_type_id)
+        AND (d.model_id = p_model_id)
+        AND (v_search_term IS NULL OR 
+             r.customer_name ILIKE '%' || v_search_term || '%' OR 
+             r.customer_phone ILIKE '%' || v_search_term || '%')
+      ORDER BY r.created_at DESC
+      LIMIT p_page_size
+      OFFSET v_offset
+    )
     SELECT 
-      r.id, r.device_id, r.lab_id, r.warranty_id, r.repair_type_id,
-      r.cost, r.status, r.fault_type, r.customer_name, r.customer_phone,
-      r.custom_repair_description, r.custom_repair_price,
-      r.created_at, r.completed_at,
-      -- Nested Device object
-      CASE WHEN d.id IS NOT NULL THEN
+      COALESCE(MAX(total_count), 0),
+      COALESCE(json_agg(
         json_build_object(
-          'id', d.id, 'imei', d.imei, 'imei2', d.imei2,
-          'device_models', CASE WHEN dm.id IS NOT NULL THEN json_build_object('model_name', dm.model_name) ELSE NULL END
-        )
-      ELSE NULL END AS device,
-      -- Nested Lab object
-      CASE WHEN u.id IS NOT NULL THEN
-        json_build_object('id', u.id, 'full_name', u.full_name, 'email', u.email)
-      ELSE NULL END AS lab,
-      -- Nested Repair Type object
-      CASE WHEN rt.id IS NOT NULL THEN
-        json_build_object('id', rt.id, 'name', rt.name, 'description', rt.description)
-      ELSE NULL END AS repair_type
-    FROM repairs r
-    LEFT JOIN devices d ON r.device_id = d.id
+          'id', fr.id,
+          'device_id', fr.device_id,
+          'lab_id', fr.lab_id,
+          'warranty_id', fr.warranty_id,
+          'repair_type_id', fr.repair_type_id,
+          'cost', fr.cost,
+          'status', fr.status,
+          'fault_type', fr.fault_type,
+          'customer_name', fr.customer_name,
+          'customer_phone', fr.customer_phone,
+          'custom_repair_description', fr.custom_repair_description,
+          'custom_repair_price', fr.custom_repair_price,
+          'created_at', fr.created_at,
+          'completed_at', fr.completed_at,
+          'device', CASE WHEN d.id IS NOT NULL THEN
+            json_build_object(
+              'id', d.id, 'imei', d.imei, 'imei2', d.imei2,
+              'device_models', CASE WHEN dm.id IS NOT NULL 
+                THEN json_build_object('model_name', dm.model_name) 
+                ELSE NULL END
+            )
+          ELSE NULL END,
+          'lab', CASE WHEN u.id IS NOT NULL THEN
+            json_build_object('id', u.id, 'full_name', u.full_name, 'email', u.email)
+          ELSE NULL END,
+          'repair_type', CASE WHEN rt.id IS NOT NULL THEN
+            json_build_object('id', rt.id, 'name', rt.name, 'description', rt.description)
+          ELSE NULL END
+        ) ORDER BY fr.created_at DESC
+      ), '[]'::JSON)
+    INTO v_total, v_data
+    FROM filtered_repairs fr
+    LEFT JOIN devices d ON fr.device_id = d.id
     LEFT JOIN device_models dm ON d.model_id = dm.id
-    LEFT JOIN users u ON r.lab_id = u.id
-    LEFT JOIN repair_types rt ON r.repair_type_id = rt.id
-    WHERE 
-      (p_status IS NULL OR r.status::TEXT = p_status)
-      AND (p_lab_id IS NULL OR r.lab_id = p_lab_id)
-      AND (p_repair_type_id IS NULL OR r.repair_type_id = p_repair_type_id)
-      AND (p_model_id IS NULL OR d.model_id = p_model_id)
-      AND (p_search IS NULL OR r.customer_name ILIKE '%' || p_search || '%' OR r.customer_phone ILIKE '%' || p_search || '%')
-    ORDER BY r.created_at DESC
-    LIMIT p_page_size
-    OFFSET v_offset
-  ) t;
+    LEFT JOIN users u ON fr.lab_id = u.id
+    LEFT JOIN repair_types rt ON fr.repair_type_id = rt.id;
+
+  -- ═══════════════════════════════════════════════════════════════════════════
+  -- CASE 2: No device JOIN needed (most common case - faster!)
+  -- ═══════════════════════════════════════════════════════════════════════════
+  ELSE
+    WITH filtered_repairs AS (
+      SELECT 
+        r.id, r.device_id, r.lab_id, r.warranty_id, r.repair_type_id,
+        r.cost, r.status, r.fault_type, r.customer_name, r.customer_phone,
+        r.custom_repair_description, r.custom_repair_price,
+        r.created_at, r.completed_at,
+        COUNT(*) OVER() AS total_count
+      FROM repairs r
+      WHERE 
+        (p_status IS NULL OR r.status::TEXT = p_status)
+        AND (p_lab_id IS NULL OR r.lab_id = p_lab_id)
+        AND (p_repair_type_id IS NULL OR r.repair_type_id = p_repair_type_id)
+        AND (v_search_term IS NULL OR 
+             r.customer_name ILIKE '%' || v_search_term || '%' OR 
+             r.customer_phone ILIKE '%' || v_search_term || '%')
+      ORDER BY r.created_at DESC
+      LIMIT p_page_size
+      OFFSET v_offset
+    )
+    SELECT 
+      COALESCE(MAX(total_count), 0),
+      COALESCE(json_agg(
+        json_build_object(
+          'id', fr.id,
+          'device_id', fr.device_id,
+          'lab_id', fr.lab_id,
+          'warranty_id', fr.warranty_id,
+          'repair_type_id', fr.repair_type_id,
+          'cost', fr.cost,
+          'status', fr.status,
+          'fault_type', fr.fault_type,
+          'customer_name', fr.customer_name,
+          'customer_phone', fr.customer_phone,
+          'custom_repair_description', fr.custom_repair_description,
+          'custom_repair_price', fr.custom_repair_price,
+          'created_at', fr.created_at,
+          'completed_at', fr.completed_at,
+          'device', CASE WHEN d.id IS NOT NULL THEN
+            json_build_object(
+              'id', d.id, 'imei', d.imei, 'imei2', d.imei2,
+              'device_models', CASE WHEN dm.id IS NOT NULL 
+                THEN json_build_object('model_name', dm.model_name) 
+                ELSE NULL END
+            )
+          ELSE NULL END,
+          'lab', CASE WHEN u.id IS NOT NULL THEN
+            json_build_object('id', u.id, 'full_name', u.full_name, 'email', u.email)
+          ELSE NULL END,
+          'repair_type', CASE WHEN rt.id IS NOT NULL THEN
+            json_build_object('id', rt.id, 'name', rt.name, 'description', rt.description)
+          ELSE NULL END
+        ) ORDER BY fr.created_at DESC
+      ), '[]'::JSON)
+    INTO v_total, v_data
+    FROM filtered_repairs fr
+    LEFT JOIN devices d ON fr.device_id = d.id
+    LEFT JOIN device_models dm ON d.model_id = dm.id
+    LEFT JOIN users u ON fr.lab_id = u.id
+    LEFT JOIN repair_types rt ON fr.repair_type_id = rt.id;
+  END IF;
 
   RETURN json_build_object(
     'data', v_data,

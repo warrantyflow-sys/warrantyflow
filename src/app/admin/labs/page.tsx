@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAllUsers } from '@/hooks/queries/useUsers';
 import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
@@ -125,7 +125,6 @@ export default function LabsPage() {
 
     let filtered = labs;
 
-    // סינון לפי סטטוס
     if (statusFilter !== 'all') {
       const isActive = statusFilter === 'active';
       filtered = filtered.filter(l => l.is_active === isActive);

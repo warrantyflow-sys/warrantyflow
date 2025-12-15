@@ -2,19 +2,18 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
 
-// Force dynamic rendering to prevent prerendering issues
 export const dynamic = 'force-dynamic';
 import { createClient } from '@/lib/supabase/client';
-import { UserData } from '@/types/user';
+import { UserData, RepairStatus, FaultType } from '@/types';
 import { LabRepairsPageSkeleton } from '@/components/ui/loading-skeletons';
 import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-indicator';
 import { useLabRepairs } from '@/hooks/queries/useRepairs';
 import { useLabRepairTypes } from '@/hooks/queries/useRepairTypes';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -58,16 +57,6 @@ import {
 } from 'lucide-react';
 import { formatDate, formatCurrency, cn } from '@/lib/utils';
 
-type RepairStatus = 'received' | 'in_progress' | 'completed' | 'replacement_requested';
-type FaultType = 'screen' | 'charging_port' | 'flash' | 'speaker' | 'board' | 'other';
-
-
-interface RepairType {
-  id: string;
-  name: string;
-  description: string | null;
-  price: number;
-}
 
 const repairSchema = z.object({
   customer_name: z.string().min(2, 'שם הלקוח חייב להכיל לפחות 2 תווים'),

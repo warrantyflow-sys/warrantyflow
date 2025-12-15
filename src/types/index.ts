@@ -9,6 +9,7 @@ export type UserRole = 'admin' | 'store' | 'lab';
 
 // Base User type from database
 export type User = Tables<'users'>;
+export type UserData = User;
 
 // User type aliases for specific roles
 export type LabUser = User;

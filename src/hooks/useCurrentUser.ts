@@ -3,7 +3,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { UserData } from '@/types/user';
+import { UserData } from '@/types';
 
 interface JWTPayload {
   user_role?: string;

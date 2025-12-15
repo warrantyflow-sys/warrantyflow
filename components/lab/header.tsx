@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { UserData } from '@/types/user';
+import { UserData } from '@/types';
 import { NotificationsDropdown } from '@/components/shared/notifications-dropdown';
 
 export function LabHeader() {

@@ -4,7 +4,7 @@ import * as React from 'react'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { UserData } from '@/types/user'
+import { UserData } from '@/types'
 import { Search, User, Moon, Sun, Settings, LogOut, Shield, Smartphone, Wrench, Store } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { NotificationsDropdown } from '@/components/shared/notifications-dropdown';
