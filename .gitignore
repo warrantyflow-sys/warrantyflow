@@ -4,7 +4,10 @@ out/
 
 # Dependencies
 node_modules/
+.pnpm-store/
 *.lock
+package-lock.json
+yarn.lock
 
 # Testing
 /coverage
@@ -23,23 +26,30 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
-.pnpm-store/
-.vscode/
 
-# Local
-.env
-.env.*
-.idea/
-.toolstmp
-.vs/
+# Editor directories and files
 .vscode/
-*.log
-*.tmp
-*.bak
-*.swp
-*~.nib
+.idea/
+.vs/
 *.sublime-project
 *.sublime-workspace
 .history/
-.DS_Store
+*.swp
+*~.nib
+
+# AI & Tools
+.claude/
+.cursor/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Local & Logs
+.env
+.env.*
+.toolstmp
+*.log
+*.tmp
+*.bak
 Thumbs.db

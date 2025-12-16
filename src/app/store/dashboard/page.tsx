@@ -507,7 +507,7 @@ export default function StoreDashboard() {
       console.error('Error activating warranty:', error);
       toast({
         title: 'שגיאה',
-        description: error.message || 'אירעה שגיאה בהפעלת האחריות',
+        description: 'אירעה שגיאה בהפעלת האחריות',
         variant: 'destructive',
       });
     }
@@ -544,7 +544,7 @@ export default function StoreDashboard() {
       console.error('Error requesting replacement:', error);
       toast({
         title: 'שגיאה',
-        description: error.message || 'אירעה שגיאה בהגשת בקשת ההחלפה',
+        description: 'אירעה שגיאה בהגשת בקשת ההחלפה',
         variant: 'destructive',
       });
     }

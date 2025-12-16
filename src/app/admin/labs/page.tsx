@@ -159,7 +159,7 @@ export default function LabsPage() {
         .from('repairs')
         .select('*', { count: 'exact', head: true })
         .eq('lab_id', lab.id)
-        .in('status', ['received', 'in_progress']);
+        .eq('status', 'received');
 
       const { count: completedRepairs } = await supabase
         .from('repairs')

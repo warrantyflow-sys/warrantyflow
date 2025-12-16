@@ -63,6 +63,7 @@ export interface WarrantyWithRelations extends Warranty {
 }
 
 // Repair Types
+// the in_progress status is not used in the app
 export type RepairStatus = 'received' | 'in_progress' | 'completed' | 'replacement_requested' | 'cancelled';
 export type FaultType = 'screen' | 'charging_port' | 'flash' | 'speaker' | 'board' | 'other';
 

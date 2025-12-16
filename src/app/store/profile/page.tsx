@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { UserData } from '@/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -68,13 +68,7 @@ export default function ProfilePage() {
   const [isLoading, setIsLoading] = useState(true);
   const supabase = createClient();
 
-  useEffect(() => {
-    fetchUserData();
-    fetchStats();
-    fetchRecentActivity();
-  }, []);
-
-  const fetchUserData = async () => {
+  const fetchUserData = useCallback(async () => {
     try {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (authUser) {
@@ -91,9 +85,9 @@ export default function ProfilePage() {
     } catch (error) {
       console.error('Error fetching user:', error);
     }
-  };
+  }, [supabase]);
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) return;
@@ -144,7 +138,7 @@ export default function ProfilePage() {
           .from('repairs')
           .select('id', { count: 'exact', head: true })
           .eq('lab_id', userId)
-          .in('status', ['received', 'in_progress']),
+          .eq('status', 'received'),
       ]);
 
       const totalActions =
@@ -166,9 +160,9 @@ export default function ProfilePage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [supabase]);
 
-  const fetchRecentActivity = async () => {
+  const fetchRecentActivity = useCallback(async () => {
     try {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) return;
@@ -267,7 +261,13 @@ export default function ProfilePage() {
     } catch (error) {
       console.error('Error fetching recent activity:', error);
     }
-  };
+  }, [supabase]);
+
+  useEffect(() => {
+    fetchUserData();
+    fetchStats();
+    fetchRecentActivity();
+  }, [fetchUserData, fetchStats, fetchRecentActivity]);
 
   const getActivityIcon = (type: RecentActivity['type']) => {
     switch (type) {

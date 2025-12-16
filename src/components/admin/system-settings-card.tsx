@@ -38,7 +38,7 @@ export function SystemSettingsCard() {
     } catch (error: any) {
       toast({
         title: 'שגיאה בטעינת הגדרות מערכת',
-        description: error.message,
+        description: 'שגיאה בטעינת הגדרות מערכת',
         variant: 'destructive',
       });
     } finally {
@@ -89,7 +89,7 @@ export function SystemSettingsCard() {
     } catch (error: any) {
       toast({
         title: 'שגיאה',
-        description: error.message || 'לא ניתן לשמור את הגדרות המערכת',
+        description: 'לא ניתן לשמור את הגדרות המערכת',
         variant: 'destructive',
       });
     } finally {

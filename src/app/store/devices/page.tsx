@@ -142,7 +142,7 @@ export default function StoreDevicesPage() {
     ).length;
 
     const inRepairCount = warranties.filter((w: any) =>
-      (w.repairs || []).some((r: any) => ['received', 'in_progress', 'replacement_requested'].includes(r.status))
+      (w.repairs || []).some((r: any) => ['received', 'replacement_requested'].includes(r.status))
     ).length;
 
     return {
@@ -217,7 +217,7 @@ export default function StoreDevicesPage() {
     if (!repairs || repairs.length === 0) return null;
 
     const activeRepair = repairs.find(r =>
-      ['received', 'in_progress', 'replacement_requested'].includes(r.status)
+      ['received', 'replacement_requested'].includes(r.status)
     );
 
     if (activeRepair) {
@@ -630,11 +630,9 @@ export default function StoreDevicesPage() {
                         </div>
                         <Badge variant={
                           repair.status === 'completed' ? 'default' :
-                            repair.status === 'in_progress' ? 'outline' :
                               'secondary'
                         }>
                           {repair.status === 'completed' ? 'הושלם' :
-                            repair.status === 'in_progress' ? 'בטיפול' :
                               repair.status === 'received' ? 'התקבל' :
                                 repair.status === 'replacement_requested' ? 'בקשת החלפה' :
                                   'סטטוס אחר'}

@@ -55,7 +55,7 @@ export function PasswordSettingsCard() {
     } catch (error: any) {
       toast({
         title: 'שגיאה',
-        description: error.message || 'לא ניתן לשנות את הסיסמה',
+        description: 'לא ניתן לשנות את הסיסמה',
         variant: 'destructive',
       });
     } finally {

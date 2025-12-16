@@ -44,11 +44,9 @@ import { formatDate, formatDateTime, formatCurrency } from '@/lib/utils';
 import { fetchAllRepairTypes, RepairType } from '@/lib/api/repair_types'; // Import new API function and type
 import { fetchAllDeviceModels, DeviceModel } from '@/lib/api/device_models'; // Import new API function and type
 
-type RepairStatus = 'received' | 'in_progress' | 'completed' | 'replacement_requested';
-type FaultType = 'screen' | 'charging_port' | 'flash' | 'speaker' | 'board' | 'other';
+type RepairStatus = 'received' | 'completed' | 'replacement_requested';
 
 export default function RepairsPage() {
-  // --- ניהול State ---
   
   // Pagination & Search
   const [page, setPage] = useState(1);
@@ -111,7 +109,7 @@ export default function RepairsPage() {
       if (searchQuery !== debouncedSearch) setPage(1);
     }, 500);
     return () => clearTimeout(timer);
-  }, [searchQuery]);
+  }, [searchQuery, debouncedSearch]);
 
   // איפוס עמוד בעת שינוי פילטרים
   useEffect(() => {
@@ -230,7 +228,6 @@ export default function RepairsPage() {
   const getStatusBadge = (status: RepairStatus) => {
     const variants = {
       received: { icon: Clock, label: 'התקבל', className: 'bg-blue-100 text-blue-700' },
-      in_progress: { icon: Wrench, label: 'בטיפול', className: 'bg-yellow-100 text-yellow-700' },
       completed: { icon: CheckCircle, label: 'הושלם', className: 'bg-green-100 text-green-700' },
       replacement_requested: { icon: Package, label: 'בקשת החלפה', className: 'bg-red-100 text-red-700' },
     };
@@ -298,7 +295,7 @@ export default function RepairsPage() {
       {/* Stats Cards - שימוש במידע מה-Hook החדש */}
       <div className="grid gap-4 md:grid-cols-4">
         <StatCard title='סה"כ תיקונים' value={statsData?.total || 0} icon={Wrench} color="blue" /> 
-        <StatCard title='בטיפול' value={statsData?.received || 0} icon={Clock} color="orange" /> 
+        <StatCard title='ממתינים' value={statsData?.received || 0} icon={Clock} color="orange" /> 
         <StatCard title='הושלמו' value={statsData?.completed || 0} icon={CheckCircle} color="green" />  
         <StatCard 
           title='עלות כוללת' 
@@ -355,7 +352,6 @@ export default function RepairsPage() {
               >
                 <option value="all">כל הסטטוסים</option>
                 <option value="received">התקבל</option>
-                <option value="in_progress">בטיפול</option>
                 <option value="completed">הושלם</option>
                 <option value="replacement_requested">בקשת החלפה</option>
               </select>
@@ -376,6 +372,7 @@ export default function RepairsPage() {
                     {type.name}
                   </option>
                 ))}
+                <option value="custom">אחר (מותאם)</option>
               </select>
             </div>
 
@@ -521,17 +518,6 @@ export default function RepairsPage() {
                       </Button>
 
                       {repair.status === 'received' && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleUpdateStatus(repair.id, 'in_progress')}
-                          title="העבר לטיפול"
-                        >
-                          <Wrench className="h-4 w-4 text-yellow-600" />
-                        </Button>
-                      )}
-
-                      {repair.status === 'in_progress' && (
                         <Button
                           size="sm"
                           variant="ghost"

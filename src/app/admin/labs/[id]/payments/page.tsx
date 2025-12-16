@@ -191,7 +191,7 @@ export default function AdminLabPaymentsPage() {
     } catch (error: any) {
       toast({
         title: 'שגיאה',
-        description: error.message || 'לא ניתן לרשום את התשלום',
+        description: 'לא ניתן לרשום את התשלום',
         variant: 'destructive',
       });
     }

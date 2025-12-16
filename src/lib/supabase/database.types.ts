@@ -743,11 +743,11 @@ export type Database = {
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
       get_admin_devices_paginated: {
         Args: {
-          p_model_filter?: string
+          p_model_filter?: string | null
           p_page?: number
           p_page_size?: number
-          p_search?: string
-          p_status_filter?: string
+          p_search?: string | null
+          p_status_filter?: string | null
         }
         Returns: Json
       }

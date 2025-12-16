@@ -235,7 +235,7 @@ export default function StoreReplacementsPage() {
       console.error('Error searching device:', error);
       toast({
         title: 'שגיאה',
-        description: error.message || 'אירעה שגיאה בחיפוש המכשיר',
+        description: 'אירעה שגיאה בחיפוש המכשיר',
         variant: 'destructive',
       });
       setSearchedDevice(null);
@@ -309,7 +309,7 @@ export default function StoreReplacementsPage() {
     } catch (error: any) {
       toast({
         title: 'שגיאה',
-        description: error.message || 'לא ניתן לשלוח את הבקשה',
+        description: 'לא ניתן לשלוח את הבקשה',
         variant: 'destructive',
       });
     }

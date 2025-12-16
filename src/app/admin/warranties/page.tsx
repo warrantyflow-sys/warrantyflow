@@ -109,7 +109,7 @@ export default function WarrantiesPage() {
       if (searchQuery !== debouncedSearch) setPage(1);
     }, 500);
     return () => clearTimeout(timer);
-  }, [searchQuery]);
+  }, [searchQuery, debouncedSearch]);
 
   // Reset page on filter change
   useEffect(() => {

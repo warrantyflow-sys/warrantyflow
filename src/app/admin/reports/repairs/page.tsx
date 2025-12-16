@@ -54,9 +54,6 @@ import {
   Area
 } from 'recharts';
 
-// Types
-type FaultType = 'screen' | 'charging_port' | 'flash' | 'speaker' | 'board' | 'other';
-
 type AdminRepair = Repair & {
   device?: (Pick<Device, 'imei'> & {
     device_models?: Pick<DeviceModel, 'model_name'> | null;
@@ -77,18 +74,8 @@ type DateRangeOption = 'week' | 'month' | 'quarter' | 'year' | 'custom';
 // Constants
 const COLORS = ['#3b82f6', '#22c55e', '#f97316', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
 
-const faultTypeLabels: Record<string, string> = {
-  screen: 'מסך',
-  charging_port: 'שקע טעינה',
-  flash: 'פנס',
-  speaker: 'רמקול',
-  board: 'לוח אם',
-  other: 'אחר',
-};
-
 const statusLabels: Record<string, string> = {
   received: 'התקבל',
-  in_progress: 'בטיפול',
   completed: 'הושלם',
   replacement_requested: 'בקשת החלפה',
   cancelled: 'בוטל',
@@ -169,7 +156,12 @@ export default function AdminRepairsReportPage() {
         .lte('created_at', endDate + 'T23:59:59');
 
       if (filterLab !== 'all') query = query.eq('lab_id', filterLab);
-      if (filterRepairType !== 'all') query = query.eq('repair_type_id', filterRepairType);
+      if (filterRepairType !== 'all')
+        if (filterRepairType === 'custom') {
+          query = query.not('custom_repair_description', 'is', null);
+        } else {
+          query = query.eq('repair_type_id', filterRepairType);
+        }
 
       const { data, error } = await query.order('created_at', { ascending: false });
 
@@ -194,7 +186,7 @@ export default function AdminRepairsReportPage() {
     const completed = allRepairs.filter(r => r.status === 'completed').length;
     // Changed semantic from revenue to cost
     const totalCost = allRepairs.reduce((sum, r) => sum + (r.cost || 0), 0);
-    const pending = allRepairs.filter(r => ['received', 'in_progress'].includes(r.status)).length;
+    const pending = allRepairs.filter(r => r.status === 'received').length;
 
     return { total, completed, totalCost, pending };
   }, [allRepairs]);
@@ -226,10 +218,7 @@ export default function AdminRepairsReportPage() {
     // 3. Repair Type Distribution
     const typeMap = new Map<string, number>();
     allRepairs.forEach(r => {
-      let label = 'אחר';
-      if (r.repair_type?.name) label = r.repair_type.name;
-      else if (r.custom_repair_description) label = 'מותאם אישית';
-      else if (r.fault_type) label = faultTypeLabels[r.fault_type] || r.fault_type;
+      const label = r.repair_type?.name || 'אחר';
       
       typeMap.set(label, (typeMap.get(label) || 0) + 1);
     });
@@ -260,7 +249,7 @@ export default function AdminRepairsReportPage() {
       ...allRepairs.map(r => [
         formatDate(r.created_at),
         `${r.device?.device_models?.model_name || ''} - ${r.device?.imei || ''}`,
-        r.repair_type?.name || r.custom_repair_description || faultTypeLabels[r.fault_type as string] || '',
+        r.repair_type?.name || r.custom_repair_description || 'אחר',
         r.lab?.full_name || '',
         r.warranty?.store?.full_name || '',
         statusLabels[r.status] || r.status,
@@ -352,6 +341,7 @@ export default function AdminRepairsReportPage() {
                 <SelectContent dir="rtl">
                   <SelectItem value="all">כל הסוגים</SelectItem>
                   {repairTypes.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                  <SelectItem value="custom">אחר (מותאם)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -624,7 +614,7 @@ export default function AdminRepairsReportPage() {
                         <div className="text-xs text-muted-foreground font-mono">{repair.device?.imei}</div>
                       </TableCell>
                       <TableCell>
-                        {repair.repair_type?.name || repair.custom_repair_description || faultTypeLabels[repair.fault_type as string] || 'אחר'}
+                        {repair.repair_type?.name || repair.custom_repair_description || 'אחר'}
                       </TableCell>
                       <TableCell>{repair.lab?.full_name || 'לא משויך'}</TableCell>
                       <TableCell>{repair.warranty?.store?.full_name || '-'}</TableCell>

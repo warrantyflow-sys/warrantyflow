@@ -92,10 +92,9 @@ export function ProfileSettingsCard() {
 
       loadData();
     } catch (error: any) {
-      // כאן השרת יחזיר שגיאה אם משתמש לא מורשה ינסה לעדכן
       toast({
         title: 'שגיאה',
-        description: error.message || 'לא ניתן לשמור את הפרטים',
+        description: 'לא ניתן לשמור את הפרטים',
         variant: 'destructive',
       });
     } finally {

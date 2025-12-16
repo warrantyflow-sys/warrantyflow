@@ -9,6 +9,7 @@ export interface RepairType {
   name: string;
   description: string | null;
   price: number;
+  customOnly?: boolean;
 }
 
 export interface Repair {
@@ -107,8 +108,9 @@ export async function fetchRepairsWithPagination(
     p_status: filters.status && filters.status !== 'all' ? filters.status : undefined,
     p_lab_id: filters.labId && filters.labId !== 'all' ? filters.labId : undefined,
     p_search: searchTerm || undefined,
-    p_repair_type_id: filters.repairTypeId && filters.repairTypeId !== 'all' ? filters.repairTypeId : null,
+    p_repair_type_id: filters.repairTypeId && filters.repairTypeId !== 'all' && filters.repairTypeId !== 'custom' ? filters.repairTypeId : null,
     p_model_id: filters.modelId && filters.modelId !== 'all' ? filters.modelId : null,
+    p_custom_only: filters.repairTypeId === 'custom',
   });
 
   if (error) {

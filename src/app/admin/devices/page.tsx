@@ -67,7 +67,7 @@ import { BackgroundRefreshIndicator } from '@/components/ui/background-refresh-i
 
 type WarrantyStatus = 'new' | 'active' | 'expired' | 'replaced';
 
-// פונקציה לחישוב סטטוס אחריות
+
 const calculateWarrantyStatus = (device: DeviceRow): WarrantyStatus => {
   if (device.is_replaced) return 'replaced';
 
@@ -277,7 +277,7 @@ export default function DevicesPage() {
       }
 
       let modelId: string;
-      const { data: existingModel } = await (supabase as any)
+      const { data: existingModel } = await (supabase)
         .from('device_models')
         .select('id')
         .eq('model_name', data.model.trim())
@@ -286,7 +286,7 @@ export default function DevicesPage() {
       if (existingModel) {
         modelId = existingModel.id;
       } else {
-        const { data: newModel, error: createError } = await (supabase as any)
+        const { data: newModel, error: createError } = await (supabase)
           .from('device_models')
           .insert({
             model_name: data.model.trim(),
@@ -306,9 +306,9 @@ export default function DevicesPage() {
         model_id: modelId,
         import_batch: data.import_batch || null,
         warranty_months: data.warranty_months,
-      } as Partial<Device>;
+      }
 
-      const { data: newDevice, error } = await (supabase.from('devices') as any)
+      const { data: newDevice, error } = await supabase.from('devices')
         .insert([payload])
         .select('id')
         .single();
@@ -351,7 +351,7 @@ export default function DevicesPage() {
 
     try {
       let modelId: string;
-      const { data: existingModel } = await (supabase as any)
+      const { data: existingModel } = await supabase
         .from('device_models')
         .select('id')
         .eq('model_name', data.model.trim())
@@ -360,7 +360,7 @@ export default function DevicesPage() {
       if (existingModel) {
         modelId = existingModel.id;
       } else {
-        const { data: newModel, error: createError } = await (supabase as any)
+        const { data: newModel, error: createError } = await supabase
           .from('device_models')
           .insert({
             model_name: data.model.trim(),
@@ -380,9 +380,9 @@ export default function DevicesPage() {
         model_id: modelId,
         import_batch: data.import_batch || null,
         warranty_months: data.warranty_months,
-      } as Partial<Device>;
+      }
 
-      const { error } = await (supabase.from('devices') as any)
+      const { error } = await supabase.from('devices')
         .update(updates)
         .eq('id', selectedDevice.id);
 
@@ -528,6 +528,7 @@ export default function DevicesPage() {
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    event.target.value = '';
 
     setImportResult(null);
     setPreview([]);
@@ -536,7 +537,11 @@ export default function DevicesPage() {
       header: true,
       skipEmptyLines: true,
       complete: async (results) => {
-        const data = results.data as any[];
+        const data = results.data as Record<string, any>[];
+        if (!data || !Array.isArray(data)) {
+          toast({ title: 'שגיאה', description: 'פורמט קובץ לא תקין', variant: 'destructive' });
+          return;
+        }
         setPreview(data.slice(0, 5));
         const MAX_ROWS = 10000;
         if (data.length > MAX_ROWS) {

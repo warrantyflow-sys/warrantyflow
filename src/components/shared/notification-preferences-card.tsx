@@ -9,62 +9,87 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/components/ui/use-toast';
 import { Save, Bell } from 'lucide-react';
+import type { Json } from '@/types';
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Types
+// ═══════════════════════════════════════════════════════════════════════════════
 
 interface NotificationPreferences {
-  emailOnRepairAssigned: boolean;
-  emailOnRepairCompleted: boolean;
-  emailOnPaymentReceived: boolean;
-  emailOnWarrantyExpiring: boolean;
-  emailOnReplacementRequest: boolean;
+  notifyOnWarrantyActivated: boolean;
+  notifyOnRepairNew: boolean;
+  notifyOnRepairCompleted: boolean;
+  notifyOnReplacementRequest: boolean;
+  notifyOnReplacementUpdate: boolean;
+  notifyOnPaymentReceived: boolean;
 }
-
-const defaultPreferences: NotificationPreferences = {
-  emailOnRepairAssigned: true,
-  emailOnRepairCompleted: true,
-  emailOnPaymentReceived: true,
-  emailOnWarrantyExpiring: true,
-  emailOnReplacementRequest: true,
-};
 
 interface NotificationOption {
   id: keyof NotificationPreferences;
   label: string;
   description: string;
-  roles?: ('admin' | 'store' | 'lab')[];
+  roles: ('admin' | 'store' | 'lab')[];
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// Configuration
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const defaultPreferences: NotificationPreferences = {
+  notifyOnWarrantyActivated: true,
+  notifyOnRepairNew: true,
+  notifyOnRepairCompleted: true,
+  notifyOnReplacementRequest: true,
+  notifyOnReplacementUpdate: true,
+  notifyOnPaymentReceived: true,
+};
+
+/**
+ * Notification options configuration
+ * Each option specifies which roles should see it
+ */
 const notificationOptions: NotificationOption[] = [
   {
-    id: 'emailOnRepairAssigned',
+    id: 'notifyOnWarrantyActivated',
+    label: 'התראה על הפעלת אחריות',
+    description: 'קבל התראה כאשר חנות מפעילה אחריות חדשה.',
+    roles: ['admin'],
+  },
+  {
+    id: 'notifyOnRepairNew',
     label: 'התראה על תיקון חדש',
     description: 'קבל התראה כאשר תיקון חדש נוצר במערכת.',
-    roles: ['admin', 'lab'],
+    roles: ['admin'],
   },
   {
-    id: 'emailOnRepairCompleted',
+    id: 'notifyOnRepairCompleted',
     label: 'התראה על השלמת תיקון',
     description: 'קבל התראה כאשר תיקון הושלם בהצלחה.',
-    roles: ['admin', 'store', 'lab'],
+    roles: ['admin'],
   },
   {
-    id: 'emailOnPaymentReceived',
-    label: 'התראה על תשלום',
-    description: 'קבל התראה כאשר תשלום מתקבל או נרשם במערכת.',
-    roles: ['admin', 'lab'],
-  },
-  {
-    id: 'emailOnWarrantyExpiring',
-    label: 'התראה על אחריות שפגה',
-    description: 'קבל התראה כאשר אחריות עומדת לפוג בקרוב.',
-    roles: ['admin', 'store'],
-  },
-  {
-    id: 'emailOnReplacementRequest',
+    id: 'notifyOnReplacementRequest',
     label: 'התראה על בקשת החלפה',
     description: 'קבל התראה כאשר מתקבלת בקשת החלפה חדשה.',
-    roles: ['admin', 'store', 'lab'],
+    roles: ['admin'],
+  },
+  {
+    id: 'notifyOnReplacementUpdate',
+    label: 'התראה על עדכון בקשת החלפה',
+    description: 'קבל התראה כאשר בקשת החלפה שהגשת מתעדכנת.',
+    roles: ['store', 'lab'],
+  },
+  {
+    id: 'notifyOnPaymentReceived',
+    label: 'התראה על תשלום שהתקבל',
+    description: 'קבל התראה כאשר המנהל מעדכן על תשלום שביצע עבורך.',
+    roles: ['lab'],
   },
 ];
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Component
+// ═══════════════════════════════════════════════════════════════════════════════
 
 export function NotificationPreferencesCard() {
   const [isLoading, setIsLoading] = useState(false);
@@ -75,24 +100,32 @@ export function NotificationPreferencesCard() {
   const supabase = createClient();
   const { toast } = useToast();
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Load notification settings
+  // ─────────────────────────────────────────────────────────────────────────────
+
   const loadNotificationSettings = useCallback(async (id: string) => {
     try {
-      const { data: userData } = await supabase
+      const { data: userData, error } = await supabase
         .from('users')
         .select('notification_preferences, role')
         .eq('id', id)
-        .single() as { data: { notification_preferences: any; role: 'admin' | 'store' | 'lab' } | null };
+        .single();
+
+      if (error) throw error;
 
       if (userData) {
-        setUserRole(userData.role);
+        setUserRole(userData.role as 'admin' | 'store' | 'lab');
 
-        if (userData?.notification_preferences) {
+        if (userData.notification_preferences) {
+          const prefs = userData.notification_preferences as Record<string, boolean>;
           setNotificationSettings({
-            emailOnRepairAssigned: userData.notification_preferences.emailOnRepairAssigned ?? true,
-            emailOnRepairCompleted: userData.notification_preferences.emailOnRepairCompleted ?? true,
-            emailOnPaymentReceived: userData.notification_preferences.emailOnPaymentReceived ?? true,
-            emailOnWarrantyExpiring: userData.notification_preferences.emailOnWarrantyExpiring ?? true,
-            emailOnReplacementRequest: userData.notification_preferences.emailOnReplacementRequest ?? true,
+            notifyOnWarrantyActivated: prefs.notifyOnWarrantyActivated ?? true,
+            notifyOnRepairNew: prefs.notifyOnRepairNew ?? true,
+            notifyOnRepairCompleted: prefs.notifyOnRepairCompleted ?? true,
+            notifyOnReplacementRequest: prefs.notifyOnReplacementRequest ?? true,
+            notifyOnReplacementUpdate: prefs.notifyOnReplacementUpdate ?? true,
+            notifyOnPaymentReceived: prefs.notifyOnPaymentReceived ?? true,
           });
         }
       }
@@ -112,15 +145,19 @@ export function NotificationPreferencesCard() {
     loadUser();
   }, [supabase, loadNotificationSettings]);
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Save notification settings
+  // ─────────────────────────────────────────────────────────────────────────────
+
   const handleSaveNotifications = async () => {
     if (!userId) return;
 
     setIsLoading(true);
     try {
-      const { error } = await (supabase
-        .from('users') as any)
+      const { error } = await supabase
+        .from('users')
         .update({
-          notification_preferences: notificationSettings,
+          notification_preferences: notificationSettings as unknown as Json,
         })
         .eq('id', userId);
 
@@ -132,10 +169,10 @@ export function NotificationPreferencesCard() {
       });
 
       loadNotificationSettings(userId);
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         title: 'שגיאה',
-        description: error.message || 'לא ניתן לשמור את העדפות ההתראות',
+        description: error instanceof Error ? error.message : 'לא ניתן לשמור את העדפות ההתראות',
         variant: 'destructive',
       });
     } finally {
@@ -143,10 +180,22 @@ export function NotificationPreferencesCard() {
     }
   };
 
-  // Filter notification options based on user role
-  const filteredOptions = notificationOptions.filter((option) =>
-    !option.roles || (userRole && option.roles.includes(userRole))
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Filter options based on user role
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  const filteredOptions = notificationOptions.filter(
+    (option) => userRole && option.roles.includes(userRole)
   );
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  // Don't render if no options available for this role
+  if (filteredOptions.length === 0) {
+    return null;
+  }
 
   return (
     <Card>
@@ -156,7 +205,7 @@ export function NotificationPreferencesCard() {
           <CardTitle>העדפות התראות</CardTitle>
         </div>
         <CardDescription>
-          בחר כיצד תרצה לקבל התראות על פעילויות במערכת.
+          בחר אילו התראות תרצה לקבל במערכת.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

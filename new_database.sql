@@ -1613,7 +1613,8 @@ CREATE OR REPLACE FUNCTION get_repairs_paginated(
   p_lab_id UUID DEFAULT NULL,
   p_search TEXT DEFAULT NULL,
   p_repair_type_id UUID DEFAULT NULL,
-  p_model_id UUID DEFAULT NULL
+  p_model_id UUID DEFAULT NULL,
+  p_custom_only BOOLEAN DEFAULT false
 )
 RETURNS JSON
 LANGUAGE plpgsql
@@ -1632,11 +1633,7 @@ BEGIN
   END IF;
 
   v_offset := (p_page - 1) * p_page_size;
-  
-  -- Normalize search term (NULL if empty)
   v_search_term := NULLIF(TRIM(COALESCE(p_search, '')), '');
-  
-  -- Determine if we need the device JOIN (only for model filter)
   v_needs_device_join := (p_model_id IS NOT NULL);
 
   -- ═══════════════════════════════════════════════════════════════════════════
@@ -1646,7 +1643,7 @@ BEGIN
     WITH filtered_repairs AS (
       SELECT 
         r.id, r.device_id, r.lab_id, r.warranty_id, r.repair_type_id,
-        r.cost, r.status, r.fault_type, r.customer_name, r.customer_phone,
+        r.cost, r.status, r.customer_name, r.customer_phone,
         r.custom_repair_description, r.custom_repair_price,
         r.created_at, r.completed_at,
         COUNT(*) OVER() AS total_count
@@ -1655,7 +1652,10 @@ BEGIN
       WHERE 
         (p_status IS NULL OR r.status::TEXT = p_status)
         AND (p_lab_id IS NULL OR r.lab_id = p_lab_id)
-        AND (p_repair_type_id IS NULL OR r.repair_type_id = p_repair_type_id)
+        AND (
+          (p_custom_only = true AND r.custom_repair_description IS NOT NULL)
+          OR (p_custom_only = false AND (p_repair_type_id IS NULL OR r.repair_type_id = p_repair_type_id))
+        )
         AND (d.model_id = p_model_id)
         AND (v_search_term IS NULL OR 
              r.customer_name ILIKE '%' || v_search_term || '%' OR 
@@ -1720,7 +1720,10 @@ BEGIN
       WHERE 
         (p_status IS NULL OR r.status::TEXT = p_status)
         AND (p_lab_id IS NULL OR r.lab_id = p_lab_id)
-        AND (p_repair_type_id IS NULL OR r.repair_type_id = p_repair_type_id)
+        AND (
+          (p_custom_only = true AND r.custom_repair_description IS NOT NULL)
+          OR (p_custom_only = false AND (p_repair_type_id IS NULL OR r.repair_type_id = p_repair_type_id))
+        )
         AND (v_search_term IS NULL OR 
              r.customer_name ILIKE '%' || v_search_term || '%' OR 
              r.customer_phone ILIKE '%' || v_search_term || '%')

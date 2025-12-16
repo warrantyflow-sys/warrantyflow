@@ -93,7 +93,7 @@ export function useUserStats(userId: string | null, role: string | null) {
         stats.monthlyActivations = monthly || 0;
       } else if (role === 'lab') {
         const { count: total } = await supabase.from('repairs').select('*', { count: 'exact', head: true }).eq('lab_id', userId);
-        const { count: pending } = await supabase.from('repairs').select('*', { count: 'exact', head: true }).eq('lab_id', userId).in('status', ['received', 'in_progress']);
+        const { count: pending } = await supabase.from('repairs').select('*', { count: 'exact', head: true }).eq('lab_id', userId).eq('status', 'received');
         const { count: completed } = await supabase.from('repairs').select('*', { count: 'exact', head: true }).eq('lab_id', userId).eq('status', 'completed');
 
         stats.totalRepairs = total || 0;

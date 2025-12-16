@@ -113,10 +113,8 @@ export default function LabRepairsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(50);
 
-  // אופטימיזציה: שמירת user ID לצורך audit logging
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   
-  // --- [תיקון 1: הוספת useMemo עבור רשימות סינון ייחודיות] ---
   const uniqueFilterRepairTypes = useMemo(() => {
     const allRepairTypes = repairs.map(r => r.repair_type).filter((rt): rt is NonNullable<typeof rt> => rt !== null && rt !== undefined);
     const uniqueMap = new Map();
@@ -133,10 +131,7 @@ export default function LabRepairsPage() {
     return Array.from(new Set(allModels)).sort();
   }, [repairs]);
 
-  // --- [תיקון 2: החלפת useEffect + useState ב-useMemo עבור נתונים נגזרים] ---
-  
-  // חישוב הרשימה המסוננת
-  const filteredRepairs = useMemo(() => {
+    const filteredRepairs = useMemo(() => {
     let filtered = repairs;
 
     if (filterStatus.startsWith('replacement_')) {
@@ -151,7 +146,11 @@ export default function LabRepairsPage() {
     }
 
     if (filterRepairType !== 'all') {
-      filtered = filtered.filter(r => r.repair_type?.id === filterRepairType);
+      if (filterRepairType === 'custom') {
+        filtered = filtered.filter(r => r.custom_repair_description != null);
+      } else {
+        filtered = filtered.filter(r => r.repair_type?.id === filterRepairType);
+      }
     }
 
     if (filterDeviceModel !== 'all') {
@@ -180,7 +179,6 @@ export default function LabRepairsPage() {
     return filtered;
   }, [repairs, searchQuery, filterStatus, filterRepairType, filterDeviceModel, filterDateFrom, filterDateTo]);
   
-  // חישוב הרשימה המחולקת לעמודים
   const paginatedRepairs = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
     const endIndex = startIndex + itemsPerPage;
@@ -188,7 +186,6 @@ export default function LabRepairsPage() {
   }, [filteredRepairs, currentPage, itemsPerPage]);
 
 
-  // --- [תיקון 3: הוספת Event Handlers לאיפוס עמוד] ---
   const handleSearchChange = (value: string) => {
     setSearchQuery(value);
     setCurrentPage(1);
@@ -223,7 +220,6 @@ export default function LabRepairsPage() {
     setFilterDateTo('');
     setCurrentPage(1);
   };
-  // --- [סוף התיקונים] ---
 
 
   const supabase = createClient();
@@ -241,25 +237,21 @@ export default function LabRepairsPage() {
     resolver: zodResolver(repairSchema),
   });
 
-  // Update currentUserId from currentUser
   useEffect(() => {
     if (currentUser) {
       setCurrentUserId(currentUser.id);
     }
   }, [currentUser]);
 
-  // (הסרנו את הלוגיקה הבעייתית של filterData ו-useEffect)
 
   useEffect(() => {
     if (isUpdateDialogOpen && selectedRepair) {
       setUpdateNotes(selectedRepair.notes || '');
-      // Pre-fill form if it's a custom repair
       if (selectedRepair.custom_repair_description) {
         setUpdateRepairTypeId('other');
         setCustomRepairDescription(selectedRepair.custom_repair_description);
         setCustomRepairPrice(selectedRepair.custom_repair_price?.toString() || '');
       } else {
-        // Reset fields for standard repair
         setUpdateRepairTypeId(selectedRepair.repair_type_id || '');
         setCustomRepairDescription('');
         setCustomRepairPrice('');
@@ -285,7 +277,6 @@ export default function LabRepairsPage() {
     try {
       setIsSearching(true);
   
-      // Use the search_device_by_imei function
       const { data: searchResult, error: searchError } = await (supabase as any)
         .rpc('search_device_by_imei', {
           p_imei: trimmedIMEI,
@@ -314,7 +305,6 @@ export default function LabRepairsPage() {
   
       const result = searchResult[0];
   
-      // Check if device was found
       if (!result.device_found || !result.device_id) {
         toast({
           title: 'לא נמצא',
@@ -326,7 +316,6 @@ export default function LabRepairsPage() {
         return;
       }
   
-      // Check if device has active warranty
       if (!result.has_active_warranty) {
         toast({
           title: 'אין אחריות פעילה',
@@ -338,7 +327,6 @@ export default function LabRepairsPage() {
         return;
       }
   
-      // Check if device is replaced
       if (result.is_replaced) {
         toast({
           title: 'מכשיר הוחלף',
@@ -350,7 +338,6 @@ export default function LabRepairsPage() {
         return;
       }
   
-      // Create device object with warranty info
       const data = {
         id: result.device_id,
         imei: trimmedIMEI,
@@ -366,7 +353,6 @@ export default function LabRepairsPage() {
   
       setSearchedDevice(data);
 
-      // שליפת בקשות החלפה למכשיר
       const { data: replacements } = await supabase
       .from('replacement_requests')
       .select('id, status, reason, created_at')
@@ -426,7 +412,6 @@ export default function LabRepairsPage() {
       const typedUserData = userData as UserData | null;
       if (!typedUserData) throw new Error('משתמש לא נמצא');
 
-      // Check if repair already exists for this device
       const { data: existingRepair } = await supabase
         .from('repairs')
         .select('id, status')
@@ -482,7 +467,7 @@ export default function LabRepairsPage() {
     } catch (error: any) {
       toast({
         title: 'שגיאה',
-        description: error.message || 'לא ניתן ליצור את התיקון',
+        description: 'לא ניתן ליצור את התיקון',
         variant: 'destructive',
       });
     }
@@ -609,7 +594,7 @@ export default function LabRepairsPage() {
     } catch (error: any) {
       toast({
         title: 'שגיאה',
-        description: error.message || 'לא ניתן לעדכן את התיקון',
+        description: 'לא ניתן לעדכן את התיקון',
         variant: 'destructive',
       });
     }
@@ -650,7 +635,7 @@ export default function LabRepairsPage() {
     } catch (error: any) {
       toast({
         title: 'שגיאה',
-        description: error.message || 'לא ניתן לשלוח בקשת החלפה',
+        description: 'לא ניתן לשלוח בקשת החלפה',
         variant: 'destructive',
       });
     }
@@ -699,7 +684,6 @@ export default function LabRepairsPage() {
     } else {
       const statusConfig = {
         received: { label: 'התקבל', variant: 'secondary' as const, icon: Clock, className: 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' },
-        in_progress: { label: 'בטיפול', variant: 'default' as const, icon: Wrench, className: 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300' },
         completed: { label: 'הושלם', variant: 'outline' as const, icon: CheckCircle, className: 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' },
       };
       const config = (statusConfig as any)[status];
@@ -799,7 +783,6 @@ export default function LabRepairsPage() {
                 <SelectContent>
                   <SelectItem value="all">כל הסטטוסים</SelectItem>
                   <SelectItem value="received">התקבל</SelectItem>
-                  <SelectItem value="in_progress">בטיפול</SelectItem>
                   <SelectItem value="completed">הושלם</SelectItem>
                   <SelectItem value="replacement_pending">בקשה נשלחה</SelectItem>
                   <SelectItem value="replacement_approved">החלפה אושרה</SelectItem>
@@ -816,12 +799,12 @@ export default function LabRepairsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">כל הסוגים</SelectItem>
-                  {/* [תיקון 1.1]: שימוש במשתנה החדש שהוכן עם useMemo */}
                   {uniqueFilterRepairTypes.map((rt: any) => (
                       <SelectItem key={rt.id} value={rt.id}>
                         {rt.name}
                       </SelectItem>
                     ))}
+                    <SelectItem value="custom">אחר (מותאם)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -897,7 +880,7 @@ export default function LabRepairsPage() {
             </div>
             <div className="text-center p-4 bg-purple-50 rounded-lg">
               <div className="text-3xl font-bold text-purple-600">
-                {filteredRepairs.filter(r => r.status === 'in_progress').length}
+                {filteredRepairs.filter(r => r.status === 'received').length}
               </div>
               <div className="text-sm text-muted-foreground mt-1">בטיפול</div>
             </div>
@@ -1322,7 +1305,6 @@ export default function LabRepairsPage() {
               <div><strong>IMEI:</strong> {selectedRepair?.device?.imei}</div>
               <div><strong>סטטוס נוכחי:</strong> {
                 selectedRepair?.status === 'received' ? 'התקבל' :
-                  selectedRepair?.status === 'in_progress' ? 'בטיפול' :
                     selectedRepair?.status === 'completed' ? 'הושלם' :
                       selectedRepair?.status === 'replacement_requested' ? 'בקשת החלפה' : ''
               }</div>

@@ -15,6 +15,7 @@ export interface DevicesFilter {
 interface DevicesResponse {
   data: any[];
   count: number;
+
 }
 
 interface RpcDevicesResponse {
@@ -38,16 +39,13 @@ async function fetchDevices(filters: DevicesFilter): Promise<DevicesResponse> {
     throw new Error(`Failed to fetch devices: ${error.message}`);
   }
 
-  // וידוא שהנתונים קיימים
   const typedResponse = (rpcResponse as unknown as RpcDevicesResponse) || { data: [], count: 0 };
   const rows = typedResponse.data || [];
   const totalCount = typedResponse.count || 0;
 
   const mappedData = rows.map((row: any) => ({
     ...row,
-    
-    // שחזור מבנה הנתונים המקונן שהקומפוננטה מצפה לו
-    device_models: {
+        device_models: {
       id: row.model_id,
       model_name: row.model_name,
       manufacturer: row.manufacturer

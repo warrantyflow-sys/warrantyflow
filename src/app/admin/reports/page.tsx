@@ -480,26 +480,11 @@ export default function AdminReportsPage() {
       repair_type: { id: string; name: string } | null;
     }>;
 
-    // Legacy fault type labels
-    const faultTypeLabels: Record<string, string> = {
-      screen: 'מסך',
-      charging_port: 'שקע טעינה',
-      flash: 'פנס',
-      speaker: 'רמקול',
-      board: 'לוח אם',
-      other: 'אחר',
-    };
-
     const repairTypeCounts: Record<string, number> = {};
     const totalRepairs = repairData?.length || 0;
 
     repairDataList.forEach(repair => {
-      let typeName = 'אחר';
-      if (repair.repair_type?.name) {
-        typeName = repair.repair_type.name;
-      } else if (repair.fault_type) {
-        typeName = faultTypeLabels[repair.fault_type] || repair.fault_type;
-      }
+      const typeName = repair.repair_type?.name || 'אחר';
       repairTypeCounts[typeName] = (repairTypeCounts[typeName] || 0) + 1;
     });
 

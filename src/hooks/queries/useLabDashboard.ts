@@ -97,7 +97,7 @@ async function fetchLabUrgentRepairs(labId: string): Promise<LabRepairItem[]> {
       warranty:warranties(customer_name, customer_phone)
     `)
     .eq('lab_id', labId)
-    .in('status', ['received', 'in_progress'])
+    .eq('status', 'received')
     .lt('created_at', twoDaysAgo.toISOString())
     .order('created_at', { ascending: true })
     .limit(5);

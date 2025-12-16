@@ -186,7 +186,7 @@ export function useAllLabsBalances() {
   const query = useQuery({
     queryKey: ['labs', 'balances', 'all'],
     queryFn: fetchAllLabsBalances,
-    staleTime: 1000 * 60 * 5,
+    staleTime: 1000 * 30,
     refetchOnWindowFocus: true,
   });
 
@@ -197,7 +197,7 @@ export function useAllLabsBalances() {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: ['labs', 'balances', 'all'] });
-      }, 1000);
+      }, 500);
     };
 
     const channel = supabase
@@ -206,7 +206,6 @@ export function useAllLabsBalances() {
         event: '*', 
         schema: 'public', 
         table: 'repairs',
-        filter: 'status=eq.completed'
       }, (payload) => {
         console.log('Repair change detected:', payload);
         triggerRefresh();
